@@ -1,3 +1,7 @@
+import { backendStatus, supabase } from "./supabase-client.js";
+
+window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
+
 (function () {
   "use strict";
 

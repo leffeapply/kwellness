@@ -1,4 +1,4 @@
-const CACHE_NAME = "k-wellness-careos-v32";
+const CACHE_NAME = "k-wellness-careos-v33";
 const APP_SHELL = ["./", "./index.html", "./manifest.webmanifest", "./assets/icon.svg"];
 
 self.addEventListener("install", (event) => {

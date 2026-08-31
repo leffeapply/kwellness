@@ -1,25 +1,22 @@
 import { defineConfig } from "vite";
-import { sites } from "@openai/sites-vite-plugin";
 import { copyFile, mkdir } from "node:fs/promises";
 
-function packageStaticSite() {
+function copyStaticAssets() {
   return {
-    name: "package-k-wellness-static-site",
+    name: "copy-k-wellness-static-assets",
     async closeBundle() {
-      await mkdir("dist/server", { recursive: true });
-      await mkdir("dist/client/assets", { recursive: true });
-      await copyFile("worker.js", "dist/server/index.js");
-      await copyFile("sw.js", "dist/client/sw.js");
-      await copyFile("manifest.webmanifest", "dist/client/manifest.webmanifest");
-      await copyFile("assets/icon.svg", "dist/client/assets/icon.svg");
+      await mkdir("dist/assets", { recursive: true });
+      await copyFile("sw.js", "dist/sw.js");
+      await copyFile("manifest.webmanifest", "dist/manifest.webmanifest");
+      await copyFile("assets/icon.svg", "dist/assets/icon.svg");
     },
   };
 }
 
 export default defineConfig({
-  plugins: [sites(), packageStaticSite()],
+  plugins: [copyStaticAssets()],
   build: {
-    outDir: "dist/client",
+    outDir: "dist",
     emptyOutDir: true,
   },
 });
