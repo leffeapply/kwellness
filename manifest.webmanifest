@@ -1,0 +1,18 @@
+{
+  "name": "K-Wellness CareOS",
+  "short_name": "K-Wellness",
+  "description": "산후관리 운영과 가족의 안심을 연결하는 케어 플랫폼",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f7f4ed",
+  "theme_color": "#174f4a",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "./assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
