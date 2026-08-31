@@ -98,6 +98,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
 - 로컬 데이터 저장, 오프라인 앱 셸, PWA 매니페스트
 - 기본 접근성: 키보드 포커스, 다이얼로그, 레이블, 축소 모션 대응
 
+## 운영 배포 구조
+
+운영 배포는 `Codex → GitHub → Vercel → Supabase` 흐름을 사용합니다. Vercel은 GitHub `main` 브랜치가 갱신될 때 자동으로 프로덕션 배포를 만들고, Supabase는 PostgreSQL·인증·비공개 파일 저장소를 담당합니다. 계정 생성과 연결 순서는 [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)에 정리되어 있습니다.
+
 ## 아직 데모인 기능
 
 - 서버에서 강제되는 실제 인증·RLS 권한
@@ -118,6 +122,9 @@ K-Wellness App/
 ├─ index.html                  앱 진입점
 ├─ app.js                      역할별 화면과 케어 이벤트 로직
 ├─ styles.css                  반응형 디자인 시스템
+├─ supabase-client.js          Supabase 브라우저 클라이언트 초기화
+├─ vercel.json                 Vercel 빌드 설정
+├─ api/health.js               서버 API 상태 확인 엔드포인트
 ├─ manifest.webmanifest        PWA 설정
 ├─ sw.js                       오프라인 앱 셸
 ├─ assets/icon.svg             앱 아이콘
@@ -134,7 +141,8 @@ K-Wellness App/
    ├─ 008_public_site_service_types.sql  산후조리·베이비시팅 신청과 이벤트
    ├─ 009_service_sequence_insured_staffing.sql  서비스 순서·주간요금·보험·마사지 Add-on 준비
    ├─ 010_minimum_two_week_service.sql   고객 신청·관리자 배정 최소 2주 제약
-   └─ 011_babysitting_minimum_booking.sql  베이비시팅 하루 4시간·2주 연속 예약 제약
+   ├─ 011_babysitting_minimum_booking.sql  베이비시팅 하루 4시간·2주 연속 예약 제약
+   └─ 017_private_storage.sql  프로필·계약서·자격증·리포트 비공개 Storage 정책
 ```
 
 ## 중요한 운영 원칙
