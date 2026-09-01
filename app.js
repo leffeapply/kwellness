@@ -1955,13 +1955,13 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
         <div class="auth-security">◈ 계정 역할과 배정 관계에 따라 접근 가능한 정보가 제한됩니다.</div>
       </section>
       <section class="auth-form-panel">
-        <div class="auth-card"><p class="eyebrow">WELCOME BACK</p><h2>로그인</h2><p class="auth-lead">가입한 이메일과 비밀번호로 로그인하세요.</p>
+        <div class="auth-card"><p class="eyebrow">WELCOME BACK</p><h2>로그인</h2><p class="auth-lead">가입한 이메일과 비밀번호로 로그인하세요. 운영자는 Admin ID도 사용할 수 있습니다.</p>
           <form data-login-form class="auth-form">
-            <div class="field"><label for="login-id">이메일</label><input id="login-id" name="identifier" type="email" autocomplete="username" placeholder="name@email.com" required /></div>
+            <div class="field"><label for="login-id">이메일 또는 운영자 ID</label><input id="login-id" name="identifier" type="text" inputmode="email" autocomplete="username" placeholder="name@email.com 또는 Admin" required /></div>
             <div class="field"><label for="login-password">비밀번호</label><input id="login-password" name="password" type="password" autocomplete="current-password" required /></div>
             <button class="primary-button auth-submit" type="submit">로그인</button>
           </form>
-          ${cloudEnabled ? `<div class="cloud-auth-note"><strong>Supabase 보안 로그인</strong><span>이메일 인증과 계정 역할에 따라 접근 범위가 자동으로 제한됩니다.</span></div>` : `<div class="demo-accounts"><strong>초기 운영 계정</strong><span>관리자: Admin / 1234</span><span>리테일: Retail / 1234</span></div>`}
+          ${cloudEnabled ? `<div class="cloud-auth-note"><strong>Supabase 보안 로그인</strong><span>Admin은 parksiyoo9@gmail.com 운영자 계정으로 안전하게 연결됩니다. 해당 이메일 계정의 비밀번호를 사용하세요.</span></div>` : `<div class="demo-accounts"><strong>초기 운영 계정</strong><span>관리자: Admin / 1234</span><span>리테일: Retail / 1234</span></div>`}
           <div class="auth-switch"><span>처음 이용하시나요?</span><button data-auth-screen="signup">회원가입</button></div><button class="auth-home-link" data-auth-screen="public">← K-Wellness 사이트로 돌아가기</button>
         </div>
       </section>
