@@ -639,6 +639,25 @@ begin
     raise exception 'This verified account is not eligible for initial administrator access';
   end if;
 
+  insert into public.profiles (
+    id, email, full_name, phone, preferred_language, requested_role, account_status
+  )
+  select
+    u.id,
+    lower(u.email),
+    coalesce(nullif(trim(u.raw_user_meta_data ->> 'full_name'), ''), split_part(u.email, '@', 1)),
+    nullif(trim(u.raw_user_meta_data ->> 'phone'), ''),
+    coalesce(nullif(trim(u.raw_user_meta_data ->> 'preferred_language'), ''), 'ko'),
+    'ADMIN',
+    'ACTIVE'
+  from auth.users u
+  where u.id = auth.uid()
+  on conflict (id) do update set
+    email = excluded.email,
+    requested_role = 'ADMIN',
+    account_status = 'ACTIVE',
+    updated_at = now();
+
   insert into public.user_roles(user_id, role) values (auth.uid(), 'ADMIN')
   on conflict do nothing;
   delete from public.user_roles where user_id = auth.uid() and role = 'CLIENT';
