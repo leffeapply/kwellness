@@ -626,50 +626,8 @@ language plpgsql
 security definer
 set search_path = public
 as $$
-declare
-  verified_email text;
-  is_confirmed boolean;
 begin
-  select lower(email), email_confirmed_at is not null
-  into verified_email, is_confirmed
-  from auth.users where id = auth.uid();
-
-  if verified_email not in ('parksiyoo9@gmail.com', 'leffeapply@gmail.com')
-     or not coalesce(is_confirmed, false) then
-    raise exception 'This verified account is not eligible for initial administrator access';
-  end if;
-
-  insert into public.profiles (
-    id, email, full_name, phone, preferred_language, requested_role, account_status
-  )
-  select
-    u.id,
-    lower(u.email),
-    coalesce(nullif(trim(u.raw_user_meta_data ->> 'full_name'), ''), split_part(u.email, '@', 1)),
-    nullif(trim(u.raw_user_meta_data ->> 'phone'), ''),
-    coalesce(nullif(trim(u.raw_user_meta_data ->> 'preferred_language'), ''), 'ko'),
-    'ADMIN',
-    'ACTIVE'
-  from auth.users u
-  where u.id = auth.uid()
-  on conflict (id) do update set
-    email = excluded.email,
-    requested_role = 'ADMIN',
-    account_status = 'ACTIVE',
-    updated_at = now();
-
-  insert into public.user_roles(user_id, role) values (auth.uid(), 'ADMIN')
-  on conflict do nothing;
-  delete from public.user_roles where user_id = auth.uid() and role = 'CLIENT';
-  delete from public.clients c
-  where c.created_by = auth.uid()
-    and c.status = 'LEAD'
-    and not exists (
-      select 1 from public.client_service_requests r where r.client_id = c.id
-    );
-  update public.profiles
-  set requested_role = 'ADMIN', account_status = 'ACTIVE', updated_at = now()
-  where id = auth.uid();
+  raise exception 'Email-based administrator claiming is disabled. Use the isolated Admin demo account.';
 end;
 $$;
 
@@ -685,4 +643,4 @@ grant execute on function public.set_member_account_status(uuid, text) to authen
 grant execute on function public.claim_initial_admin() to authenticated;
 
 comment on function public.claim_initial_admin() is
-  'Allows only a verified K-Wellness operator email to claim the initial ADMIN role.';
+  'Disabled. Administrator testing uses the isolated client-side demo account.';

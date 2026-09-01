@@ -69,7 +69,6 @@ export async function currentCloudSession() {
 
 export async function signInCloud(identifier, password) {
   const aliases = {
-    admin: "parksiyoo9@gmail.com",
     retail: "retail@k-wellness.com",
   };
   const email = aliases[String(identifier).trim().toLowerCase()] || String(identifier).trim().toLowerCase();
@@ -105,10 +104,7 @@ export async function signOutCloud() {
 }
 
 export async function claimInitialAdminIfEligible(email) {
-  const operatorEmails = new Set(["parksiyoo9@gmail.com", "leffeapply@gmail.com"]);
-  if (!operatorEmails.has(String(email).toLowerCase())) return;
-  const result = await supabase.rpc("claim_initial_admin");
-  if (result.error && !/not eligible/i.test(result.error.message || "")) throw result.error;
+  void email;
 }
 
 export async function loadCloudState(session) {
