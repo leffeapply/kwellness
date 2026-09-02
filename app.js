@@ -1,7 +1,8 @@
 import { backendStatus, supabase } from "./supabase-client.js";
 import {
   approveCaregiverCloud,
-  claimInitialAdminIfEligible,
+  archiveMemberCloud,
+  changeMemberRoleCloud,
   cloudEnabled,
   currentCloudSession,
   loadCloudState,
@@ -412,8 +413,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
     return buildSeedState();
   }
 
-  let demoAdminMode = false;
-  const usingCloudData = () => cloudEnabled && !demoAdminMode;
+  const usingCloudData = () => cloudEnabled;
   let state = loadState();
   let cloudLoading = cloudEnabled;
   let cloudLoadError = "";
@@ -449,7 +449,6 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
         state = { ...clean, auth: { ...clean.auth, screen: "public", currentUserId: null } };
         return;
       }
-      await claimInitialAdminIfEligible(session.user.email);
       const live = await loadCloudState(session);
       Object.assign(state, live);
       state.auth.currentUserId = live.currentUser.id;
@@ -1072,6 +1071,27 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
     return `<div class="management-row caregiver-management-row"><div class="management-identity"><div class="mini-avatar">${escapeHtml(user.initials)}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email)} · ${escapeHtml(user.phone || "전화 미등록")}</span></div></div><div class="management-cell"><span>경력·입사년월</span><strong>${Number(user.careerYears || 0)}년 경력</strong><small>${user.hireDate ? `${new Date(user.hireDate).toLocaleDateString("ko-KR", { year: "numeric", month: "long" })} 입사` : "입사일 미등록"}</small></div><div class="management-cell"><span>거주지역·전문분야</span><strong>${escapeHtml(user.residentialArea || "거주지역 미등록")}</strong><small>${escapeHtml(user.specialties || user.certification || "전문분야 미등록")} · 담당 ${escapeHtml(user.serviceArea || "미등록")}</small></div><div class="management-cell memo-cell"><span>현재 배정·인사메모</span><strong>${client ? `${escapeHtml(client.motherName)} · ${escapeHtml(client.babyName)}` : "현재 배정 없음"}</strong><small>${escapeHtml(user.hrNotes || "인사 메모 없음")}</small></div><div class="management-actions"><span class="status-chip ${user.status === "pending" || user.employmentStatus === "INACTIVE" || suspended ? "coral" : ""}">${suspended ? "계정 정지" : employmentLabel}</span><button class="secondary-button mini-button" data-manage-caregiver="${user.id}">프로필·수정</button>${user.status !== "pending" ? `<button class="${suspended ? "primary-button" : "text-button danger-text"} mini-button" data-member-status="${suspended ? "ACTIVE" : "SUSPENDED"}" data-member-user-id="${user.id}" data-member-name="${escapeHtml(user.fullName)}">${suspended ? "계정 활성화" : "계정 정지"}</button>` : ""}</div></div>`;
   }
 
+  const DATABASE_ROLE_BY_APP_ROLE = {
+    admin: "ADMIN",
+    client: "CLIENT",
+    caregiver: "CAREGIVER",
+    retail: "RETAIL_STAFF",
+  };
+
+  function memberAccountRowMarkup(user) {
+    const isSelf = user.id === authUser()?.id;
+    const archived = user.accountStatus === "REJECTED";
+    const pending = user.accountStatus === "PENDING";
+    const currentRole = DATABASE_ROLE_BY_APP_ROLE[user.role] || "CLIENT";
+    const roleOptions = [
+      ["CLIENT", "고객"],
+      ["CAREGIVER", "관리사"],
+      ["RETAIL_STAFF", "리테일 직원"],
+      ["ADMIN", "관리자"],
+    ];
+    return `<div class="management-row member-account-row ${archived ? "is-archived" : ""}"><div class="management-identity"><div class="mini-avatar">${escapeHtml(user.initials || initialsFor(user.fullName))}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email || "이메일 미등록")}</span></div></div><div class="management-cell"><span>회원 종류</span><select class="member-role-select" data-member-role data-member-user-id="${user.id}" data-member-name="${escapeHtml(user.fullName)}" ${isSelf || archived ? "disabled" : ""}>${roleOptions.map(([value, label]) => `<option value="${value}" ${value === currentRole ? "selected" : ""}>${label}</option>`).join("")}</select><small>${isSelf ? "로그인 중인 관리자 계정" : "변경 즉시 접근 권한 재설정"}</small></div><div class="management-cell"><span>가입일</span><strong>${user.createdAt ? new Date(user.createdAt).toLocaleDateString("ko-KR") : "미등록"}</strong><small>${escapeHtml(user.phone || "전화 미등록")}</small></div><div class="management-cell"><span>계정 상태</span><strong>${archived ? "삭제·보관" : pending ? "승인 대기" : user.accountStatus === "SUSPENDED" ? "접근 정지" : "정상"}</strong><small>${archived ? "로그인 및 데이터 접근 차단" : "Supabase 인증 계정과 연결됨"}</small></div><div class="management-actions">${isSelf ? `<span class="status-chip">현재 관리자</span>` : archived ? `<span class="status-chip coral">보관됨</span>` : `<button class="text-button danger-text mini-button" data-archive-member="${user.id}" data-member-name="${escapeHtml(user.fullName)}">회원 삭제</button>`}</div></div>`;
+  }
+
   function requestManagementRowMarkup(request, mode) {
     const client = clientById(request.clientId);
     const isApprovedQueue = mode === "approved";
@@ -1140,11 +1160,14 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
     const caregiverPage = paginateDirectory(sortedCaregivers, directory.caregiverPage, directory.caregiverPageSize);
     const clientCount = clientQuery ? `${clients.length} / ${state.clients.length} families` : `${state.clients.length} families`;
     const caregiverCount = caregiverQuery ? `${sortedCaregivers.length} / ${caregivers.length} people` : `${caregivers.length} people`;
+    const visibleMembers = [...state.users].sort((first, second) => new Date(second.createdAt || 0) - new Date(first.createdAt || 0));
+    const activeMemberCount = visibleMembers.filter((user) => user.accountStatus !== "REJECTED").length;
     return `
       <section class="page">
         ${demoBanner()}
         ${pageHeading("CLIENT CRM & PEOPLE", "고객·아기 관리 및 인사관리", "가입 승인부터 고객 상담 기록, 아기 정보, 관리사 경력과 근무 이력까지 한 곳에서 관리합니다.")}
         <div class="grid stats people-stats">${statCard("Clients", state.clients.length, `${activeClients.length}명 서비스 관리 중`, "♡")}${statCard("Caregivers", caregivers.length, `${caregivers.filter((user) => user.status === "approved").length}명 승인됨`, "♙")}${statCard("Active assignments", state.assignments.filter(isAssignmentCurrent).length, "현재 진행 중", "◷")}${statCard("Caregiver approvals", pendingCaregivers.length, "관리사 계정 검토 필요", "!")}</div>
+        <article class="card card-pad management-directory member-governance"><div class="section-header"><div><p class="eyebrow">MEMBER DATABASE</p><h3>웹앱 회원 데이터베이스 관리</h3><p>Admin 계정에서 회원 종류와 접근 상태를 관리합니다. 회원 삭제는 운영 기록을 보존하면서 로그인·데이터 접근을 차단하는 안전한 보관 방식입니다.</p></div><span class="status-chip">${activeMemberCount} active · ${visibleMembers.length} total</span></div><div class="management-list">${visibleMembers.length ? visibleMembers.map(memberAccountRowMarkup).join("") : `<div class="directory-empty"><strong>가입 회원이 없습니다.</strong></div>`}</div></article>
         ${pendingCaregivers.length ? `<article class="card card-pad approval-panel"><div class="section-header"><div><h3>승인 대기 관리사</h3><p>자격·경력 정보를 검토하고 인사정보를 보완한 후 승인하세요.</p></div><span class="status-chip coral">${pendingCaregivers.length} pending</span></div><div class="people-list">${pendingCaregivers.map((user) => `<div class="person-row pending-caregiver-row"><div class="mini-avatar">${user.initials}</div><div class="person-copy"><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email)} · ${escapeHtml(user.certification || "자격 정보 미입력")}</span></div><div class="management-actions"><button class="secondary-button mini-button" data-manage-caregiver="${user.id}">프로필 검토</button><button class="primary-button mini-button" data-approve-user="${user.id}">관리사 승인</button></div></div>`).join("")}</div></article>` : `<div class="status-banner success">✓ 현재 승인 대기 중인 관리사가 없습니다.</div>`}
         <article class="card card-pad management-directory"><div class="section-header"><div><p class="eyebrow">CLIENT CRM</p><h3>고객·아기 관리</h3><p>고객·아기 이름 또는 관리 년월로 찾고 정렬해 상담·계약 정보를 관리합니다.</p></div><span class="status-chip">${clientCount}</span></div>${directoryToolbarMarkup("client", directory.clientQuery, directory.clientSort, directory.clientPageSize)}<div class="management-list">${clientPage.items.length ? clientPage.items.map(clientManagementRowMarkup).join("") : `<div class="directory-empty"><strong>검색 결과가 없습니다.</strong><span>검색어를 바꾸거나 초기화해 주세요.</span></div>`}</div>${directoryPaginationMarkup("client", clientPage)}</article>
         <article class="card card-pad management-directory"><div class="section-header"><div><p class="eyebrow">CAREGIVER HR</p><h3>관리사 인사관리</h3><p>이름, 입사년월, 거주지역 기준으로 관리사를 빠르게 찾고 정렬합니다.</p></div><span class="status-chip">${caregiverCount}</span></div>${directoryToolbarMarkup("caregiver", directory.caregiverQuery, directory.caregiverSort, directory.caregiverPageSize)}<div class="management-list">${caregiverPage.items.length ? caregiverPage.items.map(caregiverManagementRowMarkup).join("") : `<div class="directory-empty"><strong>검색 결과가 없습니다.</strong><span>검색어를 바꾸거나 초기화해 주세요.</span></div>`}</div>${directoryPaginationMarkup("caregiver", caregiverPage)}</article>
@@ -1963,7 +1986,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
             <div class="field"><label for="login-password">비밀번호</label><input id="login-password" name="password" type="password" autocomplete="current-password" required /></div>
             <button class="primary-button auth-submit" type="submit">로그인</button>
           </form>
-          ${cloudEnabled ? `<div class="cloud-auth-note"><strong>Supabase 보안 로그인</strong><span>일반 회원은 이메일 인증과 실제 계정 권한으로 접속합니다.</span></div><div class="demo-accounts"><strong>테스트 전용 관리자</strong><span>관리자: Admin / 1234</span><span>데모 데이터만 사용하며 실제 고객 데이터에는 연결되지 않습니다.</span></div>` : `<div class="demo-accounts"><strong>초기 운영 계정</strong><span>관리자: Admin / 1234</span><span>리테일: Retail / 1234</span></div>`}
+          ${cloudEnabled ? `<div class="cloud-auth-note"><strong>Supabase 보안 로그인</strong><span>고객·관리사는 이메일로 로그인하며, 관리사는 관리자 승인 후 전용 기능을 이용합니다.</span></div><div class="demo-accounts"><strong>데이터베이스 관리자</strong><span>관리자: Admin / 1234</span><span>실제 회원·예약·기록 데이터 관리 권한으로 연결됩니다.</span></div>` : `<div class="demo-accounts"><strong>초기 운영 계정</strong><span>관리자: Admin / 1234</span><span>리테일: Retail / 1234</span></div>`}
           <div class="auth-switch"><span>처음 이용하시나요?</span><button data-auth-screen="signup">회원가입</button></div><button class="auth-home-link" data-auth-screen="public">← K-Wellness 사이트로 돌아가기</button>
         </div>
       </section>
@@ -2029,21 +2052,6 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
   async function handleLogin(event) {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget).entries());
-    const normalizedIdentifier = String(values.identifier || "").trim().toLowerCase();
-    if (normalizedIdentifier === "admin" && values.password === "1234") {
-      demoAdminMode = true;
-      const demoState = buildSeedState();
-      state = demoState;
-      state.auth.currentUserId = "user-admin";
-      state.auth.screen = "portal";
-      state.role = "admin";
-      cloudLoading = false;
-      cloudLoadError = "";
-      render();
-      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-      showToast("테스트 전용 관리자 데모로 로그인했습니다.");
-      return;
-    }
     if (cloudEnabled) {
       const submitButton = event.currentTarget.querySelector('button[type="submit"]');
       submitButton.disabled = true;
@@ -2154,16 +2162,6 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
   }
 
   async function logout() {
-    if (demoAdminMode) {
-      demoAdminMode = false;
-      const clean = loadState();
-      state = { ...clean, auth: { ...clean.auth, currentUserId: null, screen: "public" } };
-      closeModal();
-      saveState();
-      render();
-      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-      return;
-    }
     if (cloudEnabled) {
       try {
         await signOutCloud();
@@ -2486,6 +2484,61 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
         } catch (error) {
           showToast(error.message || `회원 계정을 ${actionLabel}하지 못했습니다.`);
           button.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-member-role]").forEach((select) => {
+      select.addEventListener("change", async () => {
+        const member = state.users.find((item) => item.id === select.dataset.memberUserId);
+        const previousRole = DATABASE_ROLE_BY_APP_ROLE[member?.role] || "CLIENT";
+        const nextRole = select.value;
+        const memberName = select.dataset.memberName || "선택한 회원";
+        const nextLabel = select.options[select.selectedIndex]?.textContent || nextRole;
+        if (!window.confirm(`${memberName} 회원을 '${nextLabel}' 유형으로 변경하시겠습니까?\n기존 고객·관리사 접근 권한은 즉시 재설정됩니다.`)) {
+          select.value = previousRole;
+          return;
+        }
+        select.disabled = true;
+        if (!usingCloudData()) {
+          if (member) member.role = ({ CLIENT: "client", CAREGIVER: "caregiver", RETAIL_STAFF: "retail", ADMIN: "admin" })[nextRole];
+          saveState();
+          render();
+          showToast(`${memberName} 회원 종류를 ${nextLabel}(으)로 변경했습니다.`);
+          return;
+        }
+        try {
+          await changeMemberRoleCloud(select.dataset.memberUserId, nextRole);
+          await refreshCloudState();
+          showToast(`${memberName} 회원 종류를 ${nextLabel}(으)로 변경했습니다.`);
+        } catch (error) {
+          select.value = previousRole;
+          select.disabled = false;
+          showToast(error.message || "회원 종류를 변경하지 못했습니다.");
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-archive-member]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const memberName = button.dataset.memberName || "선택한 회원";
+        if (!window.confirm(`${memberName} 회원을 정말 삭제하시겠습니까?\n로그인과 모든 웹앱 데이터 접근이 즉시 차단되며, 법적·운영상 필요한 기존 기록은 안전하게 보관됩니다.`)) return;
+        button.disabled = true;
+        if (!usingCloudData()) {
+          const member = state.users.find((item) => item.id === button.dataset.archiveMember);
+          if (member) member.accountStatus = "REJECTED";
+          saveState();
+          render();
+          showToast(`${memberName} 회원을 삭제·보관했습니다.`);
+          return;
+        }
+        try {
+          await archiveMemberCloud(button.dataset.archiveMember);
+          await refreshCloudState();
+          showToast(`${memberName} 회원을 삭제·보관했습니다.`);
+        } catch (error) {
+          button.disabled = false;
+          showToast(error.message || "회원을 삭제하지 못했습니다.");
         }
       });
     });

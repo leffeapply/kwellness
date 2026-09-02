@@ -69,6 +69,7 @@ export async function currentCloudSession() {
 
 export async function signInCloud(identifier, password) {
   const aliases = {
+    admin: "admin@kwellness.test",
     retail: "retail@k-wellness.com",
   };
   const email = aliases[String(identifier).trim().toLowerCase()] || String(identifier).trim().toLowerCase();
@@ -463,6 +464,19 @@ export async function setMemberStatusCloud(userId, status) {
     p_user_id: userId,
     p_status: status,
   }), "회원 상태 변경");
+}
+
+export async function changeMemberRoleCloud(userId, role) {
+  return throwIfError(await supabase.rpc("admin_change_member_role", {
+    p_user_id: userId,
+    p_role: role,
+  }), "회원 종류 변경");
+}
+
+export async function archiveMemberCloud(userId) {
+  return throwIfError(await supabase.rpc("admin_archive_member", {
+    p_user_id: userId,
+  }), "회원 삭제");
 }
 
 async function authenticatedUserId() {

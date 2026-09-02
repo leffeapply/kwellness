@@ -999,6 +999,23 @@ button:disabled {
   border-bottom: 1px solid var(--line);
 }
 .management-row:last-child { border-bottom: 0; }
+.member-governance { margin-top: 18px; }
+.member-account-row { grid-template-columns: minmax(210px, 1.3fr) minmax(145px, .8fr) minmax(120px, .65fr) minmax(145px, .8fr) auto; }
+.member-account-row.is-archived { opacity: .66; }
+.member-role-select {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: white;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 700;
+}
+.member-role-select:focus { border-color: var(--green-2); box-shadow: 0 0 0 3px rgba(43, 108, 99, .1); outline: none; }
+.member-role-select:disabled { color: var(--ink-soft); background: var(--sand); cursor: not-allowed; }
 .management-identity { display: flex; min-width: 0; align-items: center; gap: 11px; }
 .management-identity > div:last-child { min-width: 0; }
 .management-identity strong, .management-identity span, .management-cell span, .management-cell strong, .management-cell small { display: block; }
