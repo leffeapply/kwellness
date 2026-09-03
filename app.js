@@ -2001,7 +2001,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
           <div class="field"><span class="field-label">가입 유형</span><div class="option-grid two">${radioOptions("role", [["client", "고객 / 보호자"], ["caregiver", "관리사"]], "client")}</div></div>
           <div class="form-grid two"><div class="field"><label for="signup-name">이름</label><input id="signup-name" name="fullName" autocomplete="name" required /></div><div class="field"><label for="signup-phone">전화번호</label><input id="signup-phone" name="phone" autocomplete="tel" required /></div></div>
           <div class="field"><label for="signup-email">이메일</label><input id="signup-email" name="email" type="email" autocomplete="email" required /></div>
-          <div class="field"><label for="signup-password">비밀번호</label><input id="signup-password" name="password" type="password" minlength="${cloudEnabled ? 12 : 8}" autocomplete="new-password" required /><small>${cloudEnabled ? "영문 대·소문자, 숫자, 특수문자를 포함해 12자 이상으로 입력해 주세요." : "8자 이상으로 입력해 주세요."}</small></div>
+          <div class="field"><label for="signup-password">비밀번호</label><input id="signup-password" name="password" type="password" minlength="8" autocomplete="new-password" required /><small>특수문자 없이도 가능하며, 8자 이상으로 입력해 주세요.</small></div>
           <div data-client-signup-fields>
             <div class="client-request-fields basic-profile-fields"><h3>고객 기본정보</h3><p>아기 정보와 돌봄 일정은 가입 후 별도의 서비스 신청 메뉴에서 입력합니다.</p><div class="form-grid two"><div class="field"><label for="signup-birth">생년월일 <span class="optional-label">선택</span></label><input id="signup-birth" name="dateOfBirth" type="date" /></div><div class="field"><label for="signup-language">선호 언어 <span class="optional-label">선택</span></label><input id="signup-language" name="preferredLanguage" placeholder="한국어, English" /></div></div><div class="field"><label for="signup-address">주소 <span class="optional-label">선택</span></label><input id="signup-address" name="address" autocomplete="street-address" placeholder="Street, City, State ZIP" /></div><div class="field"><label for="signup-emergency">비상 연락처 <span class="optional-label">선택</span></label><input id="signup-emergency" name="emergencyContact" placeholder="이름 · 전화번호" /></div></div>
           </div>
@@ -2109,7 +2109,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
           state.auth.screen = "login";
           saveState();
           render();
-          showToast("가입 확인 이메일을 보냈습니다. 이메일 인증 후 로그인해 주세요.");
+          showToast("회원가입이 완료되었습니다. 입력한 이메일과 비밀번호로 로그인해 주세요.");
         }
       } catch (error) {
         showToast(error.message || "회원가입을 완료하지 못했습니다.");
@@ -2873,7 +2873,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
 
   function openPasswordModal() {
     const user = authUser();
-    const passwordMinLength = usingCloudData() ? 12 : 4;
+    const passwordMinLength = 8;
     modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal" role="dialog" aria-modal="true" aria-labelledby="password-title"><header class="modal-header"><div><h3 id="password-title">비밀번호 변경</h3><p>${escapeHtml(user.login)} 계정</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-password-form><div class="field"><label for="current-password">현재 비밀번호</label><input id="current-password" name="currentPassword" type="password" required /></div><div class="field"><label for="new-password">새 비밀번호</label><input id="new-password" name="newPassword" type="password" minlength="${passwordMinLength}" required /><small>${passwordMinLength}자 이상으로 설정해 주세요.</small></div><div class="field"><label for="confirm-password">새 비밀번호 확인</label><input id="confirm-password" name="confirmPassword" type="password" minlength="${passwordMinLength}" required /></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">변경하기</button></div></form></section></div>`;
     modalRoot.querySelectorAll("[data-close-modal]").forEach((button) => button.addEventListener("click", closeModal));
     modalRoot.querySelector("[data-modal-backdrop]").addEventListener("click", (event) => { if (event.target === event.currentTarget) closeModal(); });
