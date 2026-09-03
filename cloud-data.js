@@ -108,7 +108,7 @@ export async function claimInitialAdminIfEligible(email) {
   void email;
 }
 
-export async function loadCloudState(session) {
+async function loadCloudStateOnce(session) {
   if (!session?.user) throw new Error("로그인 세션이 없습니다.");
 
   const [
@@ -392,6 +392,37 @@ export async function loadCloudState(session) {
       address: currentAssignment?.address || "",
     },
   };
+}
+
+const AUTH_CLOCK_RETRY_DELAYS = [1000, 2000, 3000, 4000];
+
+function isAuthClockSkewError(error) {
+  const message = String(error?.message || error?.cause?.message || "").toLowerCase();
+  return message.includes("jwt issued at future")
+    || message.includes("jwt issued in the future")
+    || message.includes("token is not yet valid");
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+export async function loadCloudState(session) {
+  let lastError;
+  for (let attempt = 0; attempt <= AUTH_CLOCK_RETRY_DELAYS.length; attempt += 1) {
+    try {
+      return await loadCloudStateOnce(session);
+    } catch (error) {
+      lastError = error;
+      if (!isAuthClockSkewError(error)) throw error;
+      if (attempt === AUTH_CLOCK_RETRY_DELAYS.length) break;
+      await wait(AUTH_CLOCK_RETRY_DELAYS[attempt]);
+    }
+  }
+
+  const error = new Error("인증 서버와 데이터 서버를 동기화하는 중입니다. 잠시 후 다시 시도해 주세요.");
+  error.cause = lastError;
+  throw error;
 }
 
 export async function submitServiceRequestCloud(values, derived) {
