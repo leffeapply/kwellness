@@ -1,18 +1,19 @@
 {
-  "name": "K-Wellness CareOS",
-  "short_name": "K-Wellness",
+  "name": "ProMoms | 프로맘스",
+  "short_name": "ProMoms",
   "description": "산후관리 운영과 가족의 안심을 연결하는 케어 플랫폼",
-  "start_url": "./",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#f7f4ed",
-  "theme_color": "#174f4a",
+  "theme_color": "#214d3b",
   "lang": "ko",
   "icons": [
     {
-      "src": "./assets/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "/assets/promoms-logo.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

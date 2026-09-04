@@ -1,4 +1,5 @@
 import { backendStatus, supabase } from "./supabase-client.js";
+import proMomsLogoUrl from "./assets/promoms-logo.png";
 import {
   approveCaregiverCloud,
   archiveMemberCloud,
@@ -20,10 +21,15 @@ import {
   updatePasswordCloud,
 } from "./cloud-data.js";
 
-window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
+window.ProMomsBackend = window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
 
 (function () {
   "use strict";
+
+  function brandLogoMarkup(full = false) {
+    const viewBox = full ? "145 290 955 800" : "300 295 650 465";
+    return `<svg class="promoms-logo ${full ? "promoms-logo-full" : "promoms-logo-symbol"}" viewBox="${viewBox}" role="img" aria-label="${full ? "ProMoms 프로맘스 — 엄마 곁의 전문가" : "ProMoms"}"><image href="${proMomsLogoUrl}" width="1254" height="1254" /></svg>`;
+  }
 
   const STORAGE_KEY = "k-wellness-careos-demo-v6";
   const CLOUD_PREFS_KEY = "k-wellness-careos-cloud-preferences-v1";
@@ -87,7 +93,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
       { id: "services", label: "나의 서비스", icon: "⌂" },
       { id: "postpartum", label: "나의 산후조리", icon: "♡" },
       { id: "babysitting", label: "나의 베이비시팅", icon: "☆" },
-      { id: "shop", label: "K-스토어", icon: "◇" },
+      { id: "shop", label: "ProMoms 스토어", icon: "◇" },
       { id: "purchases", label: "구매 내역", icon: "▤" },
     ],
     retail: [
@@ -801,8 +807,8 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
       <div class="app-shell">
         <aside class="sidebar">
           <div class="brand">
-            <div class="brand-mark">K</div>
-            <div class="brand-copy"><strong>K-Wellness</strong><small>CAREOS</small></div>
+            <div class="brand-mark">${brandLogoMarkup()}</div>
+            <div class="brand-copy"><strong>ProMoms</strong><small>CARE · BABY · BEAUTY</small></div>
           </div>
           <div class="side-section-label">Workspace</div>
           <nav class="side-nav" aria-label="주요 메뉴">${navMarkup("side")}</nav>
@@ -813,7 +819,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
 
         <main class="main-area">
           <header class="mobile-header">
-            <div class="mobile-brand"><div class="brand-mark">K</div><strong>K-Wellness</strong></div>
+            <div class="mobile-brand"><div class="brand-mark">${brandLogoMarkup()}</div><strong>ProMoms</strong></div>
               ${state.role === "client" ? `<button class="mobile-logout" data-public-home>홈페이지</button>` : ""}<button class="mobile-logout" data-logout>로그아웃</button>
           </header>
           <header class="topbar">
@@ -878,7 +884,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
     return `
       <section class="page">
         ${demoBanner()}
-        ${pageHeading("K-WELLNESS OPERATIONS", "Good morning, Grace.", "오늘의 케어 일정과 주의가 필요한 운영 항목입니다.")}
+        ${pageHeading("ProMoms OPERATIONS", "Good morning, Grace.", "오늘의 케어 일정과 주의가 필요한 운영 항목입니다.")}
         <div class="grid stats">
           ${statCard("Active Care", activeAssignments.length, `${activeAssignments.filter((item) => assignmentServiceType(item) === "POSTPARTUM").length} 산후조리 · ${activeAssignments.filter((item) => assignmentServiceType(item) === "BABYSITTING").length} 베이비시팅`, "♡")}
           ${statCard("W-2 Caregivers", caregivers.length, "보험 적용 정식 직원", "♙")}
@@ -1413,7 +1419,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
     const meta = serviceMetaFor(serviceType);
     const statusTitle = pending ? `${meta.label} 신청을 확인하고 있습니다.` : approvedWaiting ? `${meta.label} 신청이 승인되었습니다.` : `현재 이용중인 ${meta.label} 서비스가 없습니다.`;
     const statusDescription = pending ? "관리자가 신청 내용과 희망 일정을 검토하고 있습니다." : approvedWaiting ? "관리자가 승인된 신청 목록에서 관리사와 일정을 배치하면 서비스 화면이 활성화됩니다." : "필요한 서비스를 신청하면 승인과 일정 배치 과정을 이곳에서 확인할 수 있습니다.";
-    return `<section class="page client-service-gate">${demoBanner()}${workspaceNav}<article class="card service-gate-card ${meta.tone}"><div class="service-gate-art"><span>${pending || approvedWaiting ? "◷" : meta.icon}</span></div><div>${serviceBadgeMarkup(serviceType)}<p class="eyebrow">MY ${serviceType === "BABYSITTING" ? "BABYSITTING" : "POSTPARTUM CARE"}</p><h2>${statusTitle}</h2><p>${statusDescription}</p>${request ? `<div class="gate-request-summary"><span>${request.weeks}주</span><span>${new Date(request.desiredStartDate).toLocaleDateString("ko-KR")} 시작</span><span>${request.dailyStart}–${request.dailyEnd}</span><span>${pending ? "승인 검토 중" : approvedWaiting ? "일정 배정 대기" : "처리 완료"}</span></div>` : ""}${serviceType === "BABYSITTING" ? `<div class="privacy-boundary-note"><strong>독립적으로 신청 가능한 서비스</strong><span>산후조리 이용 이력이 없어도 신청할 수 있습니다. 단, 동일 아기의 산후조리 이용 기간과 동시에 진행할 수 없습니다.</span></div>` : ""}<div class="service-gate-actions">${pending || approvedWaiting ? "" : `<button class="primary-button" data-service-apply="${serviceType}">${meta.label} 신청</button>`}<button class="secondary-button" data-nav="services">나의 서비스로</button><button class="secondary-button" data-nav="shop">K-스토어</button></div></div></article></section>`;
+    return `<section class="page client-service-gate">${demoBanner()}${workspaceNav}<article class="card service-gate-card ${meta.tone}"><div class="service-gate-art"><span>${pending || approvedWaiting ? "◷" : meta.icon}</span></div><div>${serviceBadgeMarkup(serviceType)}<p class="eyebrow">MY ${serviceType === "BABYSITTING" ? "BABYSITTING" : "POSTPARTUM CARE"}</p><h2>${statusTitle}</h2><p>${statusDescription}</p>${request ? `<div class="gate-request-summary"><span>${request.weeks}주</span><span>${new Date(request.desiredStartDate).toLocaleDateString("ko-KR")} 시작</span><span>${request.dailyStart}–${request.dailyEnd}</span><span>${pending ? "승인 검토 중" : approvedWaiting ? "일정 배정 대기" : "처리 완료"}</span></div>` : ""}${serviceType === "BABYSITTING" ? `<div class="privacy-boundary-note"><strong>독립적으로 신청 가능한 서비스</strong><span>산후조리 이용 이력이 없어도 신청할 수 있습니다. 단, 동일 아기의 산후조리 이용 기간과 동시에 진행할 수 없습니다.</span></div>` : ""}<div class="service-gate-actions">${pending || approvedWaiting ? "" : `<button class="primary-button" data-service-apply="${serviceType}">${meta.label} 신청</button>`}<button class="secondary-button" data-nav="services">나의 서비스로</button><button class="secondary-button" data-nav="shop">ProMoms 스토어</button></div></div></article></section>`;
   }
 
   function clientServiceOverviewCard(client, serviceType) {
@@ -1484,7 +1490,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
 
         <div class="grid two" style="margin-top:18px">
           <article class="card card-pad"><div class="section-header"><div><h3>오늘의 케어</h3><p>최근 활동 타임라인</p></div><button class="text-button" data-service-tab="timeline" data-service-type="POSTPARTUM">전체 보기 →</button></div>${timelineMarkup(5, assignment)}</article>
-          <article class="card report-note"><p>${escapeHtml(client?.babyName || "아기")}의 오늘 수유와 휴식 기록을 요약한 내용입니다. 체온과 활동 기록은 배정된 관리사가 입력한 데이터만 표시됩니다.</p><span>— K-Wellness approved care record</span></article>
+          <article class="card report-note"><p>${escapeHtml(client?.babyName || "아기")}의 오늘 수유와 휴식 기록을 요약한 내용입니다. 체온과 활동 기록은 배정된 관리사가 입력한 데이터만 표시됩니다.</p><span>— ProMoms approved care record</span></article>
         </div>
       </section>`;
   }
@@ -1535,7 +1541,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
   }
 
   function categoryLabel(category) {
-    return category === "BEAUTY" ? "K-Beauty" : "Baby Care";
+    return category === "BEAUTY" ? "맘스 뷰티" : "Baby Care";
   }
 
   function retailTotals() {
@@ -1557,7 +1563,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
 
   function categoryFilters(activeCategory, scope) {
     return `<div class="category-tabs" role="group" aria-label="상품 카테고리">
-      ${[["ALL", "전체"], ["BEAUTY", "K-Beauty"], ["BABY", "유아용품"]]
+      ${[["ALL", "전체"], ["BEAUTY", "맘스 뷰티"], ["BABY", "유아용품"]]
         .map(([value, label]) => `<button class="category-tab ${activeCategory === value ? "active" : ""}" data-retail-category="${value}" data-category-scope="${scope}">${label}</button>`)
         .join("")}
     </div>`;
@@ -1633,7 +1639,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
     const totals = retailTotals();
     return `<section class="page">
       ${demoBanner()}
-      ${pageHeading("RETAIL OPERATIONS", "K-Beauty & Baby Retail", "상품 판매를 고객 CRM과 연결하고 재고는 입출고 이동의 합으로 관리합니다.")}
+      ${pageHeading("RETAIL OPERATIONS", "맘스 뷰티 & Baby Retail", "상품 판매를 고객 CRM과 연결하고 재고는 입출고 이동의 합으로 관리합니다.")}
       <div class="grid stats">
         ${statCard("Retail Revenue", money(totals.revenue), `${totals.items} items sold`, "◇")}
         ${statCard("Gross Margin", `${totals.margin}%`, `COGS ${money(totals.cogs)}`, "↗")}
@@ -1643,7 +1649,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
       <div class="grid two" style="margin-top:18px">
         <article class="card card-pad"><div class="section-header"><div><h3>최근 주문</h3><p>Care CRM, 고객 앱, 오프라인 POS 통합</p></div><span class="status-chip">Read only</span></div>${orderRows(4)}</article>
         <article class="card card-pad"><div class="section-header"><div><h3>Care → Retail</h3><p>고객 생애주기 기반의 관련 제안</p></div><span class="status-chip coral">CRM</span></div>
-          <div class="attention-list">${attentionItem("♡", "Emma 100일 준비", "Baby Care Essentials Kit · 일반적 행사 알림")}${attentionItem("◇", "산후 케어 종료 고객", "감사 혜택과 K-Beauty 방문 제안")}${attentionItem("↗", "케어 고객 구매 전환", "이번 달 31% · 목표 35%")}</div>
+          <div class="attention-list">${attentionItem("♡", "Emma 100일 준비", "Baby Care Essentials Kit · 일반적 행사 알림")}${attentionItem("◇", "산후 케어 종료 고객", "감사 혜택과 맘스 뷰티 방문 제안")}${attentionItem("↗", "케어 고객 구매 전환", "이번 달 31% · 목표 35%")}</div>
         </article>
       </div>
     </section>`;
@@ -1663,7 +1669,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
       </div>
       <div class="grid three" style="margin-top:18px">
         <article class="card card-pad metric-story"><span class="metric-kicker">SERVICE</span><strong>84%</strong><h3>Caregiver utilization</h3><p>배정 가능한 근무 시간 대비 실제 케어 시간</p></article>
-        <article class="card card-pad metric-story"><span class="metric-kicker coral">CUSTOMER</span><strong>78%</strong><h3>90-day retention</h3><p>케어 종료 후에도 K-Wellness 관계를 유지한 고객</p></article>
+        <article class="card card-pad metric-story"><span class="metric-kicker coral">CUSTOMER</span><strong>78%</strong><h3>90-day retention</h3><p>케어 종료 후에도 ProMoms 관계를 유지한 고객</p></article>
         <article class="card card-pad metric-story"><span class="metric-kicker gold">RETAIL</span><strong>31%</strong><h3>Care-to-retail conversion</h3><p>케어 고객 중 관련 상품을 구매한 고객 비율</p></article>
       </div>
       <article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>AI Assistant 준비 영역</h3><p>의료 판단이 아닌 요약과 운영 지원에 집중</p></div><span class="status-chip">Phase 6</span></div><div class="insight-grid"><div><span>CARE SUMMARY</span><strong>이벤트 → 승인 가능한 일일 리포트 초안</strong></div><div><span>OPERATIONS</span><strong>미배정 일정과 주의 기록의 우선순위 요약</strong></div><div><span>CRM</span><strong>고객 생애주기 기반 후속 연락 제안</strong></div></div></article>
@@ -1708,7 +1714,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
   function clientShop() {
     return `<section class="page retail-page">
       ${demoBanner()}
-      ${pageHeading("K-WELLNESS STORE", "Everyday care, thoughtfully selected.", "K-Beauty와 유아용품을 한 곳에서 둘러보세요. 건강 상태 기반 추천이나 의료적 주장은 사용하지 않습니다.")}
+      ${pageHeading("ProMoms STORE", "Everyday care, thoughtfully selected.", "맘스 뷰티와 유아용품을 한 곳에서 둘러보세요. 건강 상태 기반 추천이나 의료적 주장은 사용하지 않습니다.")}
       <div class="retail-layout"><div><div class="retail-toolbar">${categoryFilters(state.retail.selectedCategory, "shop")}<span class="status-chip coral">Member Benefits</span></div>${productGrid(state.retail.selectedCategory, "client")}</div>${cartMarkup("client")}</div>
     </section>`;
   }
@@ -1830,7 +1836,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
     const assignment = assignmentForClient(client.id, serviceType);
     if (serviceType === "BABYSITTING") return clientBabysittingSummary(client, assignment, workspaceNav);
     const reports = state.reports.filter((report) => report.clientId === client?.id && report.status === "published" && (!report.serviceType || report.serviceType === "POSTPARTUM"));
-    return `<section class="page report-page">${demoBanner()}${workspaceNav}${pageHeading("MY CARE CHARTS", "나와 아기의 관리 차트", "본인의 산후조리 배정에 연결된 케어 기록만 안전하게 표시됩니다.")}<header class="print-report-header"><div class="brand-mark">K</div><div><strong>K-WELLNESS CARE REPORT</strong><span>${todayLabel()} · ${escapeHtml(client?.motherName || "고객")} / ${escapeHtml(client?.babyName || "아기")}</span></div></header>${client ? careChartsMarkup(client.id, assignment.id) : ""}${reports.length ? `<article class="card card-pad published-reports"><div class="section-header"><div><h3>관리자가 보낸 리포트</h3><p>PDF로 저장 가능한 승인 리포트</p></div><span class="status-chip">${reports.length} reports</span></div>${reports.map((report) => `<div class="person-row"><div class="mini-avatar">PDF</div><div class="person-copy"><strong>${escapeHtml(report.title)}</strong><span>${new Date(report.publishedAt).toLocaleString("ko-KR")}</span></div><button class="secondary-button mini-button" data-print-report>PDF 저장</button></div>`).join("")}</article>` : ""}</section>`;
+    return `<section class="page report-page">${demoBanner()}${workspaceNav}${pageHeading("MY CARE CHARTS", "나와 아기의 관리 차트", "본인의 산후조리 배정에 연결된 케어 기록만 안전하게 표시됩니다.")}<header class="print-report-header"><div class="brand-mark">${brandLogoMarkup()}</div><div><strong>ProMoms CARE REPORT</strong><span>${todayLabel()} · ${escapeHtml(client?.motherName || "고객")} / ${escapeHtml(client?.babyName || "아기")}</span></div></header>${client ? careChartsMarkup(client.id, assignment.id) : ""}${reports.length ? `<article class="card card-pad published-reports"><div class="section-header"><div><h3>관리자가 보낸 리포트</h3><p>PDF로 저장 가능한 승인 리포트</p></div><span class="status-chip">${reports.length} reports</span></div>${reports.map((report) => `<div class="person-row"><div class="mini-avatar">PDF</div><div class="person-copy"><strong>${escapeHtml(report.title)}</strong><span>${new Date(report.publishedAt).toLocaleString("ko-KR")}</span></div><button class="secondary-button mini-button" data-print-report>PDF 저장</button></div>`).join("")}</article>` : ""}</section>`;
   }
 
   function clientServiceWorkspace(serviceType) {
@@ -1866,9 +1872,9 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
     const babysitting = assignmentServiceType(assignment) === "BABYSITTING";
     return `<section class="page report-page">${demoBanner()}${pageHeading("CARE REPORTS", "전체 산모·아기 차트와 리포트", "관리자는 모든 고객 기록을 검토하고 승인 리포트를 고객 화면에 전달할 수 있습니다.")}
       <div class="report-toolbar card"><div class="field"><label for="report-client">고객 선택</label><select id="report-client" data-admin-client>${state.clients.map((item) => `<option value="${item.id}" ${item.id === client.id ? "selected" : ""}>${escapeHtml(item.motherName)} / ${escapeHtml(item.babyName)}</option>`).join("")}</select></div><div class="report-actions"><button class="secondary-button" data-print-report>PDF로 저장</button><button class="primary-button" data-publish-report="${client.id}">리포트 생성·고객에게 보내기</button></div></div>
-      <header class="print-report-header"><div class="brand-mark">K</div><div><strong>K-WELLNESS CARE REPORT</strong><span>${todayLabel()} · ${escapeHtml(client.motherName)} / ${escapeHtml(client.babyName)}</span></div></header>
+      <header class="print-report-header"><div class="brand-mark">${brandLogoMarkup()}</div><div><strong>ProMoms CARE REPORT</strong><span>${todayLabel()} · ${escapeHtml(client.motherName)} / ${escapeHtml(client.babyName)}</span></div></header>
       ${babysitting ? babysittingReportMarkup(client) : careChartsMarkup(client.id)}
-      <article class="card report-note" style="margin-top:18px"><p>${babysitting ? `${escapeHtml(client.babyName)}의 식사와 생활 이벤트 기록을 바탕으로 만든 베이비시팅 운영 리포트입니다.` : `${escapeHtml(client.babyName)}의 수유·수면·체온 기록과 ${escapeHtml(client.motherName)}님의 산모 케어 기록을 바탕으로 만든 운영 리포트입니다. 의료 진단이 아니며, 우려되는 상태는 의료 전문가와 상의해야 합니다.`}</p><span>Reviewed by K-Wellness Administrator</span></article>
+      <article class="card report-note" style="margin-top:18px"><p>${babysitting ? `${escapeHtml(client.babyName)}의 식사와 생활 이벤트 기록을 바탕으로 만든 베이비시팅 운영 리포트입니다.` : `${escapeHtml(client.babyName)}의 수유·수면·체온 기록과 ${escapeHtml(client.motherName)}님의 산모 케어 기록을 바탕으로 만든 운영 리포트입니다. 의료 진단이 아니며, 우려되는 상태는 의료 전문가와 상의해야 합니다.`}</p><span>Reviewed by ProMoms Administrator</span></article>
     </section>`;
   }
 
@@ -1898,18 +1904,18 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
     const defaultApplicationType = defaultServiceApplicationType(publicClient);
     const defaultApplicationLabel = defaultApplicationType === "BABYSITTING" ? "베이비시팅 미리 신청" : "서비스 신청";
     return `<div class="public-site">
-      <header class="public-header"><a class="public-brand" href="#home" data-public-anchor="home"><span>K</span><div><strong>K-Wellness</strong><small>CARE · BEAUTY · BABY</small></div></a><nav class="public-nav" aria-label="사이트 주요 메뉴"><button data-public-anchor="about">회사 소개</button><button data-public-anchor="services">서비스</button><button data-public-anchor="caregivers">관리사·후기</button><button data-public-anchor="shop-preview">스토어</button><button data-public-anchor="location">오시는 길</button><button data-public-anchor="contact">Contact</button></nav><div class="public-account-actions">${clientUser ? `<span class="public-welcome">${escapeHtml(user.fullName)}님</span><button class="secondary-button" data-service-apply="${defaultApplicationType}">${defaultApplicationLabel}</button><button class="primary-button" data-my-service>나의 서비스</button><button class="public-text-button" data-logout>로그아웃</button>` : user ? `<button class="primary-button" data-enter-portal>관리 화면</button><button class="public-text-button" data-logout>로그아웃</button>` : `<button class="public-text-button" data-auth-screen="signup">회원가입</button><button class="primary-button" data-auth-screen="login">로그인</button>`}</div></header>
+      <header class="public-header"><a class="public-brand" href="#home" data-public-anchor="home"><span class="promoms-mark">${brandLogoMarkup()}</span><div><strong>ProMoms</strong><small>엄마 곁의 전문가</small></div></a><nav class="public-nav" aria-label="사이트 주요 메뉴"><button data-public-anchor="about">회사 소개</button><button data-public-anchor="services">서비스</button><button data-public-anchor="caregivers">관리사·후기</button><button data-public-anchor="shop-preview">스토어</button><button data-public-anchor="location">오시는 길</button><button data-public-anchor="contact">Contact</button></nav><div class="public-account-actions">${clientUser ? `<span class="public-welcome">${escapeHtml(user.fullName)}님</span><button class="secondary-button" data-service-apply="${defaultApplicationType}">${defaultApplicationLabel}</button><button class="primary-button" data-my-service>나의 서비스</button><button class="public-text-button" data-logout>로그아웃</button>` : user ? `<button class="primary-button" data-enter-portal>관리 화면</button><button class="public-text-button" data-logout>로그아웃</button>` : `<button class="public-text-button" data-auth-screen="signup">회원가입</button><button class="primary-button" data-auth-screen="login">로그인</button>`}</div></header>
       <main>
-        <section class="public-hero" id="home"><div class="public-hero-copy"><p class="eyebrow">K-WELLNESS INSURED FAMILY CARE</p><h1>회복의 시간부터<br/><em>아이의 일상까지.</em></h1><p>프리미엄 산후조리와 이후 단계의 베이비시팅, 엄선한 K-Beauty·유아용품을 한곳에서 만나보세요.</p><div class="public-hero-actions"><button class="primary-button public-cta" data-service-apply="${defaultApplicationType}">${defaultApplicationType === "BABYSITTING" ? "베이비시팅 미리 신청" : "서비스 신청하기"}</button><button class="secondary-button public-cta" data-public-anchor="services">서비스 살펴보기</button></div><div class="public-trust-row"><span>✓ 책임보상보험</span><span>✓ 근로자재해보험</span><span>✓ W-2 정식 직원</span><span>✓ 고객에게 고용 리스크 전가 없음</span></div></div><div class="public-hero-visual"><div class="hero-orbit orbit-one">♡</div><div class="hero-orbit orbit-two">K</div><div class="hero-orbit orbit-three">☆</div><div class="hero-care-message"><small>INSURED STAFFING</small><strong>돌봄의 따뜻함과 고용의 책임을 함께 지킵니다.</strong><span>Care that protects every family.</span></div></div></section>
+        <section class="public-hero" id="home"><div class="public-hero-copy"><p class="eyebrow">ProMoms INSURED FAMILY CARE</p><h1>회복의 시간부터<br/><em>아이의 일상까지.</em></h1><p>전문가의 믿음직한 손길과 엄마의 따뜻한 마음. 산후조리 케어, 베이비 케어, 맘스 뷰티를 ProMoms에서 만나보세요.</p><div class="public-hero-actions"><button class="primary-button public-cta" data-service-apply="${defaultApplicationType}">${defaultApplicationType === "BABYSITTING" ? "베이비시팅 미리 신청" : "서비스 신청하기"}</button><button class="secondary-button public-cta" data-public-anchor="services">서비스 살펴보기</button></div><div class="public-trust-row"><span>✓ 책임보상보험</span><span>✓ 근로자재해보험</span><span>✓ W-2 정식 직원</span><span>✓ 고객에게 고용 리스크 전가 없음</span></div></div><div class="public-hero-visual promoms-hero">${brandLogoMarkup(true)}<p class="promoms-brand-lines">POSTPARTUM CARE · BABY CARE · MOMS BEAUTY</p></div></section>
         <div class="public-content">${publicServiceStatusMarkup(user)}
-          <section class="public-section public-about" id="about"><div class="public-section-heading"><p class="eyebrow">ABOUT K-WELLNESS</p><h2>가족에게 필요한 케어를<br/>더 투명하고 책임 있게.</h2></div><div class="about-story"><p>K-Wellness는 조지아 애틀랜타 메트로 지역의 가족을 중심으로 산모의 회복, 아이의 안전한 돌봄, 생활에 필요한 제품까지 연결하는 패밀리 웰니스 서비스입니다. 관리사를 독립계약자 방식으로 고객에게 떠넘기지 않고 회사의 정식 직원으로 고용하며, 급여·세무·고용 및 업무상 재해 리스크를 회사가 관리합니다.</p><div class="about-metrics"><div><strong>W-2</strong><span>모든 관리사 정식 직원</span></div><div><strong>Insured</strong><span>책임보상·근로자재해보험</span></div><div><strong>Atlanta</strong><span>메트로 지역 방문 케어</span></div></div></div></section>
-          <section class="public-section" id="services"><div class="public-section-heading centered"><p class="eyebrow">OUR SERVICES</p><h2>가족에게 필요한 돌봄을 선택하세요.</h2><p>산후조리와 베이비시팅은 각각 독립적으로 신청할 수 있으며, 동일 아기의 서비스 기간만 겹치지 않도록 운영합니다.</p></div><div class="public-service-grid"><article class="public-service-card featured"><span class="service-number">01</span><div class="service-symbol">♡</div><p class="eyebrow">POSTPARTUM CARE</p><h3>산후조리 서비스</h3><p>산모 회복 지원과 신생아 수유·수면·체온·목욕·체중 기록을 세심하게 관리합니다.</p><ul><li>1·2·3·4주 맞춤 일정</li><li>산모 식사·휴식·회복 지원</li><li>신생아 케어 기록과 주간 차트</li><li>보험 적용 W-2 정식 직원 배정</li></ul><div class="service-price"><span>1주 기준</span><strong>$1,800<small>/ week</small></strong></div><button class="primary-button" data-service-apply="POSTPARTUM">산후조리 신청</button></article><article class="public-service-card"><span class="service-number">02</span><div class="service-symbol">☆</div><p class="eyebrow">BABYSITTING</p><h3>베이비시팅 서비스</h3><p>산후조리 이용 여부와 관계없이 아이의 식사, 놀이, 산책과 생활 이벤트를 보호자에게 공유합니다.</p><ul><li>보험 적용 W-2 정식 직원 배정</li><li>식사·간식과 알러지 지침</li><li>놀이·산책·특이 이벤트 메모</li><li>보호자 인계사항 공유</li></ul><div class="service-price"><span>시간당</span><strong>$32<small>부터</small></strong></div><button class="primary-button" data-service-apply="BABYSITTING">베이비시팅 신청</button></article><article class="public-service-card premium-coming-soon"><span class="service-number">03</span><div class="service-symbol">✦</div><p class="eyebrow">PREMIUM ADD-ON · COMING SOON</p><h3>산모 마사지</h3><p>산후조리 고객을 위한 프리미엄 추가 상품으로 준비하고 있습니다.</p><ul><li>Georgia Massage Therapist License 필수</li><li>라이선스 확인된 전문가만 제공</li><li>마사지 업무 보험 범위 확인</li><li>산후조리 계약 Add-on 형태</li></ul><div class="service-price"><span>출시 준비 중</span><strong>미정</strong></div><button class="secondary-button" disabled>현재 선택 불가</button></article></div><section class="insured-staffing-panel"><div><p class="eyebrow">WHY INSURED STAFFING MATTERS</p><h3>법적·세무 리스크를 고객 가정에 넘기지 않습니다.</h3><p>관리사는 모두 회사의 정식 직원으로 운영합니다. K-Wellness가 급여·원천징수·고용 관리 책임을 수행하고, 책임보상보험과 근로자재해보험 체계 안에서 서비스를 제공합니다.</p></div><ul><li><span>◈</span><strong>책임보상보험</strong><small>서비스 수행 중 대인·대물 리스크 관리</small></li><li><span>✓</span><strong>근로자재해보험</strong><small>업무상 재해 책임을 고객에게 전가하지 않음</small></li><li><span>W-2</span><strong>정식 직원</strong><small>독립계약자 편법 운영 없이 회사가 고용 의무 처리</small></li></ul></section><div class="public-rules"><div><strong>이용 규칙</strong><span>① 서비스 48시간 전 일정 변경 요청</span><span>② 의약품 투여·의료행위는 제공하지 않음</span><span>③ 산후조리·베이비시팅 동시 이용 불가</span><span>④ 무면허 마사지·신체 관리는 제공하지 않음</span></div></div></section>
+          <section class="public-section public-about" id="about"><div class="public-section-heading"><p class="eyebrow">ABOUT ProMoms</p><h2>가족에게 필요한 케어를<br/>더 투명하고 책임 있게.</h2></div><div class="about-story"><p>ProMoms는 조지아 애틀랜타 메트로 지역의 가족을 중심으로 산모의 회복, 아이의 안전한 돌봄, 생활에 필요한 제품까지 연결하는 패밀리 웰니스 서비스입니다. 관리사를 독립계약자 방식으로 고객에게 떠넘기지 않고 회사의 정식 직원으로 고용하며, 급여·세무·고용 및 업무상 재해 리스크를 회사가 관리합니다.</p><div class="about-metrics"><div><strong>W-2</strong><span>모든 관리사 정식 직원</span></div><div><strong>Insured</strong><span>책임보상·근로자재해보험</span></div><div><strong>Atlanta</strong><span>메트로 지역 방문 케어</span></div></div></div></section>
+          <section class="public-section" id="services"><div class="public-section-heading centered"><p class="eyebrow">OUR SERVICES</p><h2>가족에게 필요한 돌봄을 선택하세요.</h2><p>산후조리와 베이비시팅은 각각 독립적으로 신청할 수 있으며, 동일 아기의 서비스 기간만 겹치지 않도록 운영합니다.</p></div><div class="public-service-grid"><article class="public-service-card featured"><span class="service-number">01</span><div class="service-symbol">♡</div><p class="eyebrow">POSTPARTUM CARE</p><h3>산후조리 서비스</h3><p>산모 회복 지원과 신생아 수유·수면·체온·목욕·체중 기록을 세심하게 관리합니다.</p><ul><li>1·2·3·4주 맞춤 일정</li><li>산모 식사·휴식·회복 지원</li><li>신생아 케어 기록과 주간 차트</li><li>보험 적용 W-2 정식 직원 배정</li></ul><div class="service-price"><span>1주 기준</span><strong>$1,800<small>/ week</small></strong></div><button class="primary-button" data-service-apply="POSTPARTUM">산후조리 신청</button></article><article class="public-service-card"><span class="service-number">02</span><div class="service-symbol">☆</div><p class="eyebrow">BABYSITTING</p><h3>베이비시팅 서비스</h3><p>산후조리 이용 여부와 관계없이 아이의 식사, 놀이, 산책과 생활 이벤트를 보호자에게 공유합니다.</p><ul><li>보험 적용 W-2 정식 직원 배정</li><li>식사·간식과 알러지 지침</li><li>놀이·산책·특이 이벤트 메모</li><li>보호자 인계사항 공유</li></ul><div class="service-price"><span>시간당</span><strong>$32<small>부터</small></strong></div><button class="primary-button" data-service-apply="BABYSITTING">베이비시팅 신청</button></article><article class="public-service-card premium-coming-soon"><span class="service-number">03</span><div class="service-symbol">✦</div><p class="eyebrow">PREMIUM ADD-ON · COMING SOON</p><h3>산모 마사지</h3><p>산후조리 고객을 위한 프리미엄 추가 상품으로 준비하고 있습니다.</p><ul><li>Georgia Massage Therapist License 필수</li><li>라이선스 확인된 전문가만 제공</li><li>마사지 업무 보험 범위 확인</li><li>산후조리 계약 Add-on 형태</li></ul><div class="service-price"><span>출시 준비 중</span><strong>미정</strong></div><button class="secondary-button" disabled>현재 선택 불가</button></article></div><section class="insured-staffing-panel"><div><p class="eyebrow">WHY INSURED STAFFING MATTERS</p><h3>법적·세무 리스크를 고객 가정에 넘기지 않습니다.</h3><p>관리사는 모두 회사의 정식 직원으로 운영합니다. ProMoms가 급여·원천징수·고용 관리 책임을 수행하고, 책임보상보험과 근로자재해보험 체계 안에서 서비스를 제공합니다.</p></div><ul><li><span>◈</span><strong>책임보상보험</strong><small>서비스 수행 중 대인·대물 리스크 관리</small></li><li><span>✓</span><strong>근로자재해보험</strong><small>업무상 재해 책임을 고객에게 전가하지 않음</small></li><li><span>W-2</span><strong>정식 직원</strong><small>독립계약자 편법 운영 없이 회사가 고용 의무 처리</small></li></ul></section><div class="public-rules"><div><strong>이용 규칙</strong><span>① 서비스 48시간 전 일정 변경 요청</span><span>② 의약품 투여·의료행위는 제공하지 않음</span><span>③ 산후조리·베이비시팅 동시 이용 불가</span><span>④ 무면허 마사지·신체 관리는 제공하지 않음</span></div></div></section>
           <section class="public-section public-caregiver-section" id="caregivers"><div class="public-section-heading"><p class="eyebrow">TRUSTED CARE TEAM</p><h2>경험과 따뜻함을 갖춘 관리사</h2><p>자격과 경력을 관리자가 확인하고, 고객의 일정·지역·서비스 유형에 맞춰 배정합니다.</p></div><div class="public-caregiver-grid"><article><div class="public-person-art mint">MK</div><h3>Mina Kim</h3><span>Newborn Care Specialist · 6년</span><p>신생아 수면과 모유수유 지원에 강점이 있는 산후관리사</p></article><article><div class="public-person-art blush">JL</div><h3>Jane Lee</h3><span>Postpartum Doula · 4년</span><p>산모 회복과 아이의 생활 루틴을 편안하게 만드는 케어 전문가</p></article><article class="public-testimonial"><div class="quote-mark">“</div><p>수유와 수면 기록을 매일 확인할 수 있어 안심됐어요. 요청사항도 정확히 인계되어 가족 모두가 편안했습니다.</p><div class="review-stars">★★★★★</div><strong>Sarah K. · 산후조리 고객</strong></article></div></section>
-          <section class="public-section" id="shop-preview"><div class="public-section-heading public-shop-heading"><div><p class="eyebrow">K-WELLNESS SELECT</p><h2>Beauty & Baby Store</h2><p>가족의 일상에 필요한 제품을 기준과 취향을 담아 엄선했습니다.</p></div><button class="secondary-button" ${clientUser ? `data-open-client-shop` : `data-auth-screen="login"`}>${clientUser ? "온라인 스토어 보기" : "로그인하고 구매하기"} →</button></div><div class="public-product-grid">${publicProductMarkup()}</div></section>
-          <section class="public-section public-location" id="location"><div class="location-card"><p class="eyebrow">VISIT OUR STORE</p><h2>K-Wellness Kennesaw</h2><p>Kennesaw 리테일 숍에서 K-Beauty와 유아용품을 만나보고 애틀랜타 메트로 방문 돌봄 서비스 상담도 받을 수 있습니다.</p><dl><div><dt>위치</dt><dd>Kennesaw, Georgia · 방문 전 예약 및 상담</dd></div><div><dt>운영시간</dt><dd>월–토 10:00 AM–7:00 PM · 일요일 휴무</dd></div><div><dt>방문 안내</dt><dd>예약 시 정확한 주소와 주차 방법을 안내해 드립니다.</dd></div></dl><a class="primary-button public-link-button" href="https://maps.google.com/?q=Kennesaw+Georgia" target="_blank" rel="noreferrer">지도에서 지역 보기</a></div><div class="location-map" role="img" aria-label="Kennesaw 리테일 매장 위치 안내"><div class="map-road road-one"></div><div class="map-road road-two"></div><div class="map-pin"><span>K</span><strong>K-Wellness</strong></div><small>Kennesaw · Georgia</small></div></section>
+          <section class="public-section" id="shop-preview"><div class="public-section-heading public-shop-heading"><div><p class="eyebrow">ProMoms SELECT</p><h2>Beauty & Baby Store</h2><p>가족의 일상에 필요한 제품을 기준과 취향을 담아 엄선했습니다.</p></div><button class="secondary-button" ${clientUser ? `data-open-client-shop` : `data-auth-screen="login"`}>${clientUser ? "온라인 스토어 보기" : "로그인하고 구매하기"} →</button></div><div class="public-product-grid">${publicProductMarkup()}</div></section>
+          <section class="public-section public-location" id="location"><div class="location-card"><p class="eyebrow">VISIT OUR STORE</p><h2>ProMoms Kennesaw</h2><p>Kennesaw 리테일 숍에서 맘스 뷰티와 유아용품을 만나보고 애틀랜타 메트로 방문 돌봄 서비스 상담도 받을 수 있습니다.</p><dl><div><dt>위치</dt><dd>Kennesaw, Georgia · 방문 전 예약 및 상담</dd></div><div><dt>운영시간</dt><dd>월–토 10:00 AM–7:00 PM · 일요일 휴무</dd></div><div><dt>방문 안내</dt><dd>예약 시 정확한 주소와 주차 방법을 안내해 드립니다.</dd></div></dl><a class="primary-button public-link-button" href="https://maps.google.com/?q=Kennesaw+Georgia" target="_blank" rel="noreferrer">지도에서 지역 보기</a></div><div class="location-map" role="img" aria-label="Kennesaw 리테일 매장 위치 안내"><div class="map-road road-one"></div><div class="map-road road-two"></div><div class="map-pin"><span class="promoms-mark">${brandLogoMarkup()}</span><strong>ProMoms</strong></div><small>Kennesaw · Georgia</small></div></section>
           <section class="public-section public-contact" id="contact"><div><p class="eyebrow">CONTACT US</p><h2>돌봄이 필요한 순간,<br/>편하게 이야기해 주세요.</h2></div><div class="contact-methods"><a href="tel:+14704049467"><span>☎</span><div><small>전화 상담</small><strong>470-404-9467</strong></div></a><a href="mailto:parksiyoo9@gmail.com"><span>✉</span><div><small>이메일</small><strong>parksiyoo9@gmail.com</strong></div></a><button data-demo-action="Atlanta 및 인근 지역의 상세 방문 가능 여부는 전화나 이메일로 확인해 주세요."><span>GA</span><div><small>서비스 지역</small><strong>Atlanta Metro</strong></div></button></div></section>
         </div>
-      </main><footer class="public-footer"><div class="public-brand inverse"><span>K</span><div><strong>K-Wellness</strong><small>CARE · BEAUTY · BABY</small></div></div><p>© 2026 K-Wellness. All rights reserved.</p><div><button data-public-anchor="rules">이용약관</button><button data-auth-screen="login">직원 로그인</button></div></footer>
+      </main><footer class="public-footer"><div class="public-brand inverse"><span class="promoms-mark">${brandLogoMarkup()}</span><div><strong>ProMoms</strong><small>엄마 곁의 전문가</small></div></div><p>© 2026 ProMoms. All rights reserved.</p><div><button data-public-anchor="rules">이용약관</button><button data-auth-screen="login">직원 로그인</button></div></footer>
     </div>`;
   }
 
@@ -1957,7 +1963,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
   function loginMarkup() {
     return `<main class="auth-page">
       <section class="auth-brand-panel">
-        <div class="auth-brand"><div class="brand-mark">K</div><div><strong>K-Wellness</strong><span>CAREOS</span></div></div>
+        <div class="auth-brand"><div class="brand-mark">${brandLogoMarkup()}</div><div><strong>ProMoms</strong><span>CARE · BABY · BEAUTY</span></div></div>
         <div class="auth-story"><p class="eyebrow">CARE · CRM · RETAIL</p><h1>Care that connects<br/>every moment.</h1><p>케어 기록부터 가족의 안심, 운영과 리테일까지 하나의 안전한 플랫폼에서 연결합니다.</p></div>
         <div class="auth-security">◈ 계정 역할과 배정 관계에 따라 접근 가능한 정보가 제한됩니다.</div>
       </section>
@@ -1969,7 +1975,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
             <button class="primary-button auth-submit" type="submit">로그인</button>
           </form>
           ${cloudEnabled ? `<div class="cloud-auth-note"><strong>Supabase 보안 로그인</strong><span>고객·관리사는 이메일로 로그인하며, 관리사는 관리자 승인 후 전용 기능을 이용합니다.</span></div><div class="demo-accounts"><strong>데이터베이스 관리자</strong><span>관리자: Admin / 1234</span><span>실제 회원·예약·기록 데이터 관리 권한으로 연결됩니다.</span></div>` : `<div class="demo-accounts"><strong>초기 운영 계정</strong><span>관리자: Admin / 1234</span><span>리테일: Retail / 1234</span></div>`}
-          <div class="auth-switch"><span>처음 이용하시나요?</span><button data-auth-screen="signup">회원가입</button></div><button class="auth-home-link" data-auth-screen="public">← K-Wellness 사이트로 돌아가기</button>
+          <div class="auth-switch"><span>처음 이용하시나요?</span><button data-auth-screen="signup">회원가입</button></div><button class="auth-home-link" data-auth-screen="public">← ProMoms 사이트로 돌아가기</button>
         </div>
       </section>
     </main>`;
@@ -1977,7 +1983,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
 
   function signupMarkup() {
     return `<main class="auth-page signup-page">
-      <section class="auth-brand-panel"><div class="auth-brand"><div class="brand-mark">K</div><div><strong>K-Wellness</strong><span>CAREOS</span></div></div><div class="auth-story"><p class="eyebrow">JOIN K-WELLNESS</p><h1>함께 만드는<br/>안심 케어.</h1><p>회원가입은 본인의 기본정보만 입력합니다. 아기 정보와 희망 일정은 가입 후 ‘서비스 신청’에서 접수합니다.</p></div><div class="auth-security">관리사 계정은 관리자 승인 후 배정된 고객의 화면만 이용할 수 있습니다.</div></section>
+      <section class="auth-brand-panel"><div class="auth-brand"><div class="brand-mark">${brandLogoMarkup()}</div><div><strong>ProMoms</strong><span>CARE · BABY · BEAUTY</span></div></div><div class="auth-story"><p class="eyebrow">JOIN ProMoms</p><h1>함께 만드는<br/>안심 케어.</h1><p>회원가입은 본인의 기본정보만 입력합니다. 아기 정보와 희망 일정은 가입 후 ‘서비스 신청’에서 접수합니다.</p></div><div class="auth-security">관리사 계정은 관리자 승인 후 배정된 고객의 화면만 이용할 수 있습니다.</div></section>
       <section class="auth-form-panel"><div class="auth-card signup-card"><p class="eyebrow">CREATE ACCOUNT</p><h2>회원가입</h2><p class="auth-lead">계정 유형과 본인의 기본 정보를 입력해 주세요.</p>
         <form data-signup-form class="auth-form">
           <div class="field"><span class="field-label">가입 유형</span><div class="option-grid two">${radioOptions("role", [["client", "고객 / 보호자"], ["caregiver", "관리사"]], "client")}</div></div>
@@ -1997,11 +2003,11 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
             <details><summary>개인정보 처리 요약 보기</summary><p>수집 정보는 회원 관리, 일정 배정, 고객 지원 및 보안 감사에 사용합니다. 법적 의무와 보관 정책에 따라 보관하며 권한 없는 제3자에게 제공하지 않습니다.</p></details>
             <label class="consent-row"><input type="checkbox" name="termsSensitive" required /><span><strong>[필수] 민감 케어정보 처리 동의</strong><small>산모·아기의 수유, 수면, 체온 및 케어 기록 처리를 이해하고 동의합니다.</small></span></label>
             <details><summary>민감정보 처리 요약 보기</summary><p>민감 케어정보는 배정된 관리사, 본인 고객 및 권한 있는 관리자만 접근합니다. 실제 운영 전에는 적용 법률, 보관 기간과 삭제 절차를 별도 고지합니다.</p></details>
-            <label class="consent-row optional"><input type="checkbox" name="termsMarketing" /><span><strong>[선택] 혜택·마케팅 정보 수신</strong><small>K-Beauty와 유아용품 혜택 및 행사 알림을 받을 수 있습니다.</small></span></label>
+            <label class="consent-row optional"><input type="checkbox" name="termsMarketing" /><span><strong>[선택] 혜택·마케팅 정보 수신</strong><small>맘스 뷰티와 유아용품 혜택 및 행사 알림을 받을 수 있습니다.</small></span></label>
           </section>
           <button class="primary-button auth-submit" type="submit">동의하고 가입하기</button>
         </form>
-        <div class="auth-switch"><span>이미 계정이 있나요?</span><button data-auth-screen="login">로그인</button></div><button class="auth-home-link" data-auth-screen="public">← K-Wellness 사이트로 돌아가기</button>
+        <div class="auth-switch"><span>이미 계정이 있나요?</span><button data-auth-screen="login">로그인</button></div><button class="auth-home-link" data-auth-screen="public">← ProMoms 사이트로 돌아가기</button>
       </div></section>
     </main>`;
   }
@@ -3235,7 +3241,7 @@ window.KWellnessBackend = Object.freeze({ ...backendStatus, client: supabase });
       <section class="application-block" data-postpartum-application><h4>산후조리 요청</h4><div class="field"><label for="maternal-notes">산모 상태·회복 지원 요청</label><textarea id="maternal-notes" name="maternalNotes" placeholder="회복 상태, 식사, 수유 지원 등 필요한 내용을 적어주세요."></textarea></div></section>
       <section class="application-block" data-babysitting-application hidden><h4>베이비시팅 요청</h4><div class="field"><label for="meal-instructions">식사·간식 지침</label><textarea id="meal-instructions" name="mealInstructions" placeholder="식사 시간, 메뉴, 양, 금지 식품을 적어주세요."></textarea></div><div class="form-grid two"><div class="field"><label for="routine-notes">생활 루틴</label><textarea id="routine-notes" name="routineNotes" placeholder="낮잠, 놀이, 산책 루틴"></textarea></div><div class="field"><label for="pickup-notes">인계·출입 지침</label><textarea id="pickup-notes" name="pickupNotes" placeholder="보호자 인계, 출입 방법"></textarea></div></div></section>
       <div class="field"><label for="application-special">특이사항·고객 요청 메모</label><textarea id="application-special" name="requestSpecialNotes" placeholder="반려동물, 주차, 선호 언어 등 관리사가 알아야 할 내용을 적어주세요."></textarea></div>
-      <div class="insured-contract-note"><strong>보험 적용 정식 직원 서비스</strong><span>관리사는 K-Wellness의 W-2 정식 직원이며, 회사가 급여·세무·고용 책임과 책임보상보험·근로자재해보험 체계를 관리합니다.</span></div><label class="consent-row application-consent"><input type="checkbox" name="requestConsent" required/><span><strong>서비스 신청 정보 수집·배정 활용 및 일정 중복 방지 안내에 동의합니다.</strong><small>입력 정보는 일정 검토와 배정된 관리사의 서비스 준비에 사용되며, 동일 아기의 두 서비스는 같은 기간에 배정되지 않습니다.</small></span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">신청 접수</button></div>
+      <div class="insured-contract-note"><strong>보험 적용 정식 직원 서비스</strong><span>관리사는 ProMoms의 W-2 정식 직원이며, 회사가 급여·세무·고용 책임과 책임보상보험·근로자재해보험 체계를 관리합니다.</span></div><label class="consent-row application-consent"><input type="checkbox" name="requestConsent" required/><span><strong>서비스 신청 정보 수집·배정 활용 및 일정 중복 방지 안내에 동의합니다.</strong><small>입력 정보는 일정 검토와 배정된 관리사의 서비스 준비에 사용되며, 동일 아기의 두 서비스는 같은 기간에 배정되지 않습니다.</small></span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">신청 접수</button></div>
     </form></section></div>`;
     const form = modalRoot.querySelector("[data-service-application-form]");
     if (extensionMode) form.querySelector('input[name="serviceType"][value="POSTPARTUM"]').disabled = true;

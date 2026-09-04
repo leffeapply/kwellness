@@ -1,6 +1,6 @@
 export default function handler(_request, response) {
   response.status(200).json({
-    service: "k-wellness-careos-api",
+    service: "promoms-care-api",
     status: "ok",
     database: "supabase",
     timestamp: new Date().toISOString(),

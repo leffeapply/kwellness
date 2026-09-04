@@ -317,7 +317,7 @@ async function loadCloudStateOnce(session) {
       babyId: assignment?.babyId,
       type: EVENT_TO_APP[event.event_type] || "note",
       at: event.event_time,
-      author: creator?.full_name || "K-Wellness",
+      author: creator?.full_name || "ProMoms",
       data: event.payload || {},
     };
   });
@@ -325,7 +325,7 @@ async function loadCloudStateOnce(session) {
   const currentUser = appUsers.find((item) => item.id === session.user.id);
   if (!currentUser) throw new Error("회원 프로필을 불러오지 못했습니다. 잠시 후 다시 로그인해 주세요.");
   if (currentUser.accountStatus === "SUSPENDED" || currentUser.accountStatus === "REJECTED") {
-    throw new Error("현재 이용이 중지된 계정입니다. K-Wellness 관리자에게 문의해 주세요.");
+    throw new Error("현재 이용이 중지된 계정입니다. ProMoms 관리자에게 문의해 주세요.");
   }
   const currentAssignment = appAssignments
     .filter((item) => item.status === "ACTIVE" && (currentUser.role === "caregiver" ? item.caregiverUserId === currentUser.id : true))

@@ -3,12 +3,12 @@ import { copyFile, mkdir } from "node:fs/promises";
 
 function copyStaticAssets() {
   return {
-    name: "copy-k-wellness-static-assets",
+    name: "copy-promoms-static-assets",
     async closeBundle() {
       await mkdir("dist/assets", { recursive: true });
       await copyFile("sw.js", "dist/sw.js");
       await copyFile("manifest.webmanifest", "dist/manifest.webmanifest");
-      await copyFile("assets/icon.svg", "dist/assets/icon.svg");
+      await copyFile("assets/promoms-logo.png", "dist/assets/promoms-logo.png");
     },
   };
 }
