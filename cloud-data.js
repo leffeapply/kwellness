@@ -379,7 +379,7 @@ async function loadCloudStateOnce(session) {
       clientStatus: management?.lifecycle_status || client.status,
       approvalStatus: latestRequest?.status || "ACCOUNT_ACTIVE",
       preferredLanguage: management?.preferred_language || profile?.preferred_language || briefByClient.get(client.id)?.preferred_language || "",
-      emergencyContact: management?.emergency_contact || briefByClient.get(client.id)?.emergency_contact || "",
+      emergencyContact: management?.emergency_contact || client.emergency_contact || briefByClient.get(client.id)?.emergency_contact || "",
       nextContactDate: management?.next_contact_date || null,
       internalMemo: management?.internal_memo || "",
       babyAdminNotes: management?.baby_admin_notes || "",
@@ -387,9 +387,9 @@ async function loadCloudStateOnce(session) {
       babyName: baby?.first_name || "",
       babyBirthDate: baby?.birth_date || latestRequest?.birth_or_due_date || null,
       babies: clientBabies.map((item) => ({ id: item.id, name: item.first_name || "", birthDate: item.birth_date || null, adminNotes: item.notes || "" })),
-      address: latestRequest?.service_address || "",
-      allergies: latestRequest?.allergy_notes || "",
-      extraHouseholdMembers: latestRequest?.household_extra_people || 0,
+      address: client.service_address || latestRequest?.service_address || "",
+      allergies: client.allergy_notes || latestRequest?.allergy_notes || "",
+      extraHouseholdMembers: client.household_extra_people ?? latestRequest?.household_extra_people ?? 0,
       requestNote: client.notes || latestRequest?.special_notes || "",
       managementUpdatedAt: management?.updated_at || null,
     };
@@ -931,6 +931,31 @@ export async function updateMyProfileCloud(values) {
     },
   });
   if (metadataSync.error) console.warn("Profile metadata sync deferred", metadataSync.error.message);
+}
+
+export async function updateMyClientProfileCloud(values) {
+  const result = throwIfError(await supabase.rpc("update_my_client_profile", {
+    p_full_name: values.fullName.trim(),
+    p_phone: values.phone.trim() || null,
+    p_preferred_language: values.preferredLanguage.trim() || "ko",
+    p_baby_id: values.babyId || null,
+    p_baby_name: values.babyName.trim(),
+    p_baby_birth_date: values.babyBirthDate,
+    p_service_address: values.serviceAddress.trim(),
+    p_allergy_notes: values.allergies?.trim() || null,
+    p_household_extra_people: Number(values.extraHouseholdMembers || 0),
+    p_emergency_contact: values.emergencyContact?.trim() || null,
+    p_request_note: values.requestNote?.trim() || null,
+  }), "고객·아기 프로필 저장");
+  const metadataSync = await supabase.auth.updateUser({
+    data: {
+      full_name: values.fullName.trim(),
+      phone: values.phone.trim(),
+      preferred_language: values.preferredLanguage.trim() || "ko",
+    },
+  });
+  if (metadataSync.error) console.warn("Client profile metadata sync deferred", metadataSync.error.message);
+  return result;
 }
 
 export async function saveServiceReviewCloud({ assignmentId, clientId, caregiverId, rating, tags, comment }) {

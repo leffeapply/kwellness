@@ -30,6 +30,7 @@ import {
   updateCaregiverManagementCloud,
   updateClientManagementCloud,
   updateCompanyComplianceCloud,
+  updateMyClientProfileCloud,
   updateMyProfileCloud,
   updatePasswordCloud,
 } from "./cloud-data.js";
@@ -719,6 +720,11 @@ import {
     return client.babyId || client.babyName
       ? [{ id: client.babyId || null, name: client.babyName || "", birthDate: client.babyBirthDate || null }]
       : [];
+  }
+
+  function clientProfileComplete(client) {
+    if (!client || String(client.address || "").trim().length < 5) return false;
+    return babiesForClient(client).some((baby) => String(baby?.name || "").trim() && baby?.birthDate);
   }
 
   function findClientBaby(client, babyName = "", babyId = null) {
@@ -1766,7 +1772,7 @@ import {
     const adminLocked = !canGrantAdministrativeRole();
     const fixedRoles = ["OWNER", "CARE_MANAGER", "RETAIL_STAFF"].filter((role) => currentRoles.has(role));
     const roleOption = (role, label, detail, disabled = false) => `<label class="member-access-option ${disabled ? "locked" : ""}"><input type="checkbox" name="accessRole" value="${role}" ${currentRoles.has(role) ? "checked" : ""} ${disabled ? "disabled" : ""}/><span><strong>${label}</strong><small>${detail}</small></span></label>`;
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal member-access-modal" role="dialog" aria-modal="true" aria-labelledby="member-access-title"><header class="modal-header"><div><p class="eyebrow">MEMBER ACCESS</p><h3 id="member-access-title">회원 권한 구성</h3><p>${escapeHtml(member.fullName)} · ${escapeHtml(member.email || "이메일 미등록")}</p></div><button class="close-button" type="button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-member-access-form><div class="status-banner"><strong>복수 역할 계정</strong><span>선택한 작업공간을 같은 로그인 계정에서 전환해 사용할 수 있습니다. 기존 역할의 운영 기록은 다른 역할을 추가해도 유지됩니다.</span></div><fieldset class="member-access-options"><legend>허용할 작업공간</legend>${roleOption("CLIENT", "고객", "본인의 서비스 신청·일정·케어 기록을 확인합니다.")}${roleOption("CAREGIVER", "관리사", "배정된 고객 일정과 케어 기록 화면을 사용합니다.")}${roleOption("ADMIN", "관리자", adminLocked ? "현재 관리자 권한은 유지되며 소유자만 변경할 수 있습니다." : "회원·일정·결제·운영 정보를 관리합니다.", adminLocked)}${fixedRoles.length ? `<div class="fixed-access-note"><strong>보호된 기존 권한</strong><div class="member-role-badges">${fixedRoles.map((role) => `<span class="member-role-badge administrative">${escapeHtml(DATABASE_ROLE_LABELS[role])}</span>`).join("")}</div><small>소유자 및 기존 특수 권한은 이 화면에서 제거되지 않습니다.</small></div>` : ""}</fieldset><div class="privacy-boundary-note"><strong>관리자 예외 승인</strong><span>관리자 또는 소유자가 관리사 권한을 추가하면 회원의 사전 약관 동의가 없어도 즉시 활성화됩니다. 회원 본인의 동의로 기록하지 않으며 승인자와 예외 적용 여부를 감사 로그에 남깁니다.</span></div><div class="privacy-boundary-note"><strong>활성 기록 보호</strong><span>진행 중인 고객 계약이나 관리사 배정이 있으면 해당 권한은 제거할 수 없지만, 다른 권한을 추가하는 것은 가능합니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">권한 저장</button></div></form></section></div>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal member-access-modal" role="dialog" aria-modal="true" aria-labelledby="member-access-title"><header class="modal-header"><div><p class="eyebrow">MEMBER ACCESS</p><h3 id="member-access-title">회원 권한 구성</h3><p>${escapeHtml(member.fullName)} · ${escapeHtml(member.email || "이메일 미등록")}</p></div><button class="close-button" type="button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-member-access-form><div class="status-banner"><strong>복수 역할 계정</strong><span>선택한 작업공간을 같은 로그인 계정에서 전환해 사용할 수 있습니다. 기존 역할의 운영 기록은 다른 역할을 추가해도 유지됩니다.</span></div><fieldset class="member-access-options"><legend>허용할 작업공간</legend>${roleOption("CLIENT", "고객", "본인의 서비스 신청·일정·케어 기록을 확인합니다.")}${roleOption("CAREGIVER", "관리사", "배정된 고객 일정과 케어 기록 화면을 사용합니다.")}${roleOption("ADMIN", "관리자", adminLocked ? "현재 관리자 권한은 유지되며 소유자만 변경할 수 있습니다." : "회원·일정·결제·운영 정보를 관리합니다.", adminLocked)}${fixedRoles.length ? `<div class="fixed-access-note"><strong>보호된 기존 권한</strong><div class="member-role-badges">${fixedRoles.map((role) => `<span class="member-role-badge administrative">${escapeHtml(DATABASE_ROLE_LABELS[role])}</span>`).join("")}</div><small>소유자 및 기존 특수 권한은 이 화면에서 제거되지 않습니다.</small></div>` : ""}</fieldset><div class="privacy-boundary-note"><strong>고객 작업공간 자동 준비</strong><span>고객 권한을 추가하면 고객 레코드와 계정 연결을 즉시 생성하고 계정을 활성화합니다. 회원은 고객 화면에서 아기·주소 정보를 직접 작성한 뒤 바로 서비스를 신청할 수 있습니다.</span></div><div class="privacy-boundary-note"><strong>관리자 예외 승인</strong><span>관리자 또는 소유자가 관리사 권한을 추가하면 회원의 사전 약관 동의가 없어도 즉시 활성화됩니다. 회원 본인의 동의로 기록하지 않으며 승인자와 예외 적용 여부를 감사 로그에 남깁니다.</span></div><div class="privacy-boundary-note"><strong>활성 기록 보호</strong><span>진행 중인 고객 계약이나 관리사 배정이 있으면 해당 권한은 제거할 수 없지만, 다른 권한을 추가하는 것은 가능합니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">권한 저장</button></div></form></section></div>`;
     bindModalFrame();
     modalRoot.querySelector("[data-member-access-form]")?.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -1775,6 +1781,7 @@ import {
       fixedRoles.forEach((role) => { if (!selectedRoles.includes(role)) selectedRoles.push(role); });
       if (!selectedRoles.length) return showToast("최소 한 개의 접근 권한을 선택해 주세요.", "error");
       const addingCaregiver = selectedRoles.includes("CAREGIVER") && !currentRoles.has("CAREGIVER");
+      const addingClient = selectedRoles.includes("CLIENT") && !currentRoles.has("CLIENT");
       const submitButton = form.querySelector('button[type="submit"]');
       submitButton.disabled = true;
       submitButton.textContent = "저장 중…";
@@ -1793,6 +1800,30 @@ import {
             member.status = "approved";
             member.caregiverStatus = "approved";
             member.employmentStatus = "ACTIVE";
+          }
+          if (addingClient) {
+            member.status = "approved";
+            member.accountStatus = "ACTIVE";
+            if (!clientForUser(member.id)) {
+              state.clients.push({
+                id: `client-${Date.now()}`,
+                userId: member.id,
+                memberUserIds: [member.id],
+                motherName: member.fullName,
+                maternalStatus: "서비스 신청 전",
+                clientStatus: "LEAD",
+                preferredLanguage: member.preferredLanguage || "ko",
+                emergencyContact: "",
+                babies: [],
+                babyId: null,
+                babyName: "",
+                babyBirthDate: null,
+                address: "",
+                allergies: "",
+                extraHouseholdMembers: 0,
+                requestNote: "",
+              });
+            }
           }
           saveState();
           closeModal();
@@ -2335,7 +2366,8 @@ import {
     const postpartumCards = [...postpartumAssignments.map((assignment) => clientServiceOverviewCard(client, "POSTPARTUM", assignment)), ...postpartumRequests.map((request) => clientServiceOverviewCard(client, "POSTPARTUM", null, request))];
     const babysittingCards = [...babysittingAssignments.map((assignment) => clientServiceOverviewCard(client, "BABYSITTING", assignment)), ...babysittingRequests.map((request) => clientServiceOverviewCard(client, "BABYSITTING", null, request))];
     const massage = state.serviceCatalog.MASSAGE;
-    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY SERVICES", `${escapeHtml(client.motherName)}님의 서비스`, "아기별 이용 중인 돌봄과 신청·배정 상태를 한눈에 확인하세요.")}<div class="grid stats">${statCard("Active service", activeCount, "현재 진행 중인 전체 배정", "✓")}${statCard("Current service", activeCount > 1 ? `${activeCount}건 이용 중` : currentService ? serviceMetaFor(currentService).label : "대기", "아기별 현재 돌봄", currentService === "BABYSITTING" ? "☆" : "♡")}${statCard("Pending requests", pendingCount ? `${pendingCount}건` : "없음", "승인·일정 배정 대기", "◷")}</div><div class="service-overview-grid" style="margin-top:18px">${postpartumCards.length ? postpartumCards.join("") : clientServiceOverviewCard(client, "POSTPARTUM")}${babysittingCards.length ? babysittingCards.join("") : clientServiceOverviewCard(client, "BABYSITTING")}</div><div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, null, true)}</div><article class="card premium-addon-card" style="margin-top:18px"><div class="premium-addon-icon">${massage.icon}</div><div><p class="eyebrow">PREMIUM ADD-ON · COMING SOON</p><h3>${massage.label}</h3><p>${massage.description}. 현재는 신청할 수 없으며, 라이선스·보험·전문인력 검증이 완료된 뒤 산후조리 계약의 추가 상품으로 열립니다.</p><div class="premium-addon-tags"><span>Georgia License 필수</span><span>산후조리 Add-on</span><span>현재 선택 불가</span></div></div><button class="secondary-button" disabled>준비 중</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>동일 아기의 겹치는 서비스만 자동으로 차단합니다.</strong><p>베이비시팅은 산후조리 이용 이력 없이도 독립적으로 신청할 수 있습니다. 다만 동일 아기가 산후조리를 현재 이용 중일 때는 베이비시팅 신규 신청이 제한되며, 두 서비스 기간은 서로 겹칠 수 없습니다.</p></article></section>`;
+    const profileSetup = clientProfileComplete(client) ? "" : `<article class="card client-profile-onboarding"><div><p class="eyebrow">PROFILE SETUP</p><h3>서비스 신청 전에 가족 프로필을 완성해 주세요.</h3><p>아기 이름·출생일 또는 예정일과 기본 서비스 주소를 한 번 저장하면 신청서에 자동으로 불러옵니다.</p></div><button class="primary-button" type="button" data-edit-profile>고객·아기 프로필 작성</button></article>`;
+    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY SERVICES", `${escapeHtml(client.motherName)}님의 서비스`, "아기별 이용 중인 돌봄과 신청·배정 상태를 한눈에 확인하세요.")}${profileSetup}<div class="grid stats">${statCard("Active service", activeCount, "현재 진행 중인 전체 배정", "✓")}${statCard("Current service", activeCount > 1 ? `${activeCount}건 이용 중` : currentService ? serviceMetaFor(currentService).label : "대기", "아기별 현재 돌봄", currentService === "BABYSITTING" ? "☆" : "♡")}${statCard("Pending requests", pendingCount ? `${pendingCount}건` : "없음", "승인·일정 배정 대기", "◷")}</div><div class="service-overview-grid" style="margin-top:18px">${postpartumCards.length ? postpartumCards.join("") : clientServiceOverviewCard(client, "POSTPARTUM")}${babysittingCards.length ? babysittingCards.join("") : clientServiceOverviewCard(client, "BABYSITTING")}</div><div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, null, true)}</div><article class="card premium-addon-card" style="margin-top:18px"><div class="premium-addon-icon">${massage.icon}</div><div><p class="eyebrow">PREMIUM ADD-ON · COMING SOON</p><h3>${massage.label}</h3><p>${massage.description}. 현재는 신청할 수 없으며, 라이선스·보험·전문인력 검증이 완료된 뒤 산후조리 계약의 추가 상품으로 열립니다.</p><div class="premium-addon-tags"><span>Georgia License 필수</span><span>산후조리 Add-on</span><span>현재 선택 불가</span></div></div><button class="secondary-button" disabled>준비 중</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>동일 아기의 겹치는 서비스만 자동으로 차단합니다.</strong><p>베이비시팅은 산후조리 이용 이력 없이도 독립적으로 신청할 수 있습니다. 다만 동일 아기가 산후조리를 현재 이용 중일 때는 베이비시팅 신규 신청이 제한되며, 두 서비스 기간은 서로 겹칠 수 없습니다.</p></article></section>`;
   }
 
   function clientBabysittingSummary(client, assignment, workspaceNav = "") {
@@ -4170,29 +4202,52 @@ import {
     if (!user) return showToast("로그인 정보를 확인할 수 없습니다.", "error");
     const client = state.role === "client" ? clientForUser(user.id) : null;
     const preferredLanguage = user.preferredLanguage || client?.preferredLanguage || "ko";
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal profile-modal" role="dialog" aria-modal="true" aria-labelledby="my-profile-title"><header class="modal-header"><div><p class="eyebrow">MY PROFILE</p><h3 id="my-profile-title">프로필 수정</h3><p>연락처와 표시 정보를 최신 상태로 관리하세요.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-my-profile-form><div class="profile-summary"><div class="profile-summary-person"><div class="profile-avatar">${escapeHtml(user.initials || initialsFor(user.fullName))}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(ROLE_META[state.role]?.label || "회원")} 작업공간</span></div></div></div><div class="field"><label for="profile-email">로그인 이메일</label><input id="profile-email" type="email" value="${escapeHtml(user.email || "")}" readonly aria-readonly="true"/><small>로그인 이메일 변경은 고객지원으로 문의해 주세요.</small></div><div class="form-grid two"><div class="field"><label for="profile-full-name">이름</label><input id="profile-full-name" name="fullName" autocomplete="name" value="${escapeHtml(user.fullName || "")}" required /></div><div class="field"><label for="profile-phone">전화번호</label><input id="profile-phone" name="phone" type="tel" autocomplete="tel" value="${escapeHtml(user.phone || "")}" required /></div></div><div class="field"><label for="profile-language">선호 언어</label><select id="profile-language" name="preferredLanguage"><option value="ko" ${preferredLanguage === "ko" || preferredLanguage.includes("한국") ? "selected" : ""}>한국어</option><option value="en" ${preferredLanguage === "en" || preferredLanguage === "English" ? "selected" : ""}>English</option><option value="ko,en" ${preferredLanguage.includes("·") || preferredLanguage.includes(",") ? "selected" : ""}>한국어 · English</option></select></div><div class="privacy-boundary-note"><strong>개인정보 보호</strong><span>프로필 정보는 계정 운영과 서비스 연락에만 사용되며, 역할별 접근 권한이 적용됩니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">프로필 저장</button></div></form></section></div>`;
+    const clientBabies = babiesForClient(client);
+    const initialBaby = clientBabies[0] || null;
+    const clientProfileFields = client ? `<section class="profile-form-section client-self-profile-section"><div class="profile-section-title"><strong>아기·서비스 정보</strong><span>서비스 신청서에 자동으로 불러옵니다.</span></div>${clientBabies.length ? `<div class="field"><label for="profile-baby-selector">작성할 아이</label><select id="profile-baby-selector" data-profile-baby-selector>${clientBabies.map((baby) => `<option value="${escapeHtml(baby.id || "")}">${escapeHtml(baby.name || "이름 미등록")} · ${baby.birthDate ? formatDate(baby.birthDate) : "출생일 미등록"}</option>`).join("")}<option value="__new__">+ 새 아이 등록</option></select></div>` : ""}<input type="hidden" name="babyId" value="${escapeHtml(initialBaby?.id || "")}"/><div class="form-grid two"><div class="field"><label for="profile-baby-name">아기 이름</label><input id="profile-baby-name" name="babyName" value="${escapeHtml(initialBaby?.name || "")}" autocomplete="off" required /></div><div class="field"><label for="profile-baby-birth">출생일 또는 출산 예정일</label><input id="profile-baby-birth" name="babyBirthDate" type="date" value="${initialBaby?.birthDate ? dateInputValue(initialBaby.birthDate) : ""}" required /></div></div><div class="field"><label for="profile-service-address">기본 서비스 주소</label><input id="profile-service-address" name="serviceAddress" value="${escapeHtml(client.address || "")}" autocomplete="street-address" placeholder="Street, City, State ZIP" required /></div><div class="form-grid two"><div class="field"><label for="profile-allergies">알러지·주의사항</label><input id="profile-allergies" name="allergies" value="${escapeHtml(client.allergies || "없음")}" maxlength="500" required /></div><div class="field"><label for="profile-household">가정 내 추가인원</label><input id="profile-household" name="extraHouseholdMembers" type="number" min="0" max="30" value="${Number(client.extraHouseholdMembers || 0)}" required /></div></div><div class="field"><label for="profile-emergency-contact">비상 연락처</label><input id="profile-emergency-contact" name="emergencyContact" value="${escapeHtml(client.emergencyContact || "")}" maxlength="300" placeholder="이름 · 전화번호 · 관계" /></div><div class="field"><label for="profile-request-note">기본 요청사항</label><textarea id="profile-request-note" name="requestNote" maxlength="2000" placeholder="서비스 신청 시 관리자가 참고할 기본 요청사항">${escapeHtml(client.requestNote || "")}</textarea></div></section>` : "";
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal profile-modal" role="dialog" aria-modal="true" aria-labelledby="my-profile-title"><header class="modal-header"><div><p class="eyebrow">MY PROFILE</p><h3 id="my-profile-title">${client ? "고객·아기 프로필" : "프로필 수정"}</h3><p>${client ? "연락처와 가족 정보를 저장하면 바로 서비스를 신청할 수 있습니다." : "연락처와 표시 정보를 최신 상태로 관리하세요."}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-my-profile-form><div class="profile-summary"><div class="profile-summary-person"><div class="profile-avatar">${escapeHtml(user.initials || initialsFor(user.fullName))}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(ROLE_META[state.role]?.label || "회원")} 작업공간</span></div></div></div><section class="profile-form-section"><div class="profile-section-title"><strong>기본정보</strong><span>계정 연락 및 표시 정보</span></div><div class="field"><label for="profile-email">로그인 이메일</label><input id="profile-email" type="email" value="${escapeHtml(user.email || "")}" readonly aria-readonly="true"/><small>로그인 이메일 변경은 고객지원으로 문의해 주세요.</small></div><div class="form-grid two"><div class="field"><label for="profile-full-name">이름</label><input id="profile-full-name" name="fullName" autocomplete="name" value="${escapeHtml(user.fullName || "")}" required /></div><div class="field"><label for="profile-phone">전화번호</label><input id="profile-phone" name="phone" type="tel" autocomplete="tel" value="${escapeHtml(user.phone || "")}" required /></div></div><div class="field"><label for="profile-language">선호 언어</label><select id="profile-language" name="preferredLanguage"><option value="ko" ${preferredLanguage === "ko" || preferredLanguage.includes("한국") ? "selected" : ""}>한국어</option><option value="en" ${preferredLanguage === "en" || preferredLanguage === "English" ? "selected" : ""}>English</option><option value="ko,en" ${preferredLanguage.includes("·") || preferredLanguage.includes(",") ? "selected" : ""}>한국어 · English</option></select></div></section>${clientProfileFields}<div class="privacy-boundary-note"><strong>개인정보 보호</strong><span>프로필 정보는 계정 운영과 서비스 신청·배정에만 사용되며, 역할별 접근 권한이 적용됩니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">${client ? "고객·아기 프로필 저장" : "프로필 저장"}</button></div></form></section></div>`;
     bindModalFrame();
-    modalRoot.querySelector("[data-my-profile-form]").addEventListener("submit", async (event) => {
+    const form = modalRoot.querySelector("[data-my-profile-form]");
+    const syncProfileBaby = (focusNew = false) => {
+      const selector = form.querySelector("[data-profile-baby-selector]");
+      if (!selector) return;
+      const selectedBaby = clientBabies.find((baby) => baby.id === selector.value) || null;
+      form.elements.babyId.value = selectedBaby?.id || "";
+      form.elements.babyName.value = selectedBaby?.name || "";
+      form.elements.babyBirthDate.value = selectedBaby?.birthDate ? dateInputValue(selectedBaby.birthDate) : "";
+      refreshEnhancedDateInput(form.elements.babyBirthDate);
+      if (!selectedBaby && focusNew) form.elements.babyName.focus();
+    };
+    form.querySelector("[data-profile-baby-selector]")?.addEventListener("change", () => syncProfileBaby(true));
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const form = event.currentTarget;
-      const values = Object.fromEntries(new FormData(form).entries());
-      const submitButton = form.querySelector('button[type="submit"]');
+      const submittedForm = event.currentTarget;
+      const values = Object.fromEntries(new FormData(submittedForm).entries());
+      const submitButton = submittedForm.querySelector('button[type="submit"]');
       submitButton.disabled = true;
       try {
         if (usingCloudData()) {
-          await updateMyProfileCloud(values);
+          if (client) await updateMyClientProfileCloud(values);
+          else await updateMyProfileCloud(values);
           closeModal();
           await refreshCloudState();
         } else {
           Object.assign(user, { fullName: values.fullName.trim(), initials: initialsFor(values.fullName), phone: values.phone.trim(), preferredLanguage: values.preferredLanguage });
-          if (client) Object.assign(client, { motherName: values.fullName.trim(), preferredLanguage: values.preferredLanguage });
+          if (client) {
+            const existingBaby = findClientBaby(client, values.babyName, values.babyId || null);
+            const savedBaby = existingBaby || { id: `baby-${Date.now()}`, name: "", birthDate: null };
+            Object.assign(savedBaby, { name: values.babyName.trim(), birthDate: new Date(`${values.babyBirthDate}T12:00:00`).toISOString() });
+            const updatedBabies = babiesForClient(client);
+            if (!existingBaby) updatedBabies.push(savedBaby);
+            Object.assign(client, { motherName: values.fullName.trim(), preferredLanguage: values.preferredLanguage, babies: updatedBabies, babyId: client.babyId || savedBaby.id, babyName: client.babyName || savedBaby.name, babyBirthDate: client.babyBirthDate || savedBaby.birthDate, address: values.serviceAddress.trim(), allergies: values.allergies.trim(), extraHouseholdMembers: Number(values.extraHouseholdMembers || 0), emergencyContact: values.emergencyContact.trim(), requestNote: values.requestNote.trim() });
+          }
           saveState();
           closeModal();
           render();
         }
-        showToast("프로필을 저장했습니다.");
+        showToast(client ? "고객·아기 프로필을 저장했습니다. 이제 서비스를 신청할 수 있습니다." : "프로필을 저장했습니다.");
       } catch (error) {
-        showToast(friendlyErrorMessage(error, "프로필을 저장하지 못했습니다."), "error");
+        showToast(friendlyErrorMessage(error, client ? "고객·아기 프로필을 저장하지 못했습니다." : "프로필을 저장하지 못했습니다."), "error");
         submitButton.disabled = false;
       }
     });
