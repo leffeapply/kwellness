@@ -3,7 +3,6 @@ import proMomsLogoUrl from "./assets/promoms-logo.png";
 import {
   approveCaregiverCloud,
   archiveMemberCloud,
-  changeMemberRoleCloud,
   cloudEnabled,
   currentCloudSession,
   loadCloudState,
@@ -21,6 +20,7 @@ import {
   scheduleServiceRequestCloud,
   setCareShiftCheckCloud,
   setCareSessionStatusCloud,
+  setMemberAccessRolesCloud,
   setMemberStatusCloud,
   signInCloud,
   signOutCloud,
@@ -588,10 +588,12 @@ import {
         state = { ...clean, auth: { ...clean.auth, screen: "public", currentUserId: null } };
         return;
       }
+      const preferredWorkspace = state.role;
       const live = await loadCloudState(session);
       Object.assign(state, live);
       state.auth.currentUserId = live.currentUser.id;
-      state.role = live.currentUser.role;
+      const availableWorkspaces = availableWorkspaceRoles(live.currentUser);
+      state.role = availableWorkspaces.includes(preferredWorkspace) ? preferredWorkspace : live.currentUser.role;
       if (passwordRecoveryRequested) state.auth.screen = "reset-password";
       else if (state.auth.screen === "reset-password") state.auth.screen = "portal";
       else if (!["public", "login", "signup", "forgot-password", "reset-password", "portal"].includes(state.auth.screen)) state.auth.screen = "portal";
@@ -626,6 +628,11 @@ import {
     if (message.includes("exceeds the outstanding balance")) return "입력한 수납액이 현재 잔금보다 큽니다.";
     if (message.includes("no outstanding balance")) return "이 신청은 미수 잔금이 없습니다.";
     if (message.includes("payment reference has already been recorded")) return "이미 사용된 거래·영수증 번호입니다. 실제 결제 내역의 다른 고유 번호를 입력해 주세요.";
+    if (message.includes("required consents must be recorded")) return "관리사 권한을 추가하려면 해당 계정에서 최신 필수 약관 동의를 먼저 저장해야 합니다.";
+    if (message.includes("client active service records")) return "진행 중인 고객 신청·계약이 있어 고객 권한을 제거할 수 없습니다. 고객 권한을 유지하거나 관련 서비스를 먼저 종료해 주세요.";
+    if (message.includes("caregiver active schedule")) return "진행 중이거나 예정된 배정이 있어 관리사 권한을 제거할 수 없습니다. 관리사 권한을 유지하거나 배정을 먼저 완료·재배정해 주세요.";
+    if (message.includes("caregiver open care session")) return "진행 중인 케어 세션을 종료한 뒤 관리사 권한을 제거해 주세요.";
+    if (message.includes("only an owner")) return "소유자만 관리자 권한을 추가하거나 제거할 수 있습니다.";
     if (message.includes("duplicate") || message.includes("already exists")) return "이미 처리 중이거나 저장된 항목입니다.";
     if (message.includes("permission") || message.includes("row-level security") || message.includes("not authorized")) return "이 작업을 수행할 권한이 없습니다.";
     return fallback;
@@ -647,6 +654,30 @@ import {
     const user = authUser();
     if (!usingCloudData()) return user?.role === "admin";
     return Boolean(user?.databaseRoles?.includes(role));
+  }
+
+  function availableWorkspaceRoles(user = authUser()) {
+    if (!user) return [];
+    if (!usingCloudData()) return [user.role];
+    const roles = new Set(user.databaseRoles || []);
+    const workspaces = [];
+    if (["OWNER", "ADMIN", "CARE_MANAGER"].some((role) => roles.has(role))) workspaces.push("admin");
+    if (roles.has("CAREGIVER")) workspaces.push("caregiver");
+    if (roles.has("CLIENT")) workspaces.push("client");
+    if (roles.has("RETAIL_STAFF")) workspaces.push("retail");
+    return workspaces.length ? workspaces : [user.role];
+  }
+
+  function userHasAccessRole(user, databaseRole) {
+    if (!user) return false;
+    if (usingCloudData()) return Boolean(user.databaseRoles?.includes(databaseRole));
+    return DATABASE_ROLE_BY_APP_ROLE[user.role] === databaseRole;
+  }
+
+  function workspaceSwitcherMarkup(location = "sidebar") {
+    const workspaces = availableWorkspaceRoles();
+    if (workspaces.length < 2) return "";
+    return `<div class="workspace-switcher workspace-switcher-${location}" aria-label="작업공간 전환"><span>작업공간 전환</span><div>${workspaces.map((role) => `<button type="button" class="${state.role === role ? "active" : ""}" data-switch-role="${role}" aria-pressed="${state.role === role}">${escapeHtml(ROLE_META[role]?.label || role)}</button>`).join("")}</div></div>`;
   }
 
   function canManageMemberAccounts() {
@@ -888,12 +919,12 @@ import {
     const user = authUser();
     const serviceType = selectedServiceTypeForRole();
     if (!user) return null;
-    if (user.role === "client") {
+    if (state.role === "client") {
       const client = clientForUser(user.id);
       return client ? selectedClientAssignment(client.id, serviceType) : null;
     }
-    if (user.role === "caregiver") return currentAssignmentFor(user.id, serviceType);
-    if (user.role === "admin") return assignmentForClient(state.adminSelectedClientId, serviceType);
+    if (state.role === "caregiver") return currentAssignmentFor(user.id, serviceType);
+    if (state.role === "admin") return assignmentForClient(state.adminSelectedClientId, serviceType);
     return null;
   }
 
@@ -1200,14 +1231,17 @@ import {
   }
 
   function isCaregiverAssignable(user) {
-    if (user?.role !== "caregiver" || user.status !== "approved" || user.employmentStatus !== "ACTIVE") return false;
+    const hasCaregiverAccess = usingCloudData() ? user?.databaseRoles?.includes("CAREGIVER") : user?.role === "caregiver";
+    const caregiverStatus = user?.caregiverStatus || user?.status;
+    if (!hasCaregiverAccess || caregiverStatus !== "approved" || user.employmentStatus !== "ACTIVE") return false;
     return !usingCloudData() || user.hasHrProfile === true;
   }
 
   function isCaregiverPendingApproval(user) {
+    const hasCaregiverAccess = usingCloudData() ? user?.databaseRoles?.includes("CAREGIVER") : user?.role === "caregiver";
     return Boolean(
-      user?.role === "caregiver"
-      && user.status === "pending"
+      hasCaregiverAccess
+      && (user.caregiverStatus || user.status) === "pending"
       && (!usingCloudData() || !["SUSPENDED", "REJECTED"].includes(user.accountStatus)),
     );
   }
@@ -1215,9 +1249,9 @@ import {
   function accessibleClientIds() {
     const user = authUser();
     if (!user) return [];
-    if (user.role === "admin") return state.clients.map((client) => client.id);
-    if (user.role === "client") return state.clients.filter((client) => client.userId === user.id || client.memberUserIds?.includes(user.id)).map((client) => client.id);
-    if (user.role === "caregiver") {
+    if (state.role === "admin") return state.clients.map((client) => client.id);
+    if (state.role === "client") return state.clients.filter((client) => client.userId === user.id || client.memberUserIds?.includes(user.id)).map((client) => client.id);
+    if (state.role === "caregiver") {
       return state.assignments
         .filter((assignment) => assignment.caregiverUserId === user.id && isAssignmentCurrent(assignment))
         .map((assignment) => assignment.clientId);
@@ -1232,9 +1266,9 @@ import {
   function activeClientId() {
     const user = authUser();
     if (!user) return null;
-    if (user.role === "client") return clientForUser(user.id)?.id || null;
-    if (user.role === "caregiver") return activeAssignmentContext()?.clientId || null;
-    if (user.role === "admin") return canAccessClient(state.adminSelectedClientId) ? state.adminSelectedClientId : accessibleClientIds()[0] || null;
+    if (state.role === "client") return clientForUser(user.id)?.id || null;
+    if (state.role === "caregiver") return activeAssignmentContext()?.clientId || null;
+    if (state.role === "admin") return canAccessClient(state.adminSelectedClientId) ? state.adminSelectedClientId : accessibleClientIds()[0] || null;
     return null;
   }
 
@@ -1334,7 +1368,8 @@ import {
             <div class="brand-mark">${brandLogoMarkup()}</div>
             <div class="brand-copy"><strong>ProMoms</strong><small>CARE · BABY · BEAUTY</small></div>
           </div>
-          <div class="side-section-label">Workspace</div>
+          ${workspaceSwitcherMarkup("sidebar")}
+          <div class="side-section-label">Menu</div>
           <nav class="side-nav" aria-label="주요 메뉴">${navMarkup("side")}</nav>
           <div class="sidebar-footer">
             <div class="privacy-note"><span>◈</span><span>민감한 케어 정보는 역할별 권한으로 보호됩니다.</span></div>
@@ -1344,7 +1379,7 @@ import {
         <main class="main-area">
           <header class="mobile-header">
             <div class="mobile-brand"><div class="brand-mark">${brandLogoMarkup()}</div><strong>ProMoms</strong></div>
-            <details class="mobile-account-menu"><summary>계정</summary><div class="mobile-account-actions">${state.role === "client" ? `<button class="mobile-logout" data-public-home>일반 사이트</button>` : ""}<button class="mobile-logout" data-edit-profile>프로필 수정</button><button class="mobile-logout" data-change-password>비밀번호 변경</button><button class="mobile-logout" data-logout>로그아웃</button></div></details>
+            <details class="mobile-account-menu"><summary>${escapeHtml(ROLE_META[state.role]?.label || "계정")}</summary><div class="mobile-account-actions">${workspaceSwitcherMarkup("mobile")}${state.role === "client" ? `<button class="mobile-logout" data-public-home>일반 사이트</button>` : ""}<button class="mobile-logout" data-edit-profile>프로필 수정</button><button class="mobile-logout" data-change-password>비밀번호 변경</button><button class="mobile-logout" data-logout>로그아웃</button></div></details>
           </header>
           <header class="topbar">
             <div class="topbar-title"><h1>${title}</h1><p>${subtitle}</p></div>
@@ -1649,6 +1684,15 @@ import {
     retail: "RETAIL_STAFF",
   };
 
+  const DATABASE_ROLE_LABELS = {
+    OWNER: "소유자",
+    ADMIN: "관리자",
+    CARE_MANAGER: "일정 관리자",
+    RETAIL_STAFF: "리테일 직원",
+    CAREGIVER: "관리사",
+    CLIENT: "고객",
+  };
+
   function requestHasCapturedDepositEvidence(request) {
     return !usingCloudData() || request?.depositTransaction?.status === "CAPTURED";
   }
@@ -1701,23 +1745,75 @@ import {
     const isSelf = user.id === authUser()?.id;
     const archived = user.accountStatus === "REJECTED";
     const pending = user.accountStatus === "PENDING";
-    const currentRole = ["OWNER", "ADMIN", "CARE_MANAGER", "RETAIL_STAFF", "CAREGIVER", "CLIENT"].find((role) => user.databaseRoles?.includes(role)) || DATABASE_ROLE_BY_APP_ROLE[user.role] || "CLIENT";
-    const protectedAdministrator = ["OWNER", "ADMIN"].includes(currentRole) && !canGrantAdministrativeRole();
-    const roleOptions = [
-      ["CLIENT", "고객"],
-      ["CAREGIVER", "관리사"],
-    ];
-    if (currentRole === "CARE_MANAGER") roleOptions.push(["CARE_MANAGER", "일정 관리자 (기존 역할)"]);
-    if (currentRole === "RETAIL_STAFF") roleOptions.push(["RETAIL_STAFF", "리테일 직원 (기존 역할)"]);
-    if (canGrantAdministrativeRole() || currentRole === "ADMIN") roleOptions.push(["ADMIN", "관리자"]);
-    if (currentRole === "OWNER") roleOptions.push(["OWNER", "소유자"]);
-    const roleLabel = ({ OWNER: "소유자", ADMIN: "관리자", CARE_MANAGER: "일정 관리자", RETAIL_STAFF: "리테일 직원", CAREGIVER: "관리사", CLIENT: "고객" })[currentRole] || "고객";
-    const accountAction = isSelf || currentRole === "OWNER"
+    const currentRoles = user.databaseRoles?.length ? user.databaseRoles : [DATABASE_ROLE_BY_APP_ROLE[user.role] || "CLIENT"];
+    const targetIsAdministrator = currentRoles.some((role) => ["OWNER", "ADMIN"].includes(role));
+    const protectedAdministrator = targetIsAdministrator && !canGrantAdministrativeRole() && !isSelf;
+    const roleBadges = currentRoles
+      .map((role) => `<span class="member-role-badge ${["OWNER", "ADMIN"].includes(role) ? "administrative" : ""}">${escapeHtml(DATABASE_ROLE_LABELS[role] || role)}</span>`)
+      .join("");
+    const accountAction = isSelf || currentRoles.includes("OWNER")
       ? `<span class="status-chip">${isSelf ? "현재 계정" : "보호된 소유자"}</span>`
       : archived
         ? `<span class="status-chip coral">보관됨</span>`
         : `<button class="text-button danger-text mini-button" data-archive-member="${user.id}" data-member-name="${escapeHtml(user.fullName)}">계정 보관</button>`;
-    return `<div class="management-row member-account-row ${archived ? "is-archived" : ""}"><div class="management-identity"><div class="mini-avatar">${escapeHtml(user.initials || initialsFor(user.fullName))}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email || "이메일 미등록")}</span></div></div><div class="management-cell"><span>회원 종류</span><select class="member-role-select" data-member-role data-member-user-id="${user.id}" data-member-name="${escapeHtml(user.fullName)}" ${isSelf || archived || protectedAdministrator || currentRole === "OWNER" ? "disabled" : ""}>${roleOptions.map(([value, label]) => `<option value="${value}" ${value === currentRole ? "selected" : ""}>${label}</option>`).join("")}</select><small>${isSelf ? "로그인 중인 계정" : protectedAdministrator ? "소유자만 관리자 권한 변경 가능" : "변경 즉시 접근 권한 재설정"}</small></div><div class="management-cell"><span>가입일</span><strong>${user.createdAt ? formatDate(user.createdAt) : "미등록"}</strong><small>${escapeHtml(user.phone || "전화 미등록")}</small></div><div class="management-cell"><span>계정 상태</span><strong>${archived ? "보관됨" : pending ? "승인 대기" : user.accountStatus === "SUSPENDED" ? "접근 정지" : "정상"}</strong><small>${archived ? "로그인 및 데이터 접근 차단" : `${roleLabel} 권한으로 연결됨`}</small></div><div class="management-actions">${accountAction}</div></div>`;
+    return `<div class="management-row member-account-row ${archived ? "is-archived" : ""}"><div class="management-identity"><div class="mini-avatar">${escapeHtml(user.initials || initialsFor(user.fullName))}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email || "이메일 미등록")}</span></div></div><div class="management-cell"><span>접근 권한</span><div class="member-role-badges">${roleBadges}</div><button class="secondary-button mini-button member-access-button" type="button" data-configure-member-roles="${user.id}" ${archived || protectedAdministrator ? "disabled" : ""}>권한 구성</button><small>${protectedAdministrator ? "소유자만 다른 관리자 권한을 변경할 수 있습니다." : "한 계정에 여러 작업공간을 함께 부여할 수 있습니다."}</small></div><div class="management-cell"><span>가입일</span><strong>${user.createdAt ? formatDate(user.createdAt) : "미등록"}</strong><small>${escapeHtml(user.phone || "전화 미등록")}</small></div><div class="management-cell"><span>계정 상태</span><strong>${archived ? "보관됨" : pending ? "승인 대기" : user.accountStatus === "SUSPENDED" ? "접근 정지" : "정상"}</strong><small>${archived ? "로그인 및 데이터 접근 차단" : `${currentRoles.length}개 권한 연결됨`}</small></div><div class="management-actions">${accountAction}</div></div>`;
+  }
+
+  function openMemberRoleAccessModal(userId) {
+    const member = state.users.find((item) => item.id === userId);
+    if (!member) return showToast("회원 정보를 찾을 수 없습니다.", "error");
+    const actor = authUser();
+    const isSelf = actor?.id === member.id;
+    const currentRoles = new Set(member.databaseRoles?.length ? member.databaseRoles : [DATABASE_ROLE_BY_APP_ROLE[member.role] || "CLIENT"]);
+    const adminLocked = !canGrantAdministrativeRole();
+    const fixedRoles = ["OWNER", "CARE_MANAGER", "RETAIL_STAFF"].filter((role) => currentRoles.has(role));
+    const needsSelfCaregiverConsent = usingCloudData() && isSelf && !currentRoles.has("CAREGIVER");
+    const roleOption = (role, label, detail, disabled = false) => `<label class="member-access-option ${disabled ? "locked" : ""}"><input type="checkbox" name="accessRole" value="${role}" ${currentRoles.has(role) ? "checked" : ""} ${disabled ? "disabled" : ""}/><span><strong>${label}</strong><small>${detail}</small></span></label>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal member-access-modal" role="dialog" aria-modal="true" aria-labelledby="member-access-title"><header class="modal-header"><div><p class="eyebrow">MEMBER ACCESS</p><h3 id="member-access-title">회원 권한 구성</h3><p>${escapeHtml(member.fullName)} · ${escapeHtml(member.email || "이메일 미등록")}</p></div><button class="close-button" type="button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-member-access-form><div class="status-banner"><strong>복수 역할 계정</strong><span>선택한 작업공간을 같은 로그인 계정에서 전환해 사용할 수 있습니다. 기존 역할의 운영 기록은 다른 역할을 추가해도 유지됩니다.</span></div><fieldset class="member-access-options"><legend>허용할 작업공간</legend>${roleOption("CLIENT", "고객", "본인의 서비스 신청·일정·케어 기록을 확인합니다.")}${roleOption("CAREGIVER", "관리사", "배정된 고객 일정과 케어 기록 화면을 사용합니다.")}${roleOption("ADMIN", "관리자", adminLocked ? "현재 관리자 권한은 유지되며 소유자만 변경할 수 있습니다." : "회원·일정·결제·운영 정보를 관리합니다.", adminLocked)}${fixedRoles.length ? `<div class="fixed-access-note"><strong>보호된 기존 권한</strong><div class="member-role-badges">${fixedRoles.map((role) => `<span class="member-role-badge administrative">${escapeHtml(DATABASE_ROLE_LABELS[role])}</span>`).join("")}</div><small>소유자 및 기존 특수 권한은 이 화면에서 제거되지 않습니다.</small></div>` : ""}</fieldset>${needsSelfCaregiverConsent ? `<label class="consent-row member-access-consent"><input type="checkbox" name="caregiverConsent"/><span><strong>[필수] 관리사 권한 추가 약관 확인</strong><small>관리사 권한을 선택하는 경우 서비스 이용약관, 개인정보 처리 및 민감 케어정보 처리에 동의합니다.</small></span></label>` : ""}<div class="privacy-boundary-note"><strong>활성 기록 보호</strong><span>진행 중인 고객 계약이나 관리사 배정이 있으면 해당 권한은 제거할 수 없지만, 다른 권한을 추가하는 것은 가능합니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">권한 저장</button></div></form></section></div>`;
+    bindModalFrame();
+    modalRoot.querySelector("[data-member-access-form]")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const selectedRoles = [...form.querySelectorAll('input[name="accessRole"]:checked')].map((input) => input.value);
+      fixedRoles.forEach((role) => { if (!selectedRoles.includes(role)) selectedRoles.push(role); });
+      if (!selectedRoles.length) return showToast("최소 한 개의 접근 권한을 선택해 주세요.", "error");
+      const addingCaregiver = selectedRoles.includes("CAREGIVER") && !currentRoles.has("CAREGIVER");
+      if (addingCaregiver && needsSelfCaregiverConsent && !form.elements.caregiverConsent?.checked) {
+        return showToast("관리사 권한 추가를 위한 필수 약관을 확인해 주세요.", "error");
+      }
+      const submitButton = form.querySelector('button[type="submit"]');
+      submitButton.disabled = true;
+      submitButton.textContent = "저장 중…";
+      try {
+        if (usingCloudData()) {
+          if (addingCaregiver && needsSelfCaregiverConsent) {
+            await recordMyCurrentConsentsCloud({ serviceTerms: true, privacy: true, sensitiveCare: true, marketing: false });
+          }
+          await setMemberAccessRolesCloud(member.id, selectedRoles);
+          closeModal();
+          await refreshCloudState();
+        } else {
+          member.databaseRoles = selectedRoles;
+          member.role = selectedRoles.some((role) => ["OWNER", "ADMIN", "CARE_MANAGER"].includes(role))
+            ? "admin"
+            : selectedRoles.includes("CAREGIVER") ? "caregiver"
+              : selectedRoles.includes("CLIENT") ? "client" : "retail";
+          if (addingCaregiver) {
+            member.status = "approved";
+            member.caregiverStatus = "approved";
+            member.employmentStatus = "ACTIVE";
+          }
+          saveState();
+          closeModal();
+          render();
+        }
+        showToast(`${member.fullName} 계정의 작업공간 권한을 저장했습니다.`);
+      } catch (error) {
+        showToast(friendlyErrorMessage(error, "회원 접근 권한을 저장하지 못했습니다."), "error");
+        submitButton.disabled = false;
+        submitButton.textContent = "권한 저장";
+      }
+    });
   }
 
   function requestManagementRowMarkup(request, mode) {
@@ -1870,7 +1966,7 @@ import {
 
   function adminPeople() {
     const pendingCaregivers = state.users.filter(isCaregiverPendingApproval);
-    const caregivers = state.users.filter((user) => user.role === "caregiver");
+    const caregivers = state.users.filter((user) => usingCloudData() ? user.databaseRoles?.includes("CAREGIVER") : user.role === "caregiver");
     const activeClients = state.clients.filter((client) => (client.clientStatus || "ACTIVE") === "ACTIVE");
     const directory = state.peopleDirectory;
     const clientQuery = normalizeDirectorySearch(directory.clientQuery);
@@ -2394,7 +2490,7 @@ import {
   }
 
   function cartKey() {
-    return authUser()?.role === "client" ? authUser().id : "retail-pos";
+    return state.role === "client" ? authUser()?.id : "retail-pos";
   }
 
   function activeCart() {
@@ -2760,7 +2856,7 @@ import {
   }
 
   function publicServiceStatusMarkup(user) {
-    if (!user || user.role !== "client") return "";
+    if (!userHasAccessRole(user, "CLIENT")) return "";
     const client = clientForUser(user.id);
     const currentAssignment = client ? canonicalCurrentAssignment(client.id) : null;
     const upcomingAssignment = client ? state.assignments.filter((assignment) => assignment.clientId === client.id && assignment.status !== "CANCELLED" && new Date(assignment.startAt) > new Date()).sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0] : null;
@@ -2782,7 +2878,7 @@ import {
 
   function publicSiteMarkup() {
     const user = authUser();
-    const clientUser = user?.role === "client";
+    const clientUser = userHasAccessRole(user, "CLIENT");
     const publicClient = clientUser ? clientForUser(user.id) : null;
     const defaultApplicationType = defaultServiceApplicationType(publicClient);
     const defaultApplicationLabel = defaultApplicationType === "BABYSITTING" ? "베이비시팅 미리 신청" : "서비스 신청";
@@ -2820,7 +2916,7 @@ import {
     const publicSite = document.querySelector(".public-site");
     publicSite?.addEventListener("keydown", (event) => { if (event.key === "Escape") setPublicMenuOpen(false); });
     publicSite?.addEventListener("click", (event) => { if (publicNav?.classList.contains("is-open") && !event.target.closest(".public-header")) setPublicMenuOpen(false); });
-    document.querySelectorAll("[data-service-apply]").forEach((button) => button.addEventListener("click", () => { const user = authUser(); if (!user) { state.auth.screen = "signup"; saveState(); render(); return; } if (user.role !== "client") return showToast("서비스 신청은 고객 계정에서 이용할 수 있습니다."); openServiceApplicationModal(button.dataset.serviceApply || null); }));
+    document.querySelectorAll("[data-service-apply]").forEach((button) => button.addEventListener("click", () => { const user = authUser(); if (!user) { state.auth.screen = "signup"; saveState(); render(); return; } if (!userHasAccessRole(user, "CLIENT")) return showToast("서비스 신청은 고객 권한이 있는 계정에서 이용할 수 있습니다."); openServiceApplicationModal(button.dataset.serviceApply || null); }));
     document.querySelectorAll("[data-my-service]").forEach((button) => button.addEventListener("click", enterClientPortal));
     document.querySelectorAll("[data-enter-portal]").forEach((button) => button.addEventListener("click", () => { state.auth.screen = "portal"; saveState(); render(); }));
     document.querySelectorAll("[data-open-client-shop]").forEach((button) => button.addEventListener("click", () => { state.views.client = "shop"; state.auth.screen = "portal"; saveState(); render(); }));
@@ -2830,8 +2926,9 @@ import {
   function enterClientPortal() {
     const user = authUser();
     if (!user) { state.auth.screen = "login"; saveState(); render(); return; }
-    state.role = user.role;
-    if (user.role === "client") state.views.client = "services";
+    if (!userHasAccessRole(user, "CLIENT")) return showToast("고객 작업공간에 접근할 권한이 없습니다.", "error");
+    state.role = "client";
+    state.views.client = "services";
     state.auth.screen = "portal";
     saveState();
     render();
@@ -3198,8 +3295,9 @@ import {
       }
       return;
     }
-    state.role = user.role;
-    if (user.role === "caregiver" && user.status !== "approved") {
+    const workspaces = availableWorkspaceRoles(user);
+    if (!workspaces.includes(state.role)) state.role = workspaces.includes(user.role) ? user.role : workspaces[0];
+    if (state.role === "caregiver" && (user.caregiverStatus || user.status) !== "approved") {
       app.innerHTML = pendingApprovalMarkup(user);
       bindAuthEvents();
       return;
@@ -3230,13 +3328,8 @@ import {
     }
     if (state.role === "admin" && !canManageMemberAccounts()) {
       document.querySelector(".member-governance")?.remove();
-      document.querySelectorAll("[data-member-status], [data-archive-member], [data-member-role]").forEach((control) => control.remove());
+      document.querySelectorAll("[data-member-status], [data-archive-member], [data-configure-member-roles]").forEach((control) => control.remove());
     } else if (state.role === "admin" && !canGrantAdministrativeRole()) {
-      document.querySelectorAll("[data-member-role]").forEach((select) => {
-        const administrativeOption = select.querySelector('option[value="ADMIN"]');
-        if (select.value === "ADMIN") select.disabled = true;
-        else administrativeOption?.remove();
-      });
       state.users.filter((user) => user.databaseRoles?.includes("OWNER")).forEach((owner) => {
         document.querySelectorAll(`[data-member-status][data-member-user-id="${owner.id}"], [data-archive-member="${owner.id}"]`).forEach((control) => control.remove());
       });
@@ -3516,35 +3609,8 @@ import {
       });
     });
 
-    document.querySelectorAll("[data-member-role]").forEach((select) => {
-      select.addEventListener("change", async () => {
-        const member = state.users.find((item) => item.id === select.dataset.memberUserId);
-        const previousRole = DATABASE_ROLE_BY_APP_ROLE[member?.role] || "CLIENT";
-        const nextRole = select.value;
-        const memberName = select.dataset.memberName || "선택한 회원";
-        const nextLabel = select.options[select.selectedIndex]?.textContent || nextRole;
-        if (!window.confirm(`${memberName} 회원을 '${nextLabel}' 유형으로 변경하시겠습니까?\n기존 고객·관리사 접근 권한은 즉시 재설정됩니다.`)) {
-          select.value = previousRole;
-          return;
-        }
-        select.disabled = true;
-        if (!usingCloudData()) {
-          if (member) member.role = ({ CLIENT: "client", CAREGIVER: "caregiver", RETAIL_STAFF: "retail", ADMIN: "admin" })[nextRole];
-          saveState();
-          render();
-          showToast(`${memberName} 회원 종류를 ${nextLabel}(으)로 변경했습니다.`);
-          return;
-        }
-        try {
-          await changeMemberRoleCloud(select.dataset.memberUserId, nextRole);
-          await refreshCloudState();
-          showToast(`${memberName} 회원 종류를 ${nextLabel}(으)로 변경했습니다.`);
-        } catch (error) {
-          select.value = previousRole;
-          select.disabled = false;
-          showToast(friendlyErrorMessage(error, "회원 종류를 변경하지 못했습니다."), "error");
-        }
-      });
+    document.querySelectorAll("[data-configure-member-roles]").forEach((button) => {
+      button.addEventListener("click", () => openMemberRoleAccessModal(button.dataset.configureMemberRoles));
     });
 
     document.querySelectorAll("[data-archive-member]").forEach((button) => {
@@ -3641,7 +3707,9 @@ import {
 
     document.querySelectorAll("[data-switch-role]").forEach((button) => {
       button.addEventListener("click", () => {
-        state.role = button.dataset.switchRole;
+        const nextWorkspace = button.dataset.switchRole;
+        if (!availableWorkspaceRoles().includes(nextWorkspace)) return showToast("이 작업공간에 접근할 권한이 없습니다.", "error");
+        state.role = nextWorkspace;
         if (button.dataset.switchView) state.views[state.role] = button.dataset.switchView;
         saveState();
         render();
@@ -3815,7 +3883,7 @@ import {
 
   function openServiceReviewModal(assignmentId) {
     const user = authUser();
-    const client = user?.role === "client" ? clientForUser(user.id) : null;
+    const client = state.role === "client" ? clientForUser(user?.id) : null;
     const assignment = state.assignments.find((item) => item.id === assignmentId && item.clientId === client?.id && item.status !== "CANCELLED");
     if (!assignment || !assignmentHasCompletedCare(assignment)) return showToast("서비스 계약·배정 기간이 종료된 후에 후기를 작성할 수 있습니다.");
     if (state.reviews.some((review) => review.assignmentId === assignment.id)) return showToast("이 배정에는 이미 후기를 작성했습니다.");
@@ -3829,7 +3897,7 @@ import {
     event.preventDefault();
     const form = event.currentTarget;
     const user = authUser();
-    const client = user?.role === "client" ? clientForUser(user.id) : null;
+    const client = state.role === "client" ? clientForUser(user?.id) : null;
     const assignment = state.assignments.find((item) => item.id === form.dataset.assignmentId && item.clientId === client?.id && item.status !== "CANCELLED");
     if (!assignment || !assignmentHasCompletedCare(assignment)) return showToast("서비스 계약·배정 기간이 종료된 후에 후기를 작성할 수 있습니다.", "error");
     if (state.reviews.some((review) => review.assignmentId === assignment.id)) return showToast("이 배정에는 이미 후기를 작성했습니다.", "info");
@@ -3863,7 +3931,7 @@ import {
   }
 
   function openClientManagementModal(clientId, babyId = null) {
-    if (authUser()?.role !== "admin") return showToast("관리자만 고객 관리정보를 수정할 수 있습니다.");
+    if (state.role !== "admin") return showToast("관리자만 고객 관리정보를 수정할 수 있습니다.");
     const client = clientById(clientId);
     if (!client) return showToast("고객 정보를 찾을 수 없습니다.");
     const user = state.users.find((item) => item.id === client.userId);
@@ -3892,7 +3960,7 @@ import {
 
   async function saveClientManagement(event, clientId) {
     event.preventDefault();
-    if (authUser()?.role !== "admin") return showToast("관리자 권한이 필요합니다.");
+    if (state.role !== "admin") return showToast("관리자 권한이 필요합니다.");
     const values = Object.fromEntries(new FormData(event.currentTarget).entries());
     const client = clientById(clientId);
     if (!client) return showToast("저장할 고객 정보를 찾을 수 없습니다. 목록을 새로고침해 주세요.", "error");
@@ -3939,8 +4007,8 @@ import {
   }
 
   function openCaregiverManagementModal(userId) {
-    if (authUser()?.role !== "admin" || !canManageCaregiverHr()) return showToast("소유자 또는 관리자만 관리사 인사정보를 수정할 수 있습니다.");
-    const user = state.users.find((item) => item.id === userId && item.role === "caregiver");
+    if (state.role !== "admin" || !canManageCaregiverHr()) return showToast("소유자 또는 관리자만 관리사 인사정보를 수정할 수 있습니다.");
+    const user = state.users.find((item) => item.id === userId && (usingCloudData() ? item.databaseRoles?.includes("CAREGIVER") : item.role === "caregiver"));
     if (!user) return showToast("관리사 정보를 찾을 수 없습니다.");
     const assignments = state.assignments.filter((item) => item.caregiverUserId === user.id && item.status !== "CANCELLED").sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
     const current = assignments.find(isAssignmentCurrent);
@@ -3961,9 +4029,9 @@ import {
 
   async function saveCaregiverManagement(event, userId) {
     event.preventDefault();
-    if (authUser()?.role !== "admin" || !canManageCaregiverHr()) return showToast("소유자 또는 관리자 권한이 필요합니다.");
+    if (state.role !== "admin" || !canManageCaregiverHr()) return showToast("소유자 또는 관리자 권한이 필요합니다.");
     const values = Object.fromEntries(new FormData(event.currentTarget).entries());
-    const user = state.users.find((item) => item.id === userId && item.role === "caregiver");
+    const user = state.users.find((item) => item.id === userId && (usingCloudData() ? item.databaseRoles?.includes("CAREGIVER") : item.role === "caregiver"));
     if (usingCloudData()) {
       const submitButton = event.currentTarget.querySelector('button[type="submit"]');
       submitButton.disabled = true;
@@ -4000,7 +4068,7 @@ import {
   }
 
   function openCompanyComplianceModal(controlKey) {
-    if (authUser()?.role !== "admin" || !canManageCompanyCompliance()) {
+    if (state.role !== "admin" || !canManageCompanyCompliance()) {
       return showToast("소유자 또는 관리자만 컴플라이언스 증빙을 수정할 수 있습니다.", "error");
     }
     const definition = REQUIRED_COMPLIANCE_CONTROLS[controlKey];
@@ -4109,9 +4177,9 @@ import {
   function openProfileModal() {
     const user = authUser();
     if (!user) return showToast("로그인 정보를 확인할 수 없습니다.", "error");
-    const client = user.role === "client" ? clientForUser(user.id) : null;
+    const client = state.role === "client" ? clientForUser(user.id) : null;
     const preferredLanguage = user.preferredLanguage || client?.preferredLanguage || "ko";
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal profile-modal" role="dialog" aria-modal="true" aria-labelledby="my-profile-title"><header class="modal-header"><div><p class="eyebrow">MY PROFILE</p><h3 id="my-profile-title">프로필 수정</h3><p>연락처와 표시 정보를 최신 상태로 관리하세요.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-my-profile-form><div class="profile-summary"><div class="profile-summary-person"><div class="profile-avatar">${escapeHtml(user.initials || initialsFor(user.fullName))}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(ROLE_META[user.role]?.label || "회원")}</span></div></div></div><div class="field"><label for="profile-email">로그인 이메일</label><input id="profile-email" type="email" value="${escapeHtml(user.email || "")}" readonly aria-readonly="true"/><small>로그인 이메일 변경은 고객지원으로 문의해 주세요.</small></div><div class="form-grid two"><div class="field"><label for="profile-full-name">이름</label><input id="profile-full-name" name="fullName" autocomplete="name" value="${escapeHtml(user.fullName || "")}" required /></div><div class="field"><label for="profile-phone">전화번호</label><input id="profile-phone" name="phone" type="tel" autocomplete="tel" value="${escapeHtml(user.phone || "")}" required /></div></div><div class="field"><label for="profile-language">선호 언어</label><select id="profile-language" name="preferredLanguage"><option value="ko" ${preferredLanguage === "ko" || preferredLanguage.includes("한국") ? "selected" : ""}>한국어</option><option value="en" ${preferredLanguage === "en" || preferredLanguage === "English" ? "selected" : ""}>English</option><option value="ko,en" ${preferredLanguage.includes("·") || preferredLanguage.includes(",") ? "selected" : ""}>한국어 · English</option></select></div><div class="privacy-boundary-note"><strong>개인정보 보호</strong><span>프로필 정보는 계정 운영과 서비스 연락에만 사용되며, 역할별 접근 권한이 적용됩니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">프로필 저장</button></div></form></section></div>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal profile-modal" role="dialog" aria-modal="true" aria-labelledby="my-profile-title"><header class="modal-header"><div><p class="eyebrow">MY PROFILE</p><h3 id="my-profile-title">프로필 수정</h3><p>연락처와 표시 정보를 최신 상태로 관리하세요.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-my-profile-form><div class="profile-summary"><div class="profile-summary-person"><div class="profile-avatar">${escapeHtml(user.initials || initialsFor(user.fullName))}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(ROLE_META[state.role]?.label || "회원")} 작업공간</span></div></div></div><div class="field"><label for="profile-email">로그인 이메일</label><input id="profile-email" type="email" value="${escapeHtml(user.email || "")}" readonly aria-readonly="true"/><small>로그인 이메일 변경은 고객지원으로 문의해 주세요.</small></div><div class="form-grid two"><div class="field"><label for="profile-full-name">이름</label><input id="profile-full-name" name="fullName" autocomplete="name" value="${escapeHtml(user.fullName || "")}" required /></div><div class="field"><label for="profile-phone">전화번호</label><input id="profile-phone" name="phone" type="tel" autocomplete="tel" value="${escapeHtml(user.phone || "")}" required /></div></div><div class="field"><label for="profile-language">선호 언어</label><select id="profile-language" name="preferredLanguage"><option value="ko" ${preferredLanguage === "ko" || preferredLanguage.includes("한국") ? "selected" : ""}>한국어</option><option value="en" ${preferredLanguage === "en" || preferredLanguage === "English" ? "selected" : ""}>English</option><option value="ko,en" ${preferredLanguage.includes("·") || preferredLanguage.includes(",") ? "selected" : ""}>한국어 · English</option></select></div><div class="privacy-boundary-note"><strong>개인정보 보호</strong><span>프로필 정보는 계정 운영과 서비스 연락에만 사용되며, 역할별 접근 권한이 적용됩니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">프로필 저장</button></div></form></section></div>`;
     bindModalFrame();
     modalRoot.querySelector("[data-my-profile-form]").addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -4555,7 +4623,7 @@ import {
     const [targetType, targetId] = String(targetRef).split(":");
     const target = adjustmentTarget(targetType, targetId);
     const user = authUser();
-    const client = user?.role === "client" ? clientForUser(user.id) : null;
+    const client = state.role === "client" ? clientForUser(user?.id) : null;
     if (!target || !client || target.clientId !== client.id) return showToast("변경할 서비스 정보를 찾을 수 없습니다.");
     if (pendingAdjustment(targetType, targetId)) return showToast("이미 관리자 검토 중인 변경·취소 요청이 있습니다.");
     const serviceType = assignmentServiceType(target);
@@ -4638,7 +4706,7 @@ import {
 
   function openServiceApplicationModal(preselectedType = null, applicationMode = "NEW", extensionAssignmentId = null) {
     const user = authUser();
-    if (!user || user.role !== "client") return showToast("고객 계정으로 로그인해 주세요.");
+    if (!user || state.role !== "client" || !userHasAccessRole(user, "CLIENT")) return showToast("고객 작업공간으로 전환해 주세요.");
     const client = clientForUser(user.id);
     if (!client) return showToast("가족 고객 정보가 계정에 연결되지 않았습니다. 관리자에게 회원 연결 확인을 요청해 주세요.", "error");
     const selectedType = ["POSTPARTUM", "BABYSITTING"].includes(preselectedType) ? preselectedType : defaultServiceApplicationType(client);
@@ -4706,7 +4774,7 @@ import {
   async function submitServiceApplication(event) {
     event.preventDefault();
     const user = authUser();
-    if (!user || user.role !== "client") return showToast("고객 계정으로 다시 로그인해 주세요.", "error");
+    if (!user || state.role !== "client" || !userHasAccessRole(user, "CLIENT")) return showToast("고객 작업공간으로 다시 전환해 주세요.", "error");
     const client = clientForUser(user.id);
     if (!client) return showToast("가족 고객 정보가 계정에 연결되지 않아 신청을 저장하지 않았습니다.", "error");
     const formData = new FormData(event.currentTarget);

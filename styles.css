@@ -138,6 +138,66 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.workspace-switcher {
+  display: grid;
+  gap: 8px;
+}
+
+.workspace-switcher > span {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.workspace-switcher > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.workspace-switcher button {
+  min-height: 38px;
+  padding: 8px 7px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink-soft);
+  background: var(--paper);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.workspace-switcher button.active {
+  border-color: var(--green-2);
+  color: white;
+  background: var(--green-2);
+  box-shadow: 0 5px 14px rgba(18, 59, 45, .18);
+}
+
+.workspace-switcher-sidebar {
+  margin: 0 4px 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .06);
+}
+
+.workspace-switcher-sidebar > span {
+  color: rgba(255, 255, 255, .58);
+}
+
+.workspace-switcher-sidebar button {
+  border-color: rgba(255, 255, 255, .13);
+  color: rgba(255, 255, 255, .76);
+  background: rgba(0, 0, 0, .11);
+}
+
+.workspace-switcher-sidebar button.active {
+  border-color: var(--coral);
+  color: var(--green);
+  background: #fffaf0;
+}
+
 .side-nav {
   display: grid;
   gap: 5px;
@@ -1014,6 +1074,10 @@ button:disabled {
 .member-governance { margin-top: 18px; }
 .member-account-row { grid-template-columns: minmax(210px, 1.3fr) minmax(145px, .8fr) minmax(120px, .65fr) minmax(145px, .8fr) auto; }
 .member-account-row.is-archived { opacity: .66; }
+.member-role-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.member-role-badge { display: inline-flex; align-items: center; min-height: 25px; padding: 4px 8px; border-radius: 999px; color: var(--green); background: var(--mint); font-size: 11px; font-weight: 800; }
+.member-role-badge.administrative { color: #7d4b39; background: var(--coral-light); }
+.member-access-button { width: 100%; margin-bottom: 2px; }
 .member-role-select {
   width: 100%;
   min-height: 44px;
@@ -1083,6 +1147,22 @@ button:disabled {
 .record-meta, .record-meta-grid small { color: var(--ink-soft); font-size: 12px; }
 .record-meta-grid { display: flex; flex-wrap: wrap; gap: 12px; }
 .profile-modal input[readonly] { color: #77817e; background: #f3f3ef; }
+
+.member-access-modal { width: min(620px, 100%); }
+.member-access-options { display: grid; gap: 9px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.member-access-options legend { margin-bottom: 10px; font-size: 13px; font-weight: 800; }
+.member-access-option { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; padding: 14px; border: 1px solid var(--line); border-radius: 13px; background: white; cursor: pointer; }
+.member-access-option:has(input:checked) { border-color: var(--green-2); background: var(--mint-light); box-shadow: inset 3px 0 var(--green-2); }
+.member-access-option.locked { cursor: not-allowed; opacity: .72; }
+.member-access-option input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--green); }
+.member-access-option strong, .member-access-option small { display: block; }
+.member-access-option strong { font-size: 13px; }
+.member-access-option small { margin-top: 4px; color: var(--ink-soft); font-size: 11px; line-height: 1.5; }
+.fixed-access-note { display: grid; gap: 7px; padding: 13px; border-radius: 13px; background: var(--cream); }
+.fixed-access-note > strong { font-size: 12px; }
+.fixed-access-note .member-role-badges { margin: 0; }
+.fixed-access-note small { color: var(--ink-soft); font-size: 11px; }
+.member-access-consent { padding: 14px; border: 1px solid #efd2aa; border-radius: 13px; background: #fff7e2; }
 
 .modal-backdrop {
   position: fixed;
@@ -4066,6 +4146,26 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
     justify-content: flex-start;
     text-align: left;
     white-space: normal;
+  }
+
+  .workspace-switcher-mobile {
+    width: 100%;
+    padding: 8px;
+    border-radius: 11px;
+    background: var(--mint-light);
+  }
+
+  .workspace-switcher-mobile > span {
+    color: var(--ink-soft);
+  }
+
+  .workspace-switcher-mobile > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workspace-switcher-mobile button {
+    width: 100%;
+    min-height: 42px;
   }
 }
 

@@ -305,7 +305,8 @@ async function loadCloudStateOnce(session) {
     const hr = caregiver ? caregiverHrById.get(caregiver.id) : null;
     const databaseRoles = (roleMap.get(profile.id) || []).map((item) => item.role);
     const role = appRoleFor(profile, roleMap.get(profile.id) || [], caregiverApplication, memberByUser.get(profile.id));
-    const caregiverApproved = role === "caregiver" && Boolean(caregiver);
+    const hasCaregiverRole = databaseRoles.includes("CAREGIVER");
+    const caregiverApproved = hasCaregiverRole && Boolean(caregiver);
     const accountUnavailable = ["SUSPENDED", "REJECTED"].includes(profile.account_status);
     return {
       id: profile.id,
@@ -315,6 +316,7 @@ async function loadCloudStateOnce(session) {
       databaseRoles,
       isOwner: databaseRoles.includes("OWNER"),
       status: accountUnavailable ? "blocked" : role === "caregiver" ? (caregiverApproved ? "approved" : "pending") : (profile.account_status === "ACTIVE" ? "approved" : "pending"),
+      caregiverStatus: accountUnavailable ? "blocked" : hasCaregiverRole ? (caregiverApproved ? "approved" : "pending") : null,
       accountStatus: profile.account_status,
       fullName: profile.full_name,
       initials: profile.full_name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase(),
@@ -529,10 +531,11 @@ async function loadCloudStateOnce(session) {
   if (currentUser.accountStatus === "SUSPENDED" || currentUser.accountStatus === "REJECTED") {
     throw new Error("현재 이용이 중지된 계정입니다. ProMoms 관리자에게 문의해 주세요.");
   }
+  const currentUserIsCaregiver = currentUser.databaseRoles?.includes("CAREGIVER");
   const todayAssignments = appAssignments
-    .filter((item) => item.status === "ACTIVE" && assignmentRunsOnDate(assignments.find((row) => row.id === item.id), todayKey) && (currentUser.role === "caregiver" ? item.caregiverUserId === currentUser.id : true))
+    .filter((item) => item.status === "ACTIVE" && assignmentRunsOnDate(assignments.find((row) => row.id === item.id), todayKey) && (currentUserIsCaregiver ? item.caregiverUserId === currentUser.id : true))
     .sort((a, b) => String(a.dailyStart).localeCompare(String(b.dailyStart)));
-  const recoveredCareSession = currentUser.role === "caregiver"
+  const recoveredCareSession = currentUserIsCaregiver
     ? [...careSessions]
       .filter((item) => item.status === "IN_PROGRESS")
       .sort((a, b) => sessionTimestamp(b) - sessionTimestamp(a))
@@ -660,7 +663,7 @@ async function loadCloudStateOnce(session) {
       clientName: currentClient?.motherName || "",
       babyName: currentAssignment?.babyName || currentClient?.babyName || "",
       babyInitial: (currentAssignment?.babyName || currentClient?.babyName || "")[0] || "",
-      caregiverName: currentUser.role === "caregiver" ? currentUser.fullName : "",
+      caregiverName: currentUserIsCaregiver ? currentUser.fullName : "",
       schedule: currentAssignment ? `${currentAssignment.dailyStart} – ${currentAssignment.dailyEnd}` : "",
       address: currentAssignment?.address || "",
     },
@@ -824,6 +827,13 @@ export async function changeMemberRoleCloud(userId, role) {
     p_user_id: userId,
     p_role: role,
   }), "회원 종류 변경");
+}
+
+export async function setMemberAccessRolesCloud(userId, roles) {
+  return throwIfError(await supabase.rpc("admin_set_member_access_roles", {
+    p_user_id: userId,
+    p_roles: roles,
+  }), "회원 접근 권한 구성");
 }
 
 export async function archiveMemberCloud(userId) {
