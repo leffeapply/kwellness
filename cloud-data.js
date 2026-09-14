@@ -227,6 +227,7 @@ async function loadCloudStateOnce(session) {
     reviews,
     reports,
     deposits,
+    balanceTransactions,
     shiftChecks,
     complianceControls,
     assignmentBriefs,
@@ -249,6 +250,7 @@ async function loadCloudStateOnce(session) {
     table("caregiver_reviews"),
     table("care_reports"),
     table("deposit_transactions"),
+    table("service_balance_transactions"),
     table("care_shift_checks"),
     table("company_compliance_controls"),
     throwIfError(await supabase.rpc("my_assignment_briefs"), "배정 안전정보 조회"),
@@ -443,6 +445,32 @@ async function loadCloudStateOnce(session) {
     };
   });
 
+  const appDeposits = deposits.map((item) => ({
+    ...item,
+    requestId: item.client_service_request_id,
+    clientId: item.client_id,
+    paymentMethod: item.payment_method,
+    externalReference: item.external_reference,
+    capturedAt: item.captured_at,
+    refundReference: item.refund_reference,
+    refundedAmount: Number(item.refunded_amount || 0),
+    refundedAt: item.refunded_at,
+    recordedBy: item.recorded_by,
+  }));
+  const appBalanceTransactions = balanceTransactions.map((item) => ({
+    ...item,
+    requestId: item.client_service_request_id,
+    clientId: item.client_id,
+    amount: Number(item.amount || 0),
+    paymentMethod: item.payment_method,
+    externalReference: item.external_reference,
+    capturedAt: item.captured_at,
+    refundReference: item.refund_reference,
+    refundedAmount: Number(item.refunded_amount || 0),
+    refundedAt: item.refunded_at,
+    recordedBy: item.recorded_by,
+  }));
+
   const appRequests = serviceRequests.map((request) => ({
     id: request.id,
     requestKind: request.request_kind,
@@ -475,7 +503,8 @@ async function loadCloudStateOnce(session) {
     createdAt: request.created_at,
     approvedAt: request.reviewed_at,
     reviewNote: request.review_note || "",
-    depositTransaction: deposits.find((item) => item.client_service_request_id === request.id) || null,
+    depositTransaction: appDeposits.find((item) => item.requestId === request.id) || null,
+    balanceTransactions: appBalanceTransactions.filter((item) => item.requestId === request.id),
   }));
 
   const assignmentBySession = new Map(careSessions.map((item) => [item.id, appAssignments.find((assignment) => assignment.id === item.assignment_id)]));
@@ -537,6 +566,8 @@ async function loadCloudStateOnce(session) {
     clients: appClients,
     assignments: appAssignments,
     serviceRequests: appRequests,
+    depositTransactions: appDeposits,
+    balanceTransactions: appBalanceTransactions,
     serviceAdjustments: serviceAdjustments.map((item) => ({
       id: item.id,
       targetType: item.care_assignment_id ? "ASSIGNMENT" : "REQUEST",
@@ -709,6 +740,16 @@ export async function recordApprovedRequestDepositEvidenceCloud({ requestId, pay
     p_payment_method: String(paymentMethod || "").trim(),
     p_payment_reference: String(paymentReference || "").trim(),
   }), "기존 예약금 증빙 보완");
+}
+
+export async function recordServiceBalancePaymentCloud({ requestId, amount, paymentMethod, paymentReference }) {
+  await authenticatedUserId();
+  return throwIfError(await supabase.rpc("record_service_balance_payment", {
+    p_request_id: requestId,
+    p_amount: Number(amount),
+    p_payment_method: String(paymentMethod || "").trim(),
+    p_payment_reference: String(paymentReference || "").trim(),
+  }), "서비스 잔금 수납 기록");
 }
 
 export async function scheduleServiceRequestCloud(requestId, caregiverId) {

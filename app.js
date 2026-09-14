@@ -11,6 +11,7 @@ import {
   reassignCaregiverCloud,
   recordApprovedRequestDepositEvidenceCloud,
   recordDepositRefundCloud,
+  recordServiceBalancePaymentCloud,
   recordMyCurrentConsentsCloud,
   requestPasswordResetCloud,
   reviewServiceAdjustmentCloud,
@@ -112,6 +113,7 @@ import {
       { id: "overview", label: "운영 현황", icon: "◫" },
       { id: "schedule", label: "일정·배정", icon: "◷" },
       { id: "requests", label: "서비스 신청·승인", icon: "✓" },
+      { id: "finance", label: "수납·수익 관리", icon: "$" },
       { id: "people", label: "고객·관리사", icon: "♙" },
       { id: "reports", label: "차트·리포트", icon: "▤" },
       { id: "compliance", label: "보험·컴플라이언스", icon: "◈" },
@@ -229,13 +231,14 @@ import {
 
   function buildCloudShellState() {
     return {
-      version: 16,
+      version: 17,
       role: "client",
       adminSelectedClientId: null,
       adminSelectedAssignmentId: null,
       selectedClientAssignmentId: null,
       calendarMonthOffset: 0,
       adminScheduleFilter: "ALL",
+      financeFilters: { period: "MONTH", year: String(new Date().getFullYear()), month: String(new Date().getMonth() + 1) },
       serviceTabs: {
         client: { POSTPARTUM: "summary", BABYSITTING: "summary" },
         caregiver: { POSTPARTUM: "today", BABYSITTING: "today" },
@@ -269,6 +272,8 @@ import {
       clients: [],
       assignments: [],
       serviceRequests: [],
+      depositTransactions: [],
+      balanceTransactions: [],
       serviceAdjustments: [],
       reports: [],
       careSessions: [],
@@ -282,12 +287,13 @@ import {
   function buildSeedState() {
     if (!import.meta.env.DEV) return buildCloudShellState();
     return {
-      version: 16,
+      version: 17,
       role: "caregiver",
       adminSelectedClientId: "client-sarah",
       selectedClientAssignmentId: null,
       calendarMonthOffset: 0,
       adminScheduleFilter: "ALL",
+      financeFilters: { period: "MONTH", year: String(new Date().getFullYear()), month: String(new Date().getMonth() + 1) },
       serviceTabs: {
         client: { POSTPARTUM: "summary", BABYSITTING: "summary" },
         caregiver: { POSTPARTUM: "today", BABYSITTING: "today" },
@@ -441,6 +447,7 @@ import {
         selectedClientAssignmentId: preferences.selectedClientAssignmentId || null,
         adminSelectedAssignmentId: preferences.adminSelectedAssignmentId || null,
         adminSelectedClientId: preferences.adminSelectedClientId || null,
+        financeFilters: { ...seed.financeFilters, ...(preferences.financeFilters || {}) },
         views: { ...seed.views, ...(preferences.views || {}) },
         auth: { ...seed.auth, currentUserId: null, screen: preferences.screen || "public" },
       };
@@ -459,7 +466,7 @@ import {
           return {
             ...seed,
             ...saved,
-            version: 16,
+            version: 17,
             users: mergeById(seed.users, saved.users),
             clients: mergeById(seed.clients, saved.clients),
             assignments: mergeById(seed.assignments, saved.assignments),
@@ -473,6 +480,7 @@ import {
               caregiver: { ...seed.serviceTabs.caregiver, ...(saved.serviceTabs?.caregiver || {}) },
             },
             peopleDirectory: { ...seed.peopleDirectory, ...(saved.peopleDirectory || {}) },
+            financeFilters: { ...seed.financeFilters, ...(saved.financeFilters || {}) },
             chartRangeByRole: { ...seed.chartRangeByRole, ...(saved.chartRangeByRole || {}) },
             shiftChecklists: { ...seed.shiftChecklists, ...(saved.shiftChecklists || {}) },
             compliance: { ...seed.compliance, ...(saved.compliance || {}) },
@@ -501,7 +509,7 @@ import {
         return {
           ...seed,
           ...saved,
-          version: 16,
+          version: 17,
           auth: seed.auth,
           users: seed.users,
           clients: seed.clients,
@@ -514,6 +522,7 @@ import {
           views: { ...seed.views, ...(saved.views || {}) },
           serviceTabs: seed.serviceTabs,
           peopleDirectory: { ...seed.peopleDirectory, ...(saved.peopleDirectory || {}) },
+          financeFilters: { ...seed.financeFilters, ...(saved.financeFilters || {}) },
           chartRangeByRole: { ...seed.chartRangeByRole, ...(saved.chartRangeByRole || {}) },
           retail: upgradedRetail,
         };
@@ -531,7 +540,7 @@ import {
   [...state.assignments, ...state.serviceRequests].forEach((item) => {
     if (assignmentServiceType(item) === "POSTPARTUM" && item.dailyStart) item.dailyEnd = postpartumEndTime(item.dailyStart);
   });
-  state.version = 16;
+  state.version = 17;
   const app = document.getElementById("app");
   const modalRoot = document.getElementById("modal-root");
   const toastRoot = document.getElementById("toast-root");
@@ -558,6 +567,7 @@ import {
         selectedClientAssignmentId: state.selectedClientAssignmentId || null,
         adminSelectedAssignmentId: state.adminSelectedAssignmentId || null,
         adminSelectedClientId: state.adminSelectedClientId || null,
+        financeFilters: state.financeFilters,
         screen: state.auth.screen,
         views: state.views,
       }));
@@ -611,6 +621,11 @@ import {
     if (message.includes("email rate limit")) return "이메일 요청이 많습니다. 잠시 후 다시 시도해 주세요.";
     if (message.includes("password") && (message.includes("short") || message.includes("least"))) return "비밀번호는 8자 이상으로 입력해 주세요.";
     if (message.includes("failed to fetch") || message.includes("network")) return "네트워크 연결을 확인한 뒤 다시 시도해 주세요.";
+    if (message.includes("requesting client account is no longer active")) return "이 신청자의 고객 권한 또는 고객 연결이 해제되어 증빙을 저장할 수 없습니다. 회원 유형과 고객 연결을 먼저 복구해 주세요.";
+    if (message.includes("captured reservation-deposit evidence is required")) return "실제 예약금 수납 증빙을 먼저 등록해 주세요.";
+    if (message.includes("exceeds the outstanding balance")) return "입력한 수납액이 현재 잔금보다 큽니다.";
+    if (message.includes("no outstanding balance")) return "이 신청은 미수 잔금이 없습니다.";
+    if (message.includes("payment reference has already been recorded")) return "이미 사용된 거래·영수증 번호입니다. 실제 결제 내역의 다른 고유 번호를 입력해 주세요.";
     if (message.includes("duplicate") || message.includes("already exists")) return "이미 처리 중이거나 저장된 항목입니다.";
     if (message.includes("permission") || message.includes("row-level security") || message.includes("not authorized")) return "이 작업을 수행할 권한이 없습니다.";
     return fallback;
@@ -1261,7 +1276,7 @@ import {
     let items = NAV[role] || [];
     if (usingCloudData()) {
       const liveViews = {
-        admin: new Set(["overview", "schedule", "requests", "people", "reports", "compliance"]),
+        admin: new Set(["overview", "schedule", "requests", "finance", "people", "reports", "compliance"]),
         caregiver: new Set(["caregiving", "postpartum", "babysitting", "profile"]),
         client: new Set(["services", "postpartum", "babysitting"]),
         retail: new Set(["pos"]),
@@ -1638,6 +1653,50 @@ import {
     return !usingCloudData() || request?.depositTransaction?.status === "CAPTURED";
   }
 
+  function requestClientLinkIssue(request) {
+    const client = clientById(request?.clientId);
+    if (!client) return "고객 데이터가 존재하지 않습니다.";
+    if (!usingCloudData()) return "";
+    const requester = state.users.find((user) => user.id === request?.userId);
+    if (!requester) return "신청자 계정을 조회할 수 없습니다.";
+    if (requester.accountStatus !== "ACTIVE") return "신청자 계정이 활성 상태가 아닙니다.";
+    if (!requester.databaseRoles?.includes("CLIENT")) return "신청자의 회원 유형이 고객이 아닙니다.";
+    if (!client.memberUserIds?.includes(requester.id)) return "신청자와 고객 프로필의 연결이 해제되었습니다.";
+    return "";
+  }
+
+  function requestServiceTotal(request) {
+    const stored = Number(request?.estimatedTotal || 0);
+    if (stored > 0) return stored;
+    if (assignmentServiceType(request) === "POSTPARTUM") {
+      return Number(request?.weeks || 0) * Number(request?.weeklyRate || POSTPARTUM_WEEKLY_RATE);
+    }
+    const [startHour = 0, startMinute = 0] = String(request?.dailyStart || "00:00").split(":").map(Number);
+    const [endHour = 0, endMinute = 0] = String(request?.dailyEnd || "00:00").split(":").map(Number);
+    const hours = Math.max(0, ((endHour * 60 + endMinute) - (startHour * 60 + startMinute)) / 60);
+    return hours * Number(request?.daysOfWeek?.length || 0) * Number(request?.weeks || 0) * BABYSITTING_HOURLY_RATE;
+  }
+
+  function transactionNetAmount(transaction) {
+    if (!transaction || ["VOIDED", "FAILED"].includes(transaction.status)) return 0;
+    const amount = Number(transaction.amount || 0);
+    if (transaction.status === "REFUNDED") return Math.max(0, amount - Number(transaction.refundedAmount ?? transaction.refunded_amount ?? 0));
+    return transaction.status === "CAPTURED" ? amount : 0;
+  }
+
+  function requestDepositNet(request) {
+    return transactionNetAmount(request?.depositTransaction);
+  }
+
+  function requestBalanceNet(request) {
+    return (request?.balanceTransactions || []).reduce((sum, transaction) => sum + transactionNetAmount(transaction), 0);
+  }
+
+  function requestOutstandingBalance(request) {
+    if (request?.status !== "APPROVED") return 0;
+    return Math.max(0, requestServiceTotal(request) - requestDepositNet(request) - requestBalanceNet(request));
+  }
+
   function memberAccountRowMarkup(user) {
     const isSelf = user.id === authUser()?.id;
     const archived = user.accountStatus === "REJECTED";
@@ -1668,13 +1727,17 @@ import {
     const window = requestWindow(request);
     const issue = serviceLifecycleIssue(request.clientId, assignmentServiceType(request), window.startAt, window.endAt, null, request.id, request.babyId, request.babyName);
     const price = assignmentServiceType(request) === "POSTPARTUM" ? `$${postpartumEstimate(request.weeks).toLocaleString("en-US")} 예상 · 주 $${POSTPARTUM_WEEKLY_RATE.toLocaleString("en-US")}` : `시간당 $${BABYSITTING_HOURLY_RATE} · 독립 신청 서비스`;
+    const clientLinkIssue = requestClientLinkIssue(request);
     const missingClient = !client;
     const depositEvidenceMissing = isApprovedQueue && !requestHasCapturedDepositEvidence(request);
-    const queueTitle = depositEvidenceMissing ? "예약금 수납 증빙 보완 필요" : "승인 완료 · 일정 배정 대기";
+    const queueTitle = clientLinkIssue ? "고객 계정 연결 복구 필요" : depositEvidenceMissing ? "예약금 수납 증빙 보완 필요" : "승인 완료 · 일정 배정 대기";
     const queueAction = depositEvidenceMissing
-      ? `<button class="primary-button mini-button" data-record-approved-deposit="${request.id}" ${missingClient ? "disabled" : ""}>예약금 증빙 보완</button>`
-      : `<button class="primary-button mini-button" data-open-assignment data-request-id="${request.id}" ${issue || missingClient ? "disabled" : ""}>캘린더 일정 배치</button>`;
-    return `<div class="client-request-row service-request-management-row ${issue || missingClient || depositEvidenceMissing ? "has-lifecycle-issue" : ""}"><div><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${request.weeks}주 · ${formatDate(request.desiredStartDate)} · ${request.dailyStart}–${request.dailyEnd}</span><small>${price}</small></div><div><strong>${escapeHtml(request.address)}</strong><span>알러지 ${escapeHtml(request.allergies || "없음")} · 추가인원 ${request.extraHouseholdMembers || 0}명</span></div><div><strong>${missingClient ? "고객 데이터 연결 오류" : issue ? "일정 중복 확인 필요" : isApprovedQueue ? queueTitle : "신청 내용"}</strong><span>${escapeHtml(missingClient ? "회원·고객 프로필 연결을 복구한 뒤 처리해 주세요." : issue?.message || (depositEvidenceMissing ? "실제 수납 내역의 결제수단과 거래·영수증 번호를 기록한 뒤 일정 배치가 열립니다." : detail || "별도 요청 없음"))}</span></div>${isApprovedQueue ? queueAction : `<button class="primary-button mini-button" data-review-client-request="${request.id}" ${missingClient ? "disabled" : ""}>신청 검토·승인</button>`}</div>`;
+      ? `<button class="primary-button mini-button" data-record-approved-deposit="${request.id}" ${clientLinkIssue ? "disabled" : ""}>예약금 증빙 보완</button>`
+      : `<button class="primary-button mini-button" data-open-assignment data-request-id="${request.id}" ${issue || clientLinkIssue ? "disabled" : ""}>캘린더 일정 배치</button>`;
+    const issueDetail = clientLinkIssue
+      ? `${clientLinkIssue} 회원 관리에서 고객 권한과 고객 프로필 연결을 복구한 뒤 처리해 주세요.`
+      : issue?.message || (depositEvidenceMissing ? "실제 수납 내역의 결제수단과 거래·영수증 번호를 기록한 뒤 일정 배치가 열립니다." : detail || "별도 요청 없음");
+    return `<div class="client-request-row service-request-management-row ${issue || clientLinkIssue || depositEvidenceMissing ? "has-lifecycle-issue" : ""}"><div><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${request.weeks}주 · ${formatDate(request.desiredStartDate)} · ${request.dailyStart}–${request.dailyEnd}</span><small>${price}</small></div><div><strong>${escapeHtml(request.address)}</strong><span>알러지 ${escapeHtml(request.allergies || "없음")} · 추가인원 ${request.extraHouseholdMembers || 0}명</span></div><div><strong>${clientLinkIssue ? "고객 계정 연결 오류" : issue ? "일정 중복 확인 필요" : isApprovedQueue ? queueTitle : "신청 내용"}</strong><span>${escapeHtml(issueDetail)}</span></div>${isApprovedQueue ? queueAction : `<button class="primary-button mini-button" data-review-client-request="${request.id}" ${clientLinkIssue ? "disabled" : ""}>신청 검토·승인</button>`}</div>`;
   }
 
   function adjustmentManagementMarkup(adjustments) {
@@ -1703,6 +1766,106 @@ import {
     const pendingPostpartum = pending.filter((request) => assignmentServiceType(request) === "POSTPARTUM");
     const pendingBabysitting = pending.filter((request) => assignmentServiceType(request) === "BABYSITTING");
     return `<section class="page admin-request-page">${demoBanner()}${pageHeading("SERVICE REQUEST CONTROL", "서비스 신청·승인", "산후조리와 베이비시팅 신청을 각각 검토하고 일정 중복 여부를 확인합니다.")}<div class="grid stats">${statCard("Pending review", pending.length, "신청 검토 필요", "!")}${statCard("Postpartum", pendingPostpartum.length, "산후조리 검토 대기", "♡")}${statCard("Babysitting", pendingBabysitting.length, "베이비시팅 검토 대기", "☆")}${statCard("Ready to schedule", approvedQueue.length, "승인 완료·배정 대기", "◷")}</div><div class="service-request-columns" style="margin-top:18px"><article class="card card-pad request-service-column postpartum"><div class="section-header"><div>${serviceBadgeMarkup("POSTPARTUM")}<h3>산후조리 신청</h3><p>주 $${POSTPARTUM_WEEKLY_RATE.toLocaleString("en-US")} · 산모 상태와 신생아 케어 요청을 검토합니다.</p></div><span class="status-chip coral">${pendingPostpartum.length}</span></div><div class="request-list">${pendingPostpartum.length ? pendingPostpartum.map((request) => requestManagementRowMarkup(request, "pending")).join("") : `<div class="empty-state"><strong>검토 대기 신청이 없습니다.</strong></div>`}</div></article><article class="card card-pad request-service-column babysitting"><div class="section-header"><div>${serviceBadgeMarkup("BABYSITTING")}<h3>베이비시팅 신청</h3><p>희망 일정과 식사·알러지·생활 루틴을 함께 검토합니다.</p></div><span class="status-chip coral">${pendingBabysitting.length}</span></div><div class="request-list">${pendingBabysitting.length ? pendingBabysitting.map((request) => requestManagementRowMarkup(request, "pending")).join("") : `<div class="empty-state"><strong>검토 대기 신청이 없습니다.</strong></div>`}</div></article></div><article class="card card-pad approved-request-queue" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">APPROVED QUEUE</p><h3>일정 배치 가능한 승인 신청</h3><p>고객이 입력한 일정과 요청사항을 불러오고, 동일 아기의 서비스 기간이 겹치지 않을 때 관리사를 배치합니다.</p></div><span class="status-chip gold">${approvedQueue.length} ready</span></div><div class="request-list">${approvedQueue.length ? approvedQueue.map((request) => requestManagementRowMarkup(request, "approved")).join("") : `<div class="empty-state"><strong>일정 배치 대기 신청이 없습니다.</strong><span>신청을 승인하면 이 목록으로 이동합니다.</span></div>`}</div></article>${canReviewServiceRequests() ? depositRefundQueueMarkup(refundDueRequests) : ""}</section>`;
+  }
+
+  function serviceRequestStatusLabel(request) {
+    const labels = {
+      PENDING: "승인 대기",
+      APPROVED: request.approvedAssignmentId ? "승인·배정 완료" : "승인·배정 대기",
+      REJECTED: "반려",
+      CANCELLED: "취소",
+    };
+    return labels[request.status] || request.status || "상태 미정";
+  }
+
+  function financeTransactions() {
+    const deposits = state.depositTransactions?.length
+      ? state.depositTransactions
+      : state.serviceRequests.map((request) => request.depositTransaction).filter(Boolean);
+    const balances = state.balanceTransactions?.length
+      ? state.balanceTransactions
+      : state.serviceRequests.flatMap((request) => request.balanceTransactions || []);
+    return { deposits, balances };
+  }
+
+  function financeRevenueEvents() {
+    const { deposits, balances } = financeTransactions();
+    const toEvents = (transactions, category) => transactions.flatMap((transaction) => {
+      const events = [];
+      const amount = Number(transaction.amount || 0);
+      const capturedAt = transaction.capturedAt || transaction.captured_at;
+      const refundedAt = transaction.refundedAt || transaction.refunded_at;
+      const refundedAmount = Number(transaction.refundedAmount ?? transaction.refunded_amount ?? 0);
+      if (capturedAt && amount > 0 && ["CAPTURED", "REFUNDED"].includes(transaction.status)) {
+        events.push({ requestId: transaction.requestId || transaction.client_service_request_id, category, kind: "CAPTURE", amount, at: capturedAt });
+      }
+      if (refundedAt && refundedAmount > 0) {
+        events.push({ requestId: transaction.requestId || transaction.client_service_request_id, category, kind: "REFUND", amount: -refundedAmount, at: refundedAt });
+      }
+      return events;
+    });
+    return [...toEvents(deposits, "DEPOSIT"), ...toEvents(balances, "BALANCE")]
+      .filter((event) => Number.isFinite(new Date(event.at).getTime()))
+      .sort((a, b) => new Date(b.at) - new Date(a.at));
+  }
+
+  function financeEventMatches(event, filters) {
+    if (filters.period === "ALL") return true;
+    const date = new Date(event.at);
+    if (date.getFullYear() !== Number(filters.year)) return false;
+    return filters.period !== "MONTH" || date.getMonth() + 1 === Number(filters.month);
+  }
+
+  function financeApplicationRowMarkup(request) {
+    const client = clientById(request.clientId);
+    const clientLinkIssue = requestClientLinkIssue(request);
+    const total = requestServiceTotal(request);
+    const deposit = requestDepositNet(request);
+    const balancePaid = requestBalanceNet(request);
+    const outstanding = requestOutstandingBalance(request);
+    const depositReference = request.depositTransaction?.externalReference || request.depositTransaction?.external_reference || "";
+    const depositLabel = deposit > 0
+      ? `${money(deposit)} 수납`
+      : request.depositTransaction?.status === "REFUNDED"
+        ? "전액 환불"
+        : request.status === "APPROVED"
+          ? clientLinkIssue ? "고객 연결 복구 필요" : "증빙 미등록"
+          : "미수납";
+    const canRecordBalance = usingCloudData() && request.status === "APPROVED" && deposit > 0 && outstanding > 0 && !clientLinkIssue;
+    const statusTone = ["REJECTED", "CANCELLED"].includes(request.status) || clientLinkIssue ? "coral" : request.status === "PENDING" ? "gold" : "";
+    return `<div class="finance-ledger-row ${clientLinkIssue ? "has-lifecycle-issue" : ""}"><div class="finance-ledger-primary"><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${formatDate(request.desiredStartDate)} 시작 · ${request.weeks}주</span><small>신청 ${request.createdAt ? formatDate(request.createdAt) : "일자 미등록"}</small></div><div><span>신청 상태</span><strong class="status-chip ${statusTone}">${escapeHtml(serviceRequestStatusLabel(request))}</strong><small>${escapeHtml(clientLinkIssue || (request.approvedAssignmentId ? "일정 배정 연결됨" : ""))}</small></div><div><span>총 예정금액</span><strong>${total > 0 ? money(total) : "계산 필요"}</strong><small>${assignmentServiceType(request) === "POSTPARTUM" ? `주 ${money(Number(request.weeklyRate || POSTPARTUM_WEEKLY_RATE))}` : `시간당 ${money(BABYSITTING_HOURLY_RATE)}`}</small></div><div><span>예약금</span><strong>${depositLabel}</strong><small>${escapeHtml(depositReference ? `거래 ${depositReference}` : "실제 증빙 기준")}</small></div><div><span>잔금</span><strong>${money(balancePaid)} 수납</strong><small>${request.status === "APPROVED" ? `${money(outstanding)} 미수` : "승인 건만 미수 계산"}</small></div><div class="finance-ledger-action">${canRecordBalance ? `<button class="primary-button mini-button" data-record-service-balance="${request.id}">잔금 수납 기록</button>` : request.status === "APPROVED" && clientLinkIssue ? `<span class="status-chip coral">연결 복구 필요</span>` : outstanding === 0 && request.status === "APPROVED" ? `<span class="status-chip">수납 완료</span>` : ""}</div></div>`;
+  }
+
+  function adminFinance() {
+    const events = financeRevenueEvents();
+    const now = new Date();
+    const filters = {
+      period: ["MONTH", "YEAR", "ALL"].includes(state.financeFilters?.period) ? state.financeFilters.period : "MONTH",
+      year: String(Number(state.financeFilters?.year) || now.getFullYear()),
+      month: String(Math.min(12, Math.max(1, Number(state.financeFilters?.month) || now.getMonth() + 1))),
+    };
+    const years = [...new Set([now.getFullYear(), ...events.map((event) => new Date(event.at).getFullYear())])].sort((a, b) => b - a);
+    const filteredEvents = events.filter((event) => financeEventMatches(event, filters));
+    const sum = (items) => items.reduce((total, item) => total + Number(item.amount || 0), 0);
+    const netRevenue = sum(filteredEvents);
+    const depositReceipts = sum(filteredEvents.filter((event) => event.category === "DEPOSIT" && event.amount > 0));
+    const balanceReceipts = sum(filteredEvents.filter((event) => event.category === "BALANCE" && event.amount > 0));
+    const refunds = Math.abs(sum(filteredEvents.filter((event) => event.amount < 0)));
+    const outstanding = state.serviceRequests.reduce((total, request) => total + requestOutstandingBalance(request), 0);
+    const periodLabel = filters.period === "ALL" ? "전체 기간" : filters.period === "YEAR" ? `${filters.year}년` : `${filters.year}년 ${filters.month}월`;
+    const monthlyRows = Array.from({ length: 12 }, (_, monthIndex) => {
+      const monthEvents = events.filter((event) => {
+        const date = new Date(event.at);
+        return date.getFullYear() === Number(filters.year) && date.getMonth() === monthIndex;
+      });
+      return `<div class="revenue-summary-row ${Number(filters.month) === monthIndex + 1 && filters.period === "MONTH" ? "active" : ""}"><span>${monthIndex + 1}월</span><strong>${money(sum(monthEvents))}</strong><small>수납 ${monthEvents.filter((item) => item.amount > 0).length}건 · 환불 ${monthEvents.filter((item) => item.amount < 0).length}건</small></div>`;
+    }).join("");
+    const yearlyRows = years.map((year) => {
+      const yearEvents = events.filter((event) => new Date(event.at).getFullYear() === year);
+      return `<div class="revenue-summary-row ${String(year) === filters.year && filters.period === "YEAR" ? "active" : ""}"><span>${year}년</span><strong>${money(sum(yearEvents))}</strong><small>거래 ${yearEvents.length}건</small></div>`;
+    }).join("");
+    const applications = [...state.serviceRequests].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    return `<section class="page admin-finance-page">${demoBanner()}${pageHeading("SERVICE FINANCE", "수납·수익 관리", "신청별 예약금과 잔금을 실제 거래 증빙으로 관리하고 수납일 기준 수익을 확인합니다.")}<form class="card finance-filter-bar" data-finance-filter><div><label for="finance-period">조회 단위</label><select id="finance-period" name="period"><option value="MONTH" ${filters.period === "MONTH" ? "selected" : ""}>월별</option><option value="YEAR" ${filters.period === "YEAR" ? "selected" : ""}>연도별</option><option value="ALL" ${filters.period === "ALL" ? "selected" : ""}>전체 기간</option></select></div><div><label for="finance-year">연도</label><select id="finance-year" name="year" ${filters.period === "ALL" ? "disabled" : ""}>${years.map((year) => `<option value="${year}" ${String(year) === filters.year ? "selected" : ""}>${year}년</option>`).join("")}</select></div><div><label for="finance-month">월</label><select id="finance-month" name="month" ${filters.period !== "MONTH" ? "disabled" : ""}>${Array.from({ length: 12 }, (_, index) => `<option value="${index + 1}" ${Number(filters.month) === index + 1 ? "selected" : ""}>${index + 1}월</option>`).join("")}</select></div><button type="submit" class="primary-button">조회</button><span>${periodLabel} · 실제 수납/환불 발생일 기준</span></form><div class="grid stats finance-stats">${statCard("Net revenue", money(netRevenue), `${periodLabel} 순수익`, "$ ")}${statCard("Deposits", money(depositReceipts), "예약금 수납", "◈")}${statCard("Balances", money(balanceReceipts), "잔금 수납", "✓")}${statCard("Outstanding", money(outstanding), `전체 승인 건 미수 · 환불 ${money(refunds)}`, "!")}</div><div class="grid two finance-summary-grid"><article class="card card-pad"><div class="section-header"><div><p class="eyebrow">MONTHLY REVENUE</p><h3>${filters.year}년 월별 순수익</h3><p>수납액에서 같은 달의 환불액을 차감합니다.</p></div></div><div class="revenue-summary-list">${monthlyRows}</div></article><article class="card card-pad"><div class="section-header"><div><p class="eyebrow">YEARLY REVENUE</p><h3>연도별 순수익</h3><p>저장된 실제 거래 전체를 연도 단위로 합산합니다.</p></div></div><div class="revenue-summary-list">${yearlyRows || `<div class="empty-state"><strong>수납 거래가 없습니다.</strong></div>`}</div></article></div><article class="card card-pad finance-ledger-card"><div class="section-header"><div><p class="eyebrow">APPLICATION & PAYMENT LEDGER</p><h3>신청·예약금·잔금 원장</h3><p>모든 서비스 신청을 최신순으로 표시합니다. 잔금은 예약금 증빙이 확인된 승인 건에만 기록할 수 있습니다.</p></div><span class="status-chip">${applications.length}건</span></div><div class="finance-ledger-scroll"><div class="finance-ledger-head"><span>신청</span><span>상태</span><span>총 예정금액</span><span>예약금</span><span>잔금</span><span>관리</span></div><div class="finance-ledger-list">${applications.length ? applications.map(financeApplicationRowMarkup).join("") : `<div class="empty-state"><strong>서비스 신청 내역이 없습니다.</strong></div>`}</div></div></article></section>`;
   }
 
   function adminPeople() {
@@ -2997,7 +3160,7 @@ import {
       return `<section class="page">${pageHeading("RETAIL", "리테일 백엔드 연결 준비 중", "결제·주문·재고 데이터가 운영 시스템과 안전하게 연결된 후 제공됩니다.")}<article class="card card-pad"><div class="empty-state"><span>◇</span><strong>주문·결제·재고 백엔드 연결 준비 중입니다.</strong><p>연결이 완료될 때까지 조회와 변경 기능은 비활성화됩니다.</p></div></article></section>`;
     }
     const operationalPages = {
-      admin: { overview: adminOverview, schedule: adminSchedule, requests: adminRequests, people: adminPeople, reports: adminReports, compliance: adminCompliance },
+      admin: { overview: adminOverview, schedule: adminSchedule, requests: adminRequests, finance: adminFinance, people: adminPeople, reports: adminReports, compliance: adminCompliance },
       caregiver: { caregiving: caregiverCaregivingHub, postpartum: () => caregiverServiceWorkspace("POSTPARTUM"), babysitting: () => caregiverServiceWorkspace("BABYSITTING"), profile: caregiverProfile },
       client: { services: clientServicesHub, postpartum: () => clientServiceWorkspace("POSTPARTUM"), babysitting: () => clientServiceWorkspace("BABYSITTING") },
       retail: {},
@@ -3495,6 +3658,27 @@ import {
     document.querySelectorAll("[data-review-client-request]").forEach((button) => button.addEventListener("click", () => openClientRequestModal(button.dataset.reviewClientRequest)));
     document.querySelectorAll("[data-record-deposit-refund]").forEach((button) => button.addEventListener("click", () => openDepositRefundModal(button.dataset.recordDepositRefund)));
     document.querySelectorAll("[data-record-approved-deposit]").forEach((button) => button.addEventListener("click", () => openApprovedDepositEvidenceModal(button.dataset.recordApprovedDeposit)));
+    document.querySelectorAll("[data-record-service-balance]").forEach((button) => button.addEventListener("click", () => openServiceBalancePaymentModal(button.dataset.recordServiceBalance)));
+    document.querySelectorAll("[data-finance-filter]").forEach((form) => {
+      const periodSelect = form.elements.period;
+      const yearSelect = form.elements.year;
+      const monthSelect = form.elements.month;
+      periodSelect?.addEventListener("change", () => {
+        yearSelect.disabled = periodSelect.value === "ALL";
+        monthSelect.disabled = periodSelect.value !== "MONTH";
+      });
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const values = Object.fromEntries(new FormData(form).entries());
+        state.financeFilters = {
+          period: values.period || state.financeFilters?.period || "MONTH",
+          year: values.year || state.financeFilters?.year || String(new Date().getFullYear()),
+          month: values.month || state.financeFilters?.month || String(new Date().getMonth() + 1),
+        };
+        saveState();
+        render();
+      });
+    });
     document.querySelectorAll("[data-approve-adjustment]").forEach((button) => button.addEventListener("click", () => reviewServiceAdjustment(button.dataset.approveAdjustment, "APPROVE")));
     document.querySelectorAll("[data-reject-adjustment]").forEach((button) => button.addEventListener("click", () => reviewServiceAdjustment(button.dataset.rejectAdjustment, "REJECT")));
     document.querySelectorAll("[data-manage-client]").forEach((button) => button.addEventListener("click", () => openClientManagementModal(button.dataset.manageClient)));
@@ -4622,6 +4806,8 @@ import {
     if (!request) return showToast("이미 증빙이 등록되었거나 보완 대상이 아닌 신청입니다.", "info");
     const client = clientById(request.clientId);
     if (!client) return showToast("신청의 고객 정보를 찾을 수 없습니다.", "error");
+    const clientLinkIssue = requestClientLinkIssue(request);
+    if (clientLinkIssue) return showToast(`${clientLinkIssue} 회원 관리에서 고객 권한과 고객 프로필 연결을 먼저 복구해 주세요.`, "error");
     const depositAmount = Number(request.depositAmount || (assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT));
     modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal" role="dialog" aria-modal="true" aria-labelledby="approved-deposit-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<p class="eyebrow">LEGACY DEPOSIT EVIDENCE</p><h3 id="approved-deposit-title">기존 승인 건 예약금 증빙 보완</h3><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-approved-deposit-form><div class="request-review-grid"><div><span>승인 상태</span><strong>승인 완료</strong></div><div><span>필수 예약금</span><strong>${money(depositAmount)}</strong></div><div class="wide"><span>서비스</span><strong>${serviceMetaFor(request.serviceType).label} · ${formatDate(request.desiredStartDate)} 시작 예정</strong></div></div><div class="status-banner warning"><strong>실제 수납 내역만 기록하세요.</strong><span>이 화면은 결제를 실행하지 않습니다. 기존에 받은 예약금의 결제사·은행·영수증 근거를 감사 기록으로 보완합니다.</span></div><div class="form-grid two"><div class="field"><label for="approved-payment-method">결제 수단</label><select id="approved-payment-method" name="paymentMethod" required><option value="">선택해 주세요</option><option value="CARD">카드</option><option value="ACH">ACH 계좌이체</option><option value="CASH">현금</option><option value="CHECK">수표</option><option value="OTHER">기타</option></select></div><div class="field"><label for="approved-payment-reference">거래·영수증 번호</label><input id="approved-payment-reference" name="paymentReference" minlength="3" maxlength="255" autocomplete="off" placeholder="실제 거래번호 또는 수기 영수증 번호" required/></div></div><label class="consent-line"><input type="checkbox" name="evidenceConfirmed" required/><span>실제 예약금 수납 근거와 일치함을 확인합니다.</span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">증빙 저장·배치 잠금 해제</button></div></form></section></div>`;
     bindModalFrame();
@@ -4645,6 +4831,43 @@ import {
         showToast(friendlyErrorMessage(error, "예약금 증빙을 저장하지 못했습니다."), "error");
         submitButton.disabled = false;
         submitButton.textContent = "증빙 저장·배치 잠금 해제";
+      }
+    });
+  }
+
+  function openServiceBalancePaymentModal(requestId) {
+    if (!canReviewServiceRequests()) return showToast("잔금 수납 기록은 소유자 또는 관리자만 처리할 수 있습니다.", "error");
+    const request = state.serviceRequests.find((item) => item.id === requestId && item.status === "APPROVED");
+    if (!request) return showToast("잔금을 기록할 승인 신청을 찾을 수 없습니다.", "error");
+    const client = clientById(request.clientId);
+    if (!client) return showToast("신청의 고객 정보를 찾을 수 없습니다.", "error");
+    const clientLinkIssue = requestClientLinkIssue(request);
+    if (clientLinkIssue) return showToast(`${clientLinkIssue} 회원 관리에서 고객 권한과 고객 프로필 연결을 먼저 복구해 주세요.`, "error");
+    if (!requestHasCapturedDepositEvidence(request)) return showToast("실제 예약금 수납 증빙을 먼저 등록해 주세요.", "error");
+    const outstanding = requestOutstandingBalance(request);
+    if (outstanding <= 0) return showToast("이 신청은 미수 잔금이 없습니다.", "info");
+    const total = requestServiceTotal(request);
+    const alreadyPaid = requestDepositNet(request) + requestBalanceNet(request);
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal" role="dialog" aria-modal="true" aria-labelledby="balance-payment-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<p class="eyebrow">BALANCE PAYMENT</p><h3 id="balance-payment-title">잔금 수납 기록</h3><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-balance-payment-form><div class="request-review-grid"><div><span>총 예정금액</span><strong>${money(total)}</strong></div><div><span>기수납액</span><strong>${money(alreadyPaid)}</strong></div><div class="wide"><span>현재 미수 잔금</span><strong>${money(outstanding)}</strong></div></div><div class="status-banner warning"><strong>실제 수납 내역만 기록하세요.</strong><span>이 화면은 결제를 실행하지 않습니다. 결제사·은행에서 확인한 수납액과 고유 거래번호를 감사 원장에 저장합니다.</span></div><div class="form-grid two"><div class="field"><label for="balance-payment-amount">수납액</label><input id="balance-payment-amount" name="amount" type="number" min="0.01" max="${outstanding.toFixed(2)}" step="0.01" value="${outstanding.toFixed(2)}" required/><small>최대 ${money(outstanding)}</small></div><div class="field"><label for="balance-payment-method">결제 수단</label><select id="balance-payment-method" name="paymentMethod" required><option value="CARD">카드</option><option value="BANK_TRANSFER">계좌이체</option><option value="CHECK">수표</option><option value="CASH">현금</option><option value="OTHER">기타</option></select></div></div><div class="field"><label for="balance-payment-reference">거래·영수증 번호</label><input id="balance-payment-reference" name="paymentReference" minlength="3" maxlength="255" autocomplete="off" placeholder="결제사·은행의 고유 거래번호" required/><small>중복 사용할 수 없는 실제 외부 거래번호를 입력합니다.</small></div><label class="consent-line"><input type="checkbox" name="paymentConfirmed" required/><span>위 금액의 실제 잔금 수납 내역과 일치함을 확인합니다.</span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">잔금 수납 저장</button></div></form></section></div>`;
+    bindModalFrame();
+    const form = modalRoot.querySelector("[data-balance-payment-form]");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(form).entries());
+      const amount = Number(values.amount);
+      if (!Number.isFinite(amount) || amount <= 0 || amount > outstanding) return showToast(`수납액은 0보다 크고 ${money(outstanding)} 이하여야 합니다.`, "error");
+      const submitButton = form.querySelector('button[type="submit"]');
+      submitButton.disabled = true;
+      submitButton.textContent = "저장 중…";
+      try {
+        await recordServiceBalancePaymentCloud({ requestId, amount, paymentMethod: values.paymentMethod, paymentReference: values.paymentReference });
+        closeModal();
+        await refreshCloudState();
+        showToast(`${client.motherName} 고객의 잔금 ${money(amount)} 수납 기록을 저장했습니다.`);
+      } catch (error) {
+        showToast(friendlyErrorMessage(error, "잔금 수납 기록을 저장하지 못했습니다."), "error");
+        submitButton.disabled = false;
+        submitButton.textContent = "잔금 수납 저장";
       }
     });
   }
