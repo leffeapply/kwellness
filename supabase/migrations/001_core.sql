@@ -1,4 +1,4 @@
--- K-Wellness CareOS core schema draft
+-- ProMoms CareOS core schema draft
 -- Run in a new Supabase project only after reviewing retention, consent,
 -- healthcare-data obligations, and the exact staff access model.
 

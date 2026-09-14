@@ -627,7 +627,7 @@ security definer
 set search_path = public
 as $$
 begin
-  raise exception 'Email-based administrator claiming is disabled. Use the isolated Admin demo account.';
+  raise exception 'Email-based administrator claiming is disabled. Bootstrap an OWNER through the trusted deployment runbook.';
 end;
 $$;
 
@@ -643,4 +643,4 @@ grant execute on function public.set_member_account_status(uuid, text) to authen
 grant execute on function public.claim_initial_admin() to authenticated;
 
 comment on function public.claim_initial_admin() is
-  'Disabled. Administrator testing uses the isolated client-side demo account.';
+  'Disabled. Production OWNER bootstrap is performed through a trusted, audited deployment step.';

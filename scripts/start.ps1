@@ -6,7 +6,7 @@ $siteRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
 $listener.Start()
 
-Write-Host "K-Wellness CareOS is running at http://localhost:$Port"
+Write-Host "ProMoms is running at http://localhost:$Port"
 Write-Host "Press Ctrl+C to stop."
 
 $mimeTypes = @{

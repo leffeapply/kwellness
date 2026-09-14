@@ -1,4 +1,4 @@
--- K-Wellness CareOS retail extension
+-- ProMoms CareOS retail extension
 -- Inventory is movement-based: never store a mutable current_stock value on products.
 
 create type public.product_category as enum ('K_BEAUTY', 'BABY_CARE');

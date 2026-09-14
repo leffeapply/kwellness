@@ -1,159 +1,257 @@
-# K-Wellness CareOS
+# ProMoms
 
-일반 고객용 웹사이트, 산후조리·베이비시팅, K-Beauty·유아용품 스토어와 `고객 → 신청 → 승인 → 관리사 배정 → 서비스 기록 → 고객 리포트` 흐름을 하나로 연결하는 역할 기반 PWA입니다.
+ProMoms는 전문 관리 인력의 신뢰성과 엄마·아기를 위한 따뜻한 케어를 연결하는 운영 웹앱입니다. 고객·관리사·관리자 계정, 서비스 신청과 승인, 일정 배정, 케어 기록과 리포트를 하나의 흐름으로 관리하며, 비공개 파일 저장을 위한 Storage 기반과 접근 정책도 포함합니다.
 
-현재 버전은 **로그인과 역할별 권한이 작동하는 통합 MVP 프로토타입**입니다. 화면에서 역할을 선택하는 방식은 제거했으며, 로그인한 계정과 관리사 배정 기간에 따라 접근 가능한 정보가 달라집니다.
+이 문서는 로컬 개발부터 Supabase 마이그레이션, Vercel 자동 배포, 운영 인증 설정까지의 단일 운영 기준입니다. 공용 데모 계정이나 고정 비밀번호는 사용하지 않습니다.
 
-## 바로 실행하기
-
-Windows PowerShell에서 이 폴더로 이동한 뒤 다음을 실행합니다.
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
-```
-
-브라우저에서 [http://localhost:4173](http://localhost:4173)을 엽니다. 종료할 때는 PowerShell 창에서 `Ctrl+C`를 누릅니다.
-
-별도 서버 없이 `index.html`을 더블클릭해도 대부분의 데모 기능을 쓸 수 있지만, 설치형 PWA와 오프라인 캐시는 로컬 서버로 실행할 때만 활성화됩니다.
-
-## 초기 로그인 계정
-
-| 유형 | 이메일/ID | 초기 비밀번호 |
-| --- | --- | --- |
-| 관리자 | `Admin` | `1234` |
-| 리테일 직원 | `Retail` | `1234` |
-| 승인된 관리사 | `mina@k-wellness.demo` | `care1234` |
-| 고객 | `sarah@k-wellness.demo` | `client1234` |
-
-관리자와 리테일 직원은 로그인 후 상단의 `비밀번호 변경`에서 초기 비밀번호를 바꿀 수 있습니다. 운영 환경에서는 임시 비밀번호의 강제 변경, 서버 해시 저장, 재설정 이메일과 다중 인증을 적용해야 합니다.
-
-## 체험 순서
-
-1. 최초 접속 화면에서 회사·관리사·후기·서비스 비용·이용 규칙·스토어·매장 위치와 연락처를 살펴봅니다.
-2. 고객 회원가입에는 본인의 이메일·연락처와 선택 기본정보만 입력합니다. 가입 후 일반 사이트의 `서비스 신청`에서 산후조리 또는 베이비시팅, 아이, 일정, 알러지와 요청사항을 입력합니다.
-3. `Admin` 계정의 `회원·승인`에서 서비스 유형과 신청 내용을 확인하고 해당 기간에 일정이 비어 있는 관리사를 선택하면 승인과 배정이 동시에 완료됩니다.
-4. 관리사로 가입한 경우에도 같은 메뉴에서 관리자 승인을 받아야 합니다.
-5. 승인 관리사로 로그인하면 현재 기간에 배정된 고객만 케어 화면에 나타나며, 현재·다음 배정의 D-day와 최대 5개의 향후 일정을 확인할 수 있습니다.
-6. 관리자는 `일정·배정`에서 한 달 전체 일정을 보고 기존 일정의 기간·시간·주소·관리사·요청사항을 변경하거나, 재확인 팝업을 거쳐 삭제할 수 있습니다.
-7. 관리자는 `차트·리포트`에서 고객을 선택하고 인쇄 창의 `PDF로 저장`을 사용하거나 고객 화면으로 리포트를 보냅니다.
-8. 고객은 일반 사이트를 계속 이용하면서 `나의 서비스`에서 본인 가족의 승인된 서비스만 봅니다. 산후조리는 케어 차트, 베이비시팅은 식사·생활 이벤트 중심으로 표시됩니다.
-9. `Retail` 계정은 주문접수 → 배송준비 → 배송중 → 배송완료 상태를 처리하며 고객 구매 내역에도 즉시 반영됩니다.
-
-## 구현된 범위
-
-- 하나의 앱 안에서 관리자·관리사·고객 역할별 화면 제공
-- 최초 접속용 회사·관리사·후기·서비스·비용·규칙·제품·매장·Contact 공개 사이트
-- 조지아 애틀랜타 메트로 방문 케어와 Kennesaw 리테일 숍 안내
-- 대표 연락처 `470-404-9467` · `parksiyoo9@gmail.com`
-- 고객·관리사의 산후조리/베이비시팅 순차 이용을 위한 서비스별 허브와 독립 작업공간
-- 관리자 `서비스 신청·승인 → 승인 신청 기반 일정 배치` 2단계 운영 흐름과 서비스별 캘린더 필터
-- 이메일/직원 ID 로그인, 고객·관리사 회원가입
-- 필수 서비스·개인정보·민감정보 동의와 선택 마케팅 동의
-- 고객 기본정보 회원가입과 별도 산후조리·베이비시팅 서비스 신청
-- 동일 아기의 산후조리·베이비시팅 동시 이용 차단과 산후조리 종료 다음 날 이후 베이비시팅 전환
-- 산후조리 주 $1,800 기준 예상 금액 자동 계산 및 신청·승인·배정 화면 연동
-- 고객 신청과 관리자 배정 모두 최소 2주이며 2·3·4주만 선택 가능
-- 베이비시팅은 하루 최소 4시간·최소 2주 연속 예약이며 고객 신청과 관리자 배정에서 이중 검증
-- 승인된 산후조리·베이비시팅의 고객 변경·취소 요청 → 관리자 정책 검토 → 일정 반영 워크플로
-- 기간·시간 변경은 예약금 페널티 없이 관리자 승인 후 일정만 변경하며, 취소 선택 시에만 환불·정산 정책 적용
-- 산후조리 예약금 $500, 시작 30일 전까지 취소 시 환불·30일 이내 환불 불가 상태 자동 판정
-- 시작된 산후조리의 중도 취소 정산금 `(당초 총 서비스 예정비용 - 예약금) ÷ 잔여 케어일수` 자동 계산
-- 시작된 산후조리의 최초 시작일 변경 차단 및 케어 8시간·식사 1시간·휴식 30분 기준 종료시간 자동 계산
-- 베이비시팅 4시간분 예약금 $128, 시작 72시간 이전 취소 시 환불·72시간 이내 취소 또는 노쇼 시 환불 불가
-- 베이비시팅 일정은 희망 시작일·시작시간·케어시간으로 입력하며 최소 4시간부터 30분 단위 선택
-- 승인 대기 또는 진행 중인 베이비시팅 종료 후 첫 평일부터 별도 기간 연장 신청
-- 고객용 산후조리·베이비시팅 독립 서비스 카드와 신청·배정 상태 대시보드
-- 신청 승인 전 케어 데이터 차단, 가능한 관리사 조회 및 승인과 동시 배정
-- 관리사 가입 승인 대기 및 관리자 승인
-- 관리자 전용 고객 CRM: 고객·아기 정보, 상담 상태, 다음 연락일, 비상연락처와 내부 메모
-- 고객·아기 이름 및 관리 년월 검색·정렬, 페이지 번호 기반 고객 목록 탐색
-- 관리자 전용 관리사 HR: 경력, 자격, 입사일, 근무상태, 거주지역, 전문분야, 담당지역과 인사 메모
-- 관리사 이름·입사년월·거주지역 검색·정렬, 페이지 번호 기반 관리사 목록 탐색
-- 관리사 배정 기간·고객 ID 기반 접근 제한
-- 관리사 배정별 근무 전 출입·알러지·요청사항·업무범위 안전 체크리스트
-- 고객 본인 가족 데이터 접근 제한
-- 관리자·리테일 초기 비밀번호와 앱 내 비밀번호 변경
-- 모바일 관리사용 8개 빠른 기록 UI: 수유·기저귀·수면·체온·목욕·체중·산모 케어·메모
-- 베이비시팅 전용 관리사·고객 화면과 식사·생활 이벤트 2개 빠른 기록
-- 케어 세션 시작·종료
-- 이벤트 기반 수유·기저귀·수면·체온·산모 케어·메모 기록
-- 이벤트 데이터에서 고객용 일일 요약 자동 계산
-- 운영 대시보드, 일정·배정, 고객·관리사 목록
-- Beauty·유아용품 상품 카탈로그와 카테고리 필터
-- 고객 CRM 연결 POS와 로컬 데모 주문
-- 입고·판매 이동 원장을 합산한 현재 재고
-- 고객 구매 내역과 Care → Retail CRM 흐름
-- 주문접수·배송준비·배송중·배송완료 상태 연동
-- 서비스·고객·리테일 통합 매출/마진 분석
-- 최근 1주일·1개월 전환형 수유량·체온·하루 수면·몸무게·산모 케어 차트
-- 모유·유축과 분유를 색상으로 구분한 일별 누적 수유량 차트
-- 관리자 전체 고객 차트, 고객 전달 리포트, 인쇄/PDF 저장 화면
-- 관리사 현재·다음 일정 D-day, 최대 5개 예정 배정과 배정 고객 준비정보 상세보기
-- 완료된 케어 배정당 한 번만 작성 가능한 고객의 관리사 후기와 관리사 만족도 요약
-- 2·3·4주 계약·관리사 배정, 6주 셀의 월간 캘린더, 일정 변경·재배정·삭제 확인
-- 동일 고객의 기존 계약 기간과 겹치는 추가 예약 차단
-- 책임보상보험·근로자재해보험·W-2 정식 직원 운영 원칙 안내 및 관리자 컴플라이언스 화면
-- 조지아주 라이선스 보유 마사지 테라피스트만 제공 가능한 프리미엄 산모 마사지 Add-on 준비 구조(현재 비활성)
-- 반응형 모바일 하단 내비게이션
-- 로컬 데이터 저장, 오프라인 앱 셸, PWA 매니페스트
-- 기본 접근성: 키보드 포커스, 다이얼로그, 레이블, 축소 모션 대응
-
-## 운영 배포 구조
-
-운영 배포는 `Codex → GitHub → Vercel → Supabase` 흐름을 사용합니다. Vercel은 GitHub `main` 브랜치가 갱신될 때 자동으로 프로덕션 배포를 만들고, Supabase는 PostgreSQL·인증·비공개 파일 저장소를 담당합니다. 계정 생성과 연결 순서는 [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)에 정리되어 있습니다.
-
-## 아직 데모인 기능
-
-- 서버에서 강제되는 실제 인증·RLS 권한
-- Supabase Auth 기반 실제 이메일 인증과 비밀번호 재설정
-- 여러 고객·계약의 서버 CRUD
-- 서버 DB 저장과 여러 기기 간 동기화
-- 메시지 전송과 알림
-- 급여 계산과 실제 회계 시스템 연동
-- 실제 Stripe/Shopify POS 결제와 세금 계산
-- AI 리포트 초안
-
-현재 로그인·가입·승인·권한은 로컬 프로토타입에서 실제로 작동하지만 데이터는 이 브라우저에만 저장됩니다. 실제 운영용 핵심 DB는 [`001_core.sql`](./supabase/migrations/001_core.sql)부터 단계별로 설계되어 있으며, 서비스 유형·신청 요일·베이비시팅 이벤트는 [`008_public_site_service_types.sql`](./supabase/migrations/008_public_site_service_types.sql)에 추가했습니다.
-
-## 파일 구조
+## 아키텍처
 
 ```text
-K-Wellness App/
-├─ index.html                  앱 진입점
-├─ app.js                      역할별 화면과 케어 이벤트 로직
-├─ styles.css                  반응형 디자인 시스템
-├─ supabase-client.js          Supabase 브라우저 클라이언트 초기화
-├─ vercel.json                 Vercel 빌드 설정
-├─ api/health.js               서버 API 상태 확인 엔드포인트
-├─ manifest.webmanifest        PWA 설정
-├─ sw.js                       오프라인 앱 셸
-├─ assets/icon.svg             앱 아이콘
-├─ scripts/start.ps1           의존성 없는 로컬 웹 서버
-├─ docs/PRODUCT_PLAN.md        제품 범위와 단계별 로드맵
-└─ supabase/migrations/
-   ├─ 001_core.sql             운영용 핵심 DB/RLS 초안
-   ├─ 002_retail.sql           상품·주문·재고 이동
-   ├─ 003_auth_approvals_access.sql  가입 승인·배정 권한·배송
-   ├─ 004_client_requests_monthly_schedule.sql  고객 일정 신청·가용 관리사·승인
-   ├─ 005_prevent_duplicate_client_contracts.sql  중복 계약 차단·일정 삭제
-   ├─ 006_client_crm_caregiver_hr.sql  관리자 전용 고객 CRM·관리사 HR
-   ├─ 007_care_trends_reviews.sql      체중 이벤트·완료 배정 1회 후기
-   ├─ 008_public_site_service_types.sql  산후조리·베이비시팅 신청과 이벤트
-   ├─ 009_service_sequence_insured_staffing.sql  서비스 순서·주간요금·보험·마사지 Add-on 준비
-   ├─ 010_minimum_two_week_service.sql   고객 신청·관리자 배정 최소 2주 제약
-   ├─ 011_babysitting_minimum_booking.sql  베이비시팅 하루 4시간·2주 연속 예약 제약
-   └─ 017_private_storage.sql  프로필·계약서·자격증·리포트 비공개 Storage 정책
+로컬 개발
+  → GitHub main 브랜치
+  → Vercel 빌드·배포
+  → ProMoms 웹앱
+  → Supabase Auth + PostgreSQL + Private Storage
 ```
 
-## 중요한 운영 원칙
+- Vercel에는 브라우저에서 사용 가능한 Supabase Project URL과 Publishable key만 저장합니다.
+- `service_role` 키, 데이터베이스 비밀번호, SMTP 비밀번호는 GitHub와 `VITE_` 환경변수에 절대 저장하지 않습니다.
+- 실제 데이터의 접근 권한은 화면 숨김이 아니라 Supabase RLS와 데이터베이스 함수에서 강제합니다.
 
-- 이 앱은 의료 진단 도구가 아니라 **케어 기록과 운영 지원 도구**입니다.
-- 체온·수유·산모 상태 등 민감 정보는 운영 배포 전 반드시 인증, 최소 권한, RLS, 감사 로그, 보관 정책을 적용해야 합니다.
-- 미국에서 실제 서비스할 경우 사업 구조가 HIPAA 적용 대상인지 법률·컴플라이언스 전문가의 검토가 필요합니다.
-- 보험 상태와 W-2 고용 표시는 실제 증서·급여·세무 운영 자료와 연결하고, 고객 계약 문구는 조지아주 변호사·보험 전문가의 검토를 거쳐야 합니다.
-- 산모 마사지는 조지아주 유효 라이선스, 자격 만료일, 마사지 업무가 포함된 보험 범위를 모두 확인하기 전에는 활성화하지 않습니다.
-- 응급 상황 안내는 앱 메시지와 분리하고, 지정 의료기관·응급 연락 절차를 명확히 해야 합니다.
+## 계정과 권한 원칙
 
-## 다음 개발 목표
+- `CLIENT`: 고객이 직접 가입하고 자신의 가족·예약·기록만 사용합니다.
+- `CAREGIVER`: 관리사가 직접 가입한 뒤 관리자 승인과 배정을 받아 사용합니다.
+- `ADMIN`: 웹앱에서 회원 상태·회원 종류·서비스 승인·일정과 운영 데이터를 관리합니다.
+- `OWNER`: 최초 운영 책임자용 최고 권한입니다. 일반 회원 화면에서 부여하지 않고 데이터베이스 관리자만 최초 1회 설정합니다.
 
-다음 목표는 Supabase 프로젝트를 연결해 데모 데이터를 실제 DB로 바꾸는 것입니다. 구체적인 순서는 [`docs/PRODUCT_PLAN.md`](./docs/PRODUCT_PLAN.md)를 따릅니다.
+운영자마다 개인 계정을 사용하고 공용 ID나 짧은 공용 비밀번호를 만들지 않습니다. 퇴사·역할 변경 시에는 해당 개인 계정을 즉시 정지하고 역할을 회수합니다.
+
+## 로컬 실행
+
+Node.js 22 LTS와 pnpm을 준비한 뒤 프로젝트 루트에서 실행합니다.
+
+```powershell
+corepack enable
+pnpm install --frozen-lockfile
+Copy-Item -LiteralPath .env.example -Destination .env.local
+pnpm run dev
+```
+
+Supabase Dashboard의 **Project Settings → API**에서 현재 프로젝트 값을 확인해 `.env.local`의 두 항목을 채웁니다.
+
+| 환경변수 | 용도 | 공개 여부 |
+| --- | --- | --- |
+| `VITE_SUPABASE_URL` | Supabase Project URL | 브라우저 공개 가능 |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase Publishable key | 브라우저 공개 가능 |
+
+배포 전 로컬 빌드도 반드시 확인합니다.
+
+```powershell
+pnpm run build
+pnpm run preview
+```
+
+## Supabase 연결과 마이그레이션
+
+CLI 인증은 열린 Supabase 브라우저 화면에서 직접 승인합니다. 액세스 토큰, 데이터베이스 비밀번호, 로그인용 임시 코드는 채팅·이슈·커밋에 남기지 않습니다.
+
+```powershell
+npx supabase@latest login
+$supabaseProjectRef = Read-Host 'Supabase project ref'
+npx supabase@latest link --project-ref $supabaseProjectRef
+npx supabase@latest migration list
+npx supabase@latest db push --dry-run
+npx supabase@latest db push
+npx supabase@latest config push
+```
+
+`db push --dry-run` 결과에서 예상하지 않은 삭제나 타입 변경이 보이면 적용하지 않습니다. `db push` 성공 후 다시 `migration list`를 실행해 Local과 Remote가 모두 동일한지 확인합니다.
+
+`supabase/config.toml`의 운영 인증 기준은 다음과 같습니다.
+
+- 비밀번호 최소 8자
+- 대·소문자, 숫자, 특수문자 조합 강제 없음
+- 이메일 가입 확인 비활성화: 가입 직후 로그인 가능
+- 비밀번호 변경 시 최근 로그인 또는 재인증 요구
+- 이메일 주소 변경은 기존·신규 주소 확인 유지
+
+이메일 가입 확인을 끄는 것과 비밀번호 재설정 이메일은 서로 다른 기능입니다. 가입 확인을 끄더라도 비밀번호 찾기와 이메일 변경을 운영하려면 SMTP 설정이 필요합니다.
+
+## Vercel 환경변수와 자동 배포
+
+Vercel 프로젝트를 연결한 뒤 두 공개 환경변수를 Production, Preview, Development에 각각 등록합니다. 각 명령이 값을 요청하면 Supabase Dashboard에서 복사한 현재 프로젝트 값을 붙여 넣습니다.
+
+```powershell
+npx vercel@latest login
+npx vercel@latest link
+npx vercel@latest env add VITE_SUPABASE_URL production
+npx vercel@latest env add VITE_SUPABASE_URL preview
+npx vercel@latest env add VITE_SUPABASE_URL development
+npx vercel@latest env add VITE_SUPABASE_PUBLISHABLE_KEY production
+npx vercel@latest env add VITE_SUPABASE_PUBLISHABLE_KEY preview
+npx vercel@latest env add VITE_SUPABASE_PUBLISHABLE_KEY development
+npx vercel@latest env ls
+npx vercel@latest env pull .env.local --environment=development
+```
+
+환경변수를 변경하면 기존 배포에는 자동 반영되지 않으므로 Vercel에서 Redeploy하거나 새 커밋을 푸시합니다.
+이미 같은 이름의 변수가 있으면 `env add` 대신 `env update`를 사용합니다. 예: `npx vercel@latest env update VITE_SUPABASE_URL production`.
+
+```powershell
+pnpm run build
+git status --short
+git push origin main
+```
+
+Vercel의 Framework Preset은 `Vite`, Build Command는 `pnpm run build`, Output Directory는 `dist`, Production Branch는 `main`으로 설정합니다.
+
+## 운영 URL 설정
+
+최종 ProMoms 도메인이 확정되면 다음 세 위치를 같은 값으로 맞춥니다.
+
+1. Vercel **Settings → Domains**
+2. Supabase **Authentication → URL Configuration**의 Site URL과 Redirect URLs
+3. `supabase/config.toml`의 `site_url`과 `additional_redirect_urls`
+
+로컬 개발 주소는 `http://localhost:4173`과 `http://127.0.0.1:4173`만 허용합니다. Preview URL은 팀이 소유한 Vercel 주소만 추가하고 광범위한 와일드카드는 사용하지 않습니다. 설정 변경 후 아래 명령으로 원격 Auth 설정을 동기화합니다.
+
+```powershell
+npx supabase@latest config push
+```
+
+현재 설정에 남아 있는 자동 생성 배포 주소와 프로젝트 ID는 연결을 유지하기 위한 인프라 식별자입니다. 최종 도메인을 연결하기 전 임의로 이름만 바꾸면 로그인 리디렉션과 배포 연결이 끊어질 수 있습니다.
+
+## 운영 SMTP와 비밀번호 찾기
+
+Supabase의 기본 메일 발송은 운영용 대량 발송 수단이 아닙니다. 실제 사용자 공개 전 다음을 완료합니다.
+
+1. 전용 발신 도메인을 정하고 SMTP 제공업체에서 SPF, DKIM, DMARC를 검증합니다.
+2. Supabase **Authentication → Email → SMTP Settings**에 호스트, 포트, 사용자, 비밀번호, 발신 이메일을 등록합니다.
+3. 발신자 이름을 `ProMoms`로 설정합니다.
+4. 비밀번호 재설정 URL이 최종 ProMoms 도메인으로만 돌아오는지 확인합니다.
+5. 정상 주소, 존재하지 않는 주소, 만료된 링크, 이미 사용한 링크를 각각 테스트합니다.
+6. 발송 실패율과 반송 로그에 대한 운영 알림을 설정합니다.
+
+CLI로 SMTP 설정을 관리할 경우 `supabase/config.toml`의 `[auth.email.smtp]` 블록을 활성화하고 비밀번호와 발신 주소는 각각 `PROMOMS_SMTP_PASSWORD`, `PROMOMS_SMTP_FROM_EMAIL` 환경변수로 주입한 뒤 동기화합니다.
+
+```powershell
+$promomsSmtpSecret = Read-Host 'SMTP password' -AsSecureString
+$env:PROMOMS_SMTP_PASSWORD = [System.Net.NetworkCredential]::new('', $promomsSmtpSecret).Password
+$env:PROMOMS_SMTP_FROM_EMAIL = Read-Host 'Verified sender email'
+npx supabase@latest config push
+Remove-Item Env:PROMOMS_SMTP_PASSWORD
+Remove-Item Env:PROMOMS_SMTP_FROM_EMAIL
+$promomsSmtpSecret = $null
+```
+
+SMTP 비밀번호는 `.env.local`에도 저장하지 않는 것을 권장합니다. 위 환경변수는 설정 반영 직후 현재 터미널에서 제거합니다.
+
+## 최초 OWNER 설정
+
+`OWNER`는 Supabase 조직 권한이 아니라 ProMoms 웹앱의 `public.user_roles` 권한입니다. 다음 순서로 한 번만 부여합니다.
+
+1. 운영 책임자가 자신의 실제 이메일로 웹앱 회원가입을 완료합니다.
+2. Supabase Dashboard에서 같은 이메일의 Auth 사용자와 `public.profiles` 행이 정확히 하나씩 존재하는지 확인합니다.
+3. Dashboard의 **Database → Connect**에서 표시되는 `psql` 접속 명령으로 데이터베이스에 연결합니다.
+4. 아래 블록을 `psql`에 그대로 실행하고 프롬프트에 운영 책임자 이메일을 입력합니다.
+
+```sql
+\set ON_ERROR_STOP on
+\prompt 'ProMoms OWNER email: ' owner_email
+
+begin;
+
+select set_config('promoms.bootstrap_owner_email', :'owner_email', true);
+
+do $promoms$
+declare
+  selected_user_id uuid;
+begin
+  select id
+    into strict selected_user_id
+  from public.profiles
+  where lower(email) = lower(current_setting('promoms.bootstrap_owner_email'));
+
+  delete from public.user_roles
+  where user_id = selected_user_id;
+
+  insert into public.user_roles (user_id, role)
+  values (selected_user_id, 'OWNER'::public.app_role);
+
+  update public.profiles
+  set requested_role = 'ADMIN',
+      account_status = 'ACTIVE',
+      deleted_at = null,
+      deleted_by = null,
+      updated_at = now()
+  where id = selected_user_id;
+end
+$promoms$;
+
+select p.email, p.account_status, array_agg(ur.role order by ur.role) as roles
+from public.profiles p
+join public.user_roles ur on ur.user_id = p.id
+where lower(p.email) = lower(current_setting('promoms.bootstrap_owner_email'))
+group by p.email, p.account_status;
+
+commit;
+```
+
+결과가 `ACTIVE`와 `OWNER` 한 행인지 확인한 뒤 로그아웃·로그인하여 관리자 메뉴와 회원 관리가 열리는지 확인합니다. 이후 `ADMIN` 역할은 OWNER가 웹앱의 회원 관리에서 부여하며, OWNER 자체는 웹앱에서 변경할 수 없도록 유지합니다.
+
+운영 배포 전에는 아래 감사 쿼리로 모든 고권한 계정을 직접 검토합니다.
+
+```sql
+select p.id, p.email, p.account_status, ur.role, ur.created_at
+from public.profiles p
+join public.user_roles ur on ur.user_id = p.id
+where ur.role in ('OWNER', 'ADMIN')
+order by ur.role, p.email;
+```
+
+목록에 담당자가 확인하지 못한 계정, 공용 계정, 테스트 도메인 계정이 있으면 공개 전에 역할을 회수합니다.
+
+## 릴리스 체크리스트
+
+### 보안과 데이터
+
+- [ ] Git 이력과 Vercel 환경변수에 `service_role`, 데이터베이스 비밀번호, SMTP 비밀번호가 없음
+- [ ] 모든 Supabase 마이그레이션이 원격에 적용됨
+- [ ] 테이블과 Storage 버킷의 RLS를 CLIENT, CAREGIVER, ADMIN, OWNER별로 검증함
+- [ ] 확인된 개인 계정만 ADMIN 또는 OWNER 역할을 가짐
+- [ ] 비밀번호 찾기와 이메일 변경 메일이 운영 SMTP로 도착함
+- [ ] 데이터 보관·삭제·백업·복구 정책과 감사 로그를 확인함
+
+### 핵심 사용자 흐름
+
+- [ ] 고객 가입 → 로그인 → 프로필 수정 → 서비스 신청
+- [ ] 관리사 가입 → 승인 대기 → 관리자 승인 → 배정 확인
+- [ ] 관리자 신청 승인·거절 → 일정 배정 → 변경·취소 처리
+- [ ] 환불 필요 건의 결제사 환불 처리 → 외부 환불번호 기록 → 감사 로그 확인
+- [ ] 진행 중 세션이 없는 관리사만 재배정하고, 계정 정지 시 열린 세션 강제 종료 로그를 확인함
+- [ ] 산후조리와 베이비시팅의 기간·시간·중복 제한 검증
+- [ ] 관리사 근무 시작·종료와 케어 기록이 다른 기기에서도 동기화됨
+- [ ] 완료된 케어 세션의 고객 리포트·후기가 재로그인 후 유지됨
+- [ ] 파일 업로드 기능을 공개할 경우 배정 단위 경로와 서명 URL을 구현·검증함
+- [ ] 정지·삭제된 회원이 보호 데이터에 접근하지 못함
+
+### UI와 배포
+
+- [ ] iPhone Safari, Android Chrome, 데스크톱 Chrome·Safari에서 주요 화면 확인
+- [ ] 작은 화면에서 모달, 날짜 선택, 하단 버튼이 겹치거나 잘리지 않음
+- [ ] 키보드만으로 로그인, 신청, 승인, 변경·취소가 가능함
+- [ ] 404 라우팅, 새로고침, 오프라인 복귀, 오래된 서비스 워커 캐시를 확인함
+- [ ] 배포 후 프로덕션 URL에서 신규 가입과 관리자 승인을 다시 확인함
+
+## 운영 시 주의사항
+
+- 이 앱은 의료 진단 도구가 아니라 케어 기록과 운영 지원 도구입니다.
+- 건강·가족 정보는 민감 정보로 취급하고 최소 권한, 보관 기한, 접근 감사와 사고 대응 절차를 적용합니다.
+- HIPAA 적용 여부, 고객 계약, 취소·환불, 보험 및 W-2 표기는 미국·조지아주 법률·보험·세무 전문가의 검토를 거칩니다.
+- 실제 결제는 서버에서 금액과 상태를 재검증하고 결제 제공업체 웹훅을 원장으로 사용합니다.
+- 현재 환불 완료 기능은 관리자가 결제사에서 환불한 뒤 외부 환불번호를 기록하는 방식입니다. 결제 제공업체 웹훅 연동 전까지 웹앱이 직접 돈을 이동시키지는 않습니다.
+- 계약서·자격증·프로필 사진·첨부파일의 버킷과 기본 정책은 준비되어 있지만, 업로드·미리보기·서명 URL UI는 배정 단위 경로 설계와 함께 별도 출시해야 합니다.
+- 운영 장애 시 Supabase Auth, Database, Storage와 Vercel Deployment 로그를 함께 확인합니다.
+
+세부 제품 범위는 [`docs/PRODUCT_PLAN.md`](./docs/PRODUCT_PLAN.md), 간단한 배포 진입점은 [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)를 참고합니다.

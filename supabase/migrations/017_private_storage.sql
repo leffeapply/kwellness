@@ -1,4 +1,4 @@
--- Private cloud storage for K-Wellness operational documents.
+-- Private cloud storage for ProMoms operational documents.
 -- Every object path starts with either the owning user UUID or client UUID.
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

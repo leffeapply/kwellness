@@ -1,4 +1,4 @@
--- Unified member governance for the K-Wellness web app.
+-- Unified member governance for the ProMoms web app.
 -- CLIENT and CAREGIVER are public signup paths. ADMIN is provisioned internally.
 
 alter table public.profiles
@@ -236,89 +236,6 @@ comment on function public.admin_change_member_role(uuid, public.app_role) is
 comment on function public.admin_archive_member(uuid) is
   'Soft-deletes a member by blocking access while preserving operational records.';
 
--- One-time cleanup: former email-based operator accounts become normal clients.
-delete from public.user_roles ur
-using public.profiles p
-where ur.user_id = p.id
-  and lower(p.email) in ('parksiyoo9@gmail.com', 'leffeapply@gmail.com')
-  and ur.role in ('ADMIN', 'CARE_MANAGER', 'OWNER');
-
-insert into public.user_roles (user_id, role)
-select p.id, 'CLIENT'::public.app_role
-from public.profiles p
-where lower(p.email) in ('parksiyoo9@gmail.com', 'leffeapply@gmail.com')
-on conflict do nothing;
-
-delete from public.client_members cm
-using public.profiles p
-where cm.user_id = p.id
-  and lower(p.email) = 'admin@kwellness.test';
-
-delete from public.clients c
-using public.profiles p
-where c.created_by = p.id
-  and lower(p.email) = 'admin@kwellness.test'
-  and c.status = 'LEAD'
-  and not exists (select 1 from public.care_contracts cc where cc.client_id = c.id)
-  and not exists (select 1 from public.client_service_requests sr where sr.client_id = c.id);
-
--- The internal Auth user must already exist before this migration is applied.
-delete from public.user_roles ur
-using public.profiles p
-where ur.user_id = p.id
-  and lower(p.email) = 'admin@kwellness.test';
-
-insert into public.user_roles (user_id, role)
-select p.id, 'ADMIN'::public.app_role
-from public.profiles p
-where lower(p.email) = 'admin@kwellness.test'
-on conflict do nothing;
-
-alter table public.profiles disable trigger protect_profile_security_fields_trigger;
-update public.profiles
-set requested_role = case
-      when lower(email) = 'admin@kwellness.test' then 'ADMIN'
-      else 'CLIENT'
-    end,
-    account_status = 'ACTIVE',
-    deleted_at = null,
-    deleted_by = null,
-    updated_at = now()
-where lower(email) in (
-  'admin@kwellness.test',
-  'parksiyoo9@gmail.com',
-  'leffeapply@gmail.com'
-);
-alter table public.profiles enable trigger protect_profile_security_fields_trigger;
-
-do $$
-declare
-  operator_profile record;
-  operator_client_id uuid;
-begin
-  for operator_profile in
-    select id, full_name
-    from public.profiles
-    where lower(email) in ('parksiyoo9@gmail.com', 'leffeapply@gmail.com')
-  loop
-    if not exists (select 1 from public.client_members where user_id = operator_profile.id) then
-      select id into operator_client_id
-      from public.clients
-      where created_by = operator_profile.id
-      order by created_at
-      limit 1;
-
-      if operator_client_id is null then
-        insert into public.clients (display_name, status, created_by)
-        values (operator_profile.full_name, 'LEAD', operator_profile.id)
-        returning id into operator_client_id;
-      end if;
-
-      insert into public.client_members (client_id, user_id, relationship, is_primary)
-      values (operator_client_id, operator_profile.id, 'PARENT', true)
-      on conflict do nothing;
-    end if;
-    operator_client_id := null;
-  end loop;
-end;
-$$;
+-- Production operators are intentionally not identified in source control.
+-- Bootstrap the first OWNER through the audited deployment runbook, then manage
+-- subsequent roles from the application with the functions above.
