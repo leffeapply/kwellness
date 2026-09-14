@@ -1364,10 +1364,10 @@ import {
     return `
       <div class="app-shell">
         <aside class="sidebar">
-          <div class="brand">
-            <div class="brand-mark">${brandLogoMarkup()}</div>
-            <div class="brand-copy"><strong>ProMoms</strong><small>CARE · BABY · BEAUTY</small></div>
-          </div>
+          <button class="brand brand-home-button" type="button" data-public-home aria-label="ProMoms 홈페이지 메인으로 이동" title="홈페이지 메인으로 이동">
+            <span class="brand-mark">${brandLogoMarkup()}</span>
+            <span class="brand-copy"><strong>ProMoms</strong><small>CARE · BABY · BEAUTY</small></span>
+          </button>
           ${workspaceSwitcherMarkup("sidebar")}
           <div class="side-section-label">Menu</div>
           <nav class="side-nav" aria-label="주요 메뉴">${navMarkup("side")}</nav>
@@ -1378,7 +1378,7 @@ import {
 
         <main class="main-area">
           <header class="mobile-header">
-            <div class="mobile-brand"><div class="brand-mark">${brandLogoMarkup()}</div><strong>ProMoms</strong></div>
+            <button class="mobile-brand mobile-brand-home-button" type="button" data-public-home aria-label="ProMoms 홈페이지 메인으로 이동"><span class="brand-mark">${brandLogoMarkup()}</span><strong>ProMoms</strong></button>
             <details class="mobile-account-menu"><summary>${escapeHtml(ROLE_META[state.role]?.label || "계정")}</summary><div class="mobile-account-actions">${workspaceSwitcherMarkup("mobile")}${state.role === "client" ? `<button class="mobile-logout" data-public-home>일반 사이트</button>` : ""}<button class="mobile-logout" data-edit-profile>프로필 수정</button><button class="mobile-logout" data-change-password>비밀번호 변경</button><button class="mobile-logout" data-logout>로그아웃</button></div></details>
           </header>
           <header class="topbar">

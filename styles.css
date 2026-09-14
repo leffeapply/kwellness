@@ -99,6 +99,31 @@ button:disabled {
   padding: 0 10px 26px;
 }
 
+.brand-home-button {
+  width: 100%;
+  border: 0;
+  border-radius: 16px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  transition: background 160ms ease;
+}
+
+.brand-home-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.brand-home-button:focus-visible {
+  outline: 3px solid rgba(255, 250, 240, 0.92);
+  outline-offset: 3px;
+}
+
+.mobile-brand-home-button:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: 3px;
+}
+
 .brand-mark {
   display: grid;
   width: 38px;
@@ -2754,6 +2779,7 @@ body:has(#modal-root:not(:empty)) {
     backdrop-filter: blur(16px);
   }
   .mobile-brand { display: flex; align-items: center; gap: 9px; }
+  .mobile-brand-home-button { padding: 0; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; }
   .mobile-brand .brand-mark { width: 33px; height: 33px; border: 0; background: var(--green); color: white; }
   .mobile-brand strong { font-size: 13px; }
   .mobile-role { max-width: 118px; min-width: 0; padding: 8px 24px 8px 8px; }
