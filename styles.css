@@ -4607,6 +4607,65 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   min-width: 0;
 }
 
+.service-archive-audit-card {
+  min-width: 0;
+  border-top: 3px solid #d88064;
+}
+
+.service-archive-audit-head,
+.service-archive-audit-row {
+  display: grid;
+  min-width: 980px;
+  grid-template-columns: 1.35fr .68fr .7fr 1.35fr .62fr;
+  align-items: center;
+  gap: 14px;
+}
+
+.service-archive-audit-head {
+  padding: 10px 14px;
+  border-radius: 9px;
+  color: var(--ink-soft);
+  background: #fff0eb;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.service-archive-audit-scroll {
+  overflow-x: auto;
+  scrollbar-color: var(--green-2) #e7eee9;
+  scrollbar-width: thin;
+}
+
+.service-archive-audit-list {
+  min-width: 980px;
+}
+
+.service-archive-audit-row {
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.service-archive-audit-row:last-child {
+  border-bottom: 0;
+}
+
+.service-archive-audit-row > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.service-archive-audit-row strong {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.service-archive-audit-row span {
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .service-history-scroll {
   overflow-x: auto;
   overscroll-behavior-inline: contain;
