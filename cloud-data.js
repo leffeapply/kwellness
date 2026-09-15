@@ -941,7 +941,7 @@ export async function updateMyClientProfileCloud(values) {
     p_baby_id: values.babyId || null,
     p_baby_name: values.babyName.trim(),
     p_baby_birth_date: values.babyBirthDate,
-    p_service_address: values.serviceAddress.trim(),
+    p_service_address: String(values.serviceAddress || "").trim(),
     p_allergy_notes: values.allergies?.trim() || null,
     p_household_extra_people: Number(values.extraHouseholdMembers || 0),
     p_emergency_contact: values.emergencyContact?.trim() || null,
