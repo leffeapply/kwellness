@@ -2922,6 +2922,8 @@ body:has(#modal-root:not(:empty)) {
   .order-row { grid-template-columns: 1fr auto; }
   .order-row > div:nth-child(2) { display: none; }
   .form-grid.two, .form-grid.three { grid-template-columns: 1fr; }
+  .schedule-compliance-blocker { align-items: stretch; flex-direction: column; }
+  .schedule-compliance-blocker > button { width: 100%; }
   .assignment-row { grid-template-columns: 1fr; }
   .assignment-actions { justify-content: stretch; }
   .assignment-actions > * { flex: 1 1 140px; }
@@ -3367,9 +3369,13 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
 .request-service-column .client-request-row button { width: 100%; }
 .approved-request-queue { border: 1px solid #d8e5de; background: linear-gradient(145deg, white, #f1f7f3); }
 .schedule-source-card { border-left: 4px solid var(--green-2); }
+.schedule-compliance-blocker { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 18px; }
+.schedule-compliance-blocker > div { display: grid; gap: 3px; min-width: 0; }
+.schedule-compliance-blocker > button { flex: 0 0 auto; }
 .approved-schedule-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .approved-schedule-card { display: grid; gap: 5px; padding: 15px; border: 1px solid #dfd7d0; border-radius: 13px; color: var(--ink); background: #fff9f5; text-align: left; }
 .approved-schedule-card.babysitting { border-color: #cde2d9; background: #eef7f2; }
+.approved-schedule-card:disabled { cursor: not-allowed; opacity: .62; }
 .approved-schedule-card .service-type-badge { margin: 0; }
 .approved-schedule-card span { color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
 .approved-schedule-card em { color: var(--green); font-size: 12px; font-style: normal; font-weight: 800; }

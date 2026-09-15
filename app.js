@@ -638,6 +638,7 @@ import {
     if (message.includes("only the active assigned caregiver can report")) return "본인에게 실제 배정된 서비스만 소급 기록할 수 있습니다.";
     if (message.includes("matching captured reservation deposit is required")) return "일정 배치 전에 해당 서비스의 예약금 수납 확인을 완료해 주세요.";
     if (message.includes("overlapping service-day schedule")) return "선택한 관리사에게 같은 요일·시간의 중복 일정이 있습니다.";
+    if (message.includes("current liability, workers compensation, and w-2 evidence must be verified before scheduling")) return "일정 배치 전에 책임보상보험·근로자재해보험·W-2 고용 증빙을 모두 검증 완료로 저장해 주세요.";
     if (message.includes("required consents must be recorded")) return "관리사 권한을 추가하려면 해당 계정에서 최신 필수 약관 동의를 먼저 저장해야 합니다.";
     if (message.includes("client active service records")) return "진행 중인 고객 신청·계약이 있어 고객 권한을 제거할 수 없습니다. 고객 권한을 유지하거나 관련 서비스를 먼저 종료해 주세요.";
     if (message.includes("caregiver active schedule")) return "진행 중이거나 예정된 배정이 있어 관리사 권한을 제거할 수 없습니다. 관리사 권한을 유지하거나 배정을 먼저 완료·재배정해 주세요.";
@@ -708,6 +709,29 @@ import {
 
   function canManageCompanyCompliance() {
     return !usingCloudData() || hasDatabaseRole("OWNER") || hasDatabaseRole("ADMIN");
+  }
+
+  function companyCareComplianceStatus() {
+    const compliance = state.compliance || {};
+    const storedControls = Array.isArray(compliance.controls) ? compliance.controls : [];
+    const today = localDateKey(new Date());
+    const legacyActive = {
+      GENERAL_LIABILITY: Boolean(compliance.generalLiabilityCoverage),
+      WORKERS_COMP: Boolean(compliance.workersCompCoverage),
+      W2_EMPLOYMENT: Boolean(compliance.payrollTaxHandledByCompany),
+    };
+    const controls = Object.entries(REQUIRED_COMPLIANCE_CONTROLS).map(([key, meta]) => {
+      const stored = storedControls.find((item) => item.key === key) || {};
+      const status = stored.status || (legacyActive[key] ? "ACTIVE" : "REVIEW_REQUIRED");
+      const expired = Boolean(stored.expiresAt && stored.expiresAt < today);
+      const current = status === "ACTIVE"
+        && Boolean(stored.verifiedAt)
+        && Boolean(String(stored.evidenceReference || "").trim())
+        && !expired;
+      return { key, ...meta, ...stored, status, expired, current };
+    });
+    const missing = controls.filter((control) => !control.current);
+    return { controls, missing, verifiedCount: controls.length - missing.length, total: controls.length, ready: missing.length === 0 };
   }
 
   function clientForUser(userId) {
@@ -1465,7 +1489,8 @@ import {
     const babysittingQueue = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && assignmentServiceType(request) === "BABYSITTING");
     const pendingCaregivers = state.users.filter(isCaregiverPendingApproval);
     const todaySchedules = todayScheduleItems();
-    const attentionCount = Number(babysittingQueue.length > 0) + Number(pendingRequests.length > 0) + Number(pendingCaregivers.length > 0);
+    const complianceStatus = companyCareComplianceStatus();
+    const attentionCount = Number(babysittingQueue.length > 0) + Number(pendingRequests.length > 0) + Number(pendingCaregivers.length > 0) + Number(!complianceStatus.ready);
     const administratorName = authUser()?.fullName || "관리자";
     return `
       <section class="page">
@@ -1488,6 +1513,7 @@ import {
               ${babysittingQueue.length ? attentionItem("☆", "베이비시팅 일정 배정", `${babysittingQueue.length}건 · 신청 희망일과 관리사 일정 확인`) : ""}
               ${pendingRequests.length ? attentionItem("+", "서비스 신청 검토", `${pendingRequests.length}건 · 예약금과 일정 중복 확인`) : ""}
               ${pendingCaregivers.length ? attentionItem("♙", "관리사 가입 승인", `${pendingCaregivers.length}건 · 자격 및 고용정보 확인`) : ""}
+              ${complianceStatus.ready ? "" : attentionItem("◈", "필수 운영 증빙 확인", `${complianceStatus.verifiedCount}/${complianceStatus.total}건 완료 · 일정 배치 전 보험·W-2 증빙 필요`)}
               ${attentionCount ? "" : `<div class="empty-state compact"><strong>대기 중인 후속 조치가 없습니다.</strong></div>`}
             </div>
           </article>
@@ -1499,21 +1525,7 @@ import {
     const compliance = state.compliance || {};
     const massage = state.serviceCatalog.MASSAGE;
     const massageReady = compliance.massageLiabilityRiderVerified && compliance.licensedMassageTherapistCount > 0;
-    const storedControls = Array.isArray(compliance.controls) ? compliance.controls : [];
-    const today = localDateKey(new Date());
-    const legacyActive = {
-      GENERAL_LIABILITY: Boolean(compliance.generalLiabilityCoverage),
-      WORKERS_COMP: Boolean(compliance.workersCompCoverage),
-      W2_EMPLOYMENT: Boolean(compliance.payrollTaxHandledByCompany),
-    };
-    const controls = Object.entries(REQUIRED_COMPLIANCE_CONTROLS).map(([key, meta]) => {
-      const stored = storedControls.find((item) => item.key === key) || {};
-      const status = stored.status || (legacyActive[key] ? "ACTIVE" : "REVIEW_REQUIRED");
-      const expired = Boolean(stored.expiresAt && stored.expiresAt < today);
-      const current = status === "ACTIVE" && Boolean(stored.verifiedAt) && Boolean(stored.evidenceReference) && !expired;
-      return { key, ...meta, ...stored, status, expired, current };
-    });
-    const verifiedCount = controls.filter((control) => control.current).length;
+    const { controls, verifiedCount } = companyCareComplianceStatus();
     const controlsMarkup = controls.map((control) => {
       const statusMeta = control.current
         ? COMPLIANCE_STATUS_META.ACTIVE
@@ -1569,16 +1581,20 @@ import {
     const approvedUnscheduled = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && clientById(request.clientId));
     const approvedQueue = approvedUnscheduled.filter(requestHasCapturedDepositEvidence);
     const depositEvidenceQueue = approvedUnscheduled.filter((request) => !requestHasCapturedDepositEvidence(request));
+    const complianceStatus = companyCareComplianceStatus();
+    const schedulingReady = !usingCloudData() || complianceStatus.ready;
+    const missingComplianceNames = complianceStatus.missing.map((control) => control.title).join(" · ");
     const filter = ["POSTPARTUM", "BABYSITTING"].includes(state.adminScheduleFilter) ? state.adminScheduleFilter : "ALL";
     const assignments = state.assignments.filter((item) => item.status !== "CANCELLED" && (filter === "ALL" || assignmentServiceType(item) === filter));
     return `
       <section class="page">
         ${demoBanner()}
         ${pageHeading("SCHEDULE & ASSIGNMENTS", "승인 신청 기반 일정·배정", "승인된 고객 서비스 신청을 불러와 관리사만 선택하고 월간 캘린더에 배치합니다.")}
-        <div class="grid stats">${statCard("Active", state.assignments.filter(isAssignmentCurrent).length, "현재 진행 중", "◷")}${statCard("Postpartum", state.assignments.filter((item) => isAssignmentCurrent(item) && assignmentServiceType(item) === "POSTPARTUM").length, "산후조리 진행", "♡")}${statCard("Babysitting", state.assignments.filter((item) => isAssignmentCurrent(item) && assignmentServiceType(item) === "BABYSITTING").length, "베이비시팅 진행", "☆")}${statCard("Ready to schedule", approvedQueue.length, "승인 완료 신청", "→")}</div>
-        <article class="card card-pad schedule-source-card" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">APPROVED SERVICE REQUESTS</p><h3>일정 배치 대기</h3><p>승인과 실제 예약금 수납 증빙이 모두 확인된 신청만 캘린더에 배치할 수 있습니다.</p></div><span class="status-chip gold">${approvedQueue.length} ready</span></div>${depositEvidenceQueue.length ? `<div class="status-banner warning"><strong>${depositEvidenceQueue.length}건의 예약금 증빙을 먼저 보완해 주세요.</strong><span>실제 수납 근거가 없는 기존 승인 건은 일정 배치에서 제외됩니다.</span></div><div class="approved-schedule-strip evidence-schedule-strip">${depositEvidenceQueue.map((request) => { const client = clientById(request.clientId); return `<button type="button" class="approved-schedule-card ${serviceMetaFor(request.serviceType).tone}" data-record-approved-deposit="${request.id}">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이")}</strong><span>${money(Number(request.depositAmount || (assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT)))} 수납 증빙 필요</span><em>증빙 보완 →</em></button>`; }).join("")}</div>` : ""}<div class="approved-schedule-strip">${approvedQueue.length ? approvedQueue.map((request) => { const client = clientById(request.clientId); return `<button type="button" class="approved-schedule-card ${serviceMetaFor(request.serviceType).tone}" data-open-assignment data-request-id="${request.id}">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이")}</strong><span>${formatDate(request.desiredStartDate)} · ${request.dailyStart}–${request.dailyEnd} · ${request.weeks}주</span><em>일정 배치 →</em></button>`; }).join("") : `<div class="empty-state"><strong>배치 가능한 승인 신청이 없습니다.</strong><span>${depositEvidenceQueue.length ? "위 승인 건의 실제 예약금 증빙을 보완해 주세요." : "서비스 신청·승인 메뉴에서 먼저 고객 신청을 승인해 주세요."}</span></div>`}</div></article>
+        <div class="grid stats">${statCard("Active", state.assignments.filter(isAssignmentCurrent).length, "현재 진행 중", "◷")}${statCard("Postpartum", state.assignments.filter((item) => isAssignmentCurrent(item) && assignmentServiceType(item) === "POSTPARTUM").length, "산후조리 진행", "♡")}${statCard("Babysitting", state.assignments.filter((item) => isAssignmentCurrent(item) && assignmentServiceType(item) === "BABYSITTING").length, "베이비시팅 진행", "☆")}${statCard("Ready to schedule", schedulingReady ? approvedQueue.length : 0, schedulingReady ? "승인 완료 신청" : "운영 증빙 확인 필요", "→")}</div>
+        ${schedulingReady ? "" : `<div class="status-banner warning schedule-compliance-blocker"><div><strong>필수 운영 증빙을 먼저 검증해 주세요.</strong><span>${escapeHtml(missingComplianceNames)} · 현재 ${complianceStatus.verifiedCount}/${complianceStatus.total}건 완료. 실제 증빙이 검증되기 전에는 일정이 서버에 저장되지 않습니다.</span></div><button type="button" class="primary-button mini-button" data-nav="compliance">보험·컴플라이언스 확인</button></div>`}
+        <article class="card card-pad schedule-source-card" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">APPROVED SERVICE REQUESTS</p><h3>일정 배치 대기</h3><p>승인·예약금 수납과 필수 운영 증빙이 모두 확인된 신청만 캘린더에 배치할 수 있습니다.</p></div><span class="status-chip ${schedulingReady ? "gold" : "coral"}">${schedulingReady ? approvedQueue.length : 0} ready</span></div>${depositEvidenceQueue.length ? `<div class="status-banner warning"><strong>${depositEvidenceQueue.length}건의 예약금 증빙을 먼저 보완해 주세요.</strong><span>실제 수납 근거가 없는 기존 승인 건은 일정 배치에서 제외됩니다.</span></div><div class="approved-schedule-strip evidence-schedule-strip">${depositEvidenceQueue.map((request) => { const client = clientById(request.clientId); return `<button type="button" class="approved-schedule-card ${serviceMetaFor(request.serviceType).tone}" data-record-approved-deposit="${request.id}">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이")}</strong><span>${money(Number(request.depositAmount || (assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT)))} 수납 증빙 필요</span><em>증빙 보완 →</em></button>`; }).join("")}</div>` : ""}<div class="approved-schedule-strip">${approvedQueue.length ? approvedQueue.map((request) => { const client = clientById(request.clientId); return `<button type="button" class="approved-schedule-card ${serviceMetaFor(request.serviceType).tone}" ${schedulingReady ? `data-open-assignment data-request-id="${request.id}"` : "disabled"}>${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이")}</strong><span>${formatDate(request.desiredStartDate)} · ${request.dailyStart}–${request.dailyEnd} · ${request.weeks}주</span><em>${schedulingReady ? "일정 배치 →" : "운영 증빙 확인 필요"}</em></button>`; }).join("") : `<div class="empty-state"><strong>배치 가능한 승인 신청이 없습니다.</strong><span>${depositEvidenceQueue.length ? "위 승인 건의 실제 예약금 증빙을 보완해 주세요." : "서비스 신청·승인 메뉴에서 먼저 고객 신청을 승인해 주세요."}</span></div>`}</div></article>
         <div class="schedule-filter-bar" role="group" aria-label="캘린더 서비스 필터"><span>표시 서비스</span>${[["ALL", "전체"], ["POSTPARTUM", "♡ 산후조리"], ["BABYSITTING", "☆ 베이비시팅"]].map(([value, label]) => `<button type="button" class="${filter === value ? "active" : ""}" data-schedule-filter="${value}">${label}</button>`).join("")}</div>
-        <article class="card calendar-card" style="margin-top:12px"><div class="section-header calendar-head"><div><h3>${filter === "ALL" ? "전체 관리사" : serviceMetaFor(filter).label} 월간 일정</h3><p>${calendarMonthLabel()} · ${assignments.length}개 계약·배정</p></div><div class="calendar-actions"><button class="secondary-button mini-button" data-calendar-month="-1">← 이전 달</button><button class="secondary-button mini-button" data-calendar-today>이번 달</button><button class="secondary-button mini-button" data-calendar-month="1">다음 달 →</button><button class="primary-button" data-open-assignment ${approvedQueue.length ? "" : "disabled"}>+ 승인 신청에서 배치</button></div></div>${assignmentMonthCalendarMarkup()}</article>
+        <article class="card calendar-card" style="margin-top:12px"><div class="section-header calendar-head"><div><h3>${filter === "ALL" ? "전체 관리사" : serviceMetaFor(filter).label} 월간 일정</h3><p>${calendarMonthLabel()} · ${assignments.length}개 계약·배정</p></div><div class="calendar-actions"><button class="secondary-button mini-button" data-calendar-month="-1">← 이전 달</button><button class="secondary-button mini-button" data-calendar-today>이번 달</button><button class="secondary-button mini-button" data-calendar-month="1">다음 달 →</button><button class="primary-button" data-open-assignment ${approvedQueue.length && schedulingReady ? "" : "disabled"}>+ 승인 신청에서 배치</button></div></div>${assignmentMonthCalendarMarkup()}</article>
         <article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>${filter === "ALL" ? "전체" : serviceMetaFor(filter).label} 계약·배정 목록</h3><p>${usingCloudData() ? "확정 일정은 고객 변경·취소 요청 승인 절차를 통해서만 바뀌며, 기록 보존을 위해 직접 삭제하지 않습니다." : "로컬 데이터의 일정 수정·삭제가 캘린더와 연동됩니다."}</p></div><span class="status-chip">${assignments.length} records</span></div><div class="assignment-list">${assignments.sort((a,b) => new Date(a.startAt)-new Date(b.startAt)).map((assignment) => { const client = clientById(assignment.clientId); const caregiver = state.users.find((user) => user.id === assignment.caregiverUserId); const status = isAssignmentCurrent(assignment) ? "진행 중" : new Date(assignment.startAt) > new Date() ? "예정" : "종료"; return `<div class="assignment-row"><div>${serviceBadgeMarkup(assignment.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 정보 확인 필요")} · ${escapeHtml(babyNameFor(assignment, client) || "아이 미등록")}</strong><span>${formatDate(assignment.startAt)} – ${formatDate(assignment.endAt)} · ${assignment.weeks}주</span></div><div><strong>${escapeHtml(caregiver?.fullName || assignment.caregiverName || "관리사 미배정")}</strong><span>${assignment.dailyStart} – ${assignment.dailyEnd}</span></div><div><strong>${escapeHtml(assignment.address)}</strong><span>알러지: ${escapeHtml(assignment.allergies)}</span></div><span class="status-chip ${status === "진행 중" ? "" : "gold"}">${status}</span><div class="assignment-actions">${adminAssignmentActionsMarkup(assignment)}</div></div>`; }).join("")}</div></article>
       </section>`;
   }
@@ -1867,14 +1883,26 @@ import {
     const clientLinkIssue = requestClientLinkIssue(request);
     const missingClient = !client;
     const depositEvidenceMissing = isApprovedQueue && !requestHasCapturedDepositEvidence(request);
-    const queueTitle = clientLinkIssue ? "고객 계정 연결 복구 필요" : depositEvidenceMissing ? "예약금 수납 증빙 보완 필요" : "승인 완료 · 일정 배정 대기";
+    const complianceStatus = companyCareComplianceStatus();
+    const complianceBlocked = isApprovedQueue && usingCloudData() && !complianceStatus.ready;
+    const queueTitle = clientLinkIssue
+      ? "고객 계정 연결 복구 필요"
+      : depositEvidenceMissing
+        ? "예약금 수납 증빙 보완 필요"
+        : complianceBlocked
+          ? "필수 운영 증빙 확인 필요"
+          : "승인 완료 · 일정 배정 대기";
     const queueAction = depositEvidenceMissing
       ? `<button class="primary-button mini-button" data-record-approved-deposit="${request.id}" ${clientLinkIssue ? "disabled" : ""}>예약금 증빙 보완</button>`
-      : `<button class="primary-button mini-button" data-open-assignment data-request-id="${request.id}" ${issue || clientLinkIssue ? "disabled" : ""}>캘린더 일정 배치</button>`;
+      : complianceBlocked
+        ? '<button class="primary-button mini-button" data-nav="compliance">컴플라이언스 확인</button>'
+        : `<button class="primary-button mini-button" data-open-assignment data-request-id="${request.id}" ${issue || clientLinkIssue ? "disabled" : ""}>캘린더 일정 배치</button>`;
     const issueDetail = clientLinkIssue
       ? `${clientLinkIssue} 회원 관리에서 고객 권한과 고객 프로필 연결을 복구한 뒤 처리해 주세요.`
-      : issue?.message || (depositEvidenceMissing ? "실제 수납 내역의 결제수단과 거래·영수증 번호를 기록한 뒤 일정 배치가 열립니다." : detail || "별도 요청 없음");
-    return `<div class="client-request-row service-request-management-row ${issue || clientLinkIssue || depositEvidenceMissing ? "has-lifecycle-issue" : ""}"><div><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${request.weeks}주 · ${formatDate(request.desiredStartDate)} · ${request.dailyStart}–${request.dailyEnd}</span><small>${price}</small></div><div><strong>${escapeHtml(request.address)}</strong><span>알러지 ${escapeHtml(request.allergies || "없음")} · 추가인원 ${request.extraHouseholdMembers || 0}명</span></div><div><strong>${clientLinkIssue ? "고객 계정 연결 오류" : issue ? "일정 중복 확인 필요" : isApprovedQueue ? queueTitle : "신청 내용"}</strong><span>${escapeHtml(issueDetail)}</span></div>${isApprovedQueue ? queueAction : `<button class="primary-button mini-button" data-review-client-request="${request.id}" ${clientLinkIssue ? "disabled" : ""}>신청 검토·승인</button>`}</div>`;
+      : complianceBlocked
+        ? `책임보상보험·근로자재해보험·W-2 고용 증빙 ${complianceStatus.verifiedCount}/${complianceStatus.total}건 검증 완료`
+        : issue?.message || (depositEvidenceMissing ? "실제 수납 내역의 결제수단과 거래·영수증 번호를 기록한 뒤 일정 배치가 열립니다." : detail || "별도 요청 없음");
+    return `<div class="client-request-row service-request-management-row ${issue || clientLinkIssue || depositEvidenceMissing || complianceBlocked ? "has-lifecycle-issue" : ""}"><div><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${request.weeks}주 · ${formatDate(request.desiredStartDate)} · ${request.dailyStart}–${request.dailyEnd}</span><small>${price}</small></div><div><strong>${escapeHtml(request.address)}</strong><span>알러지 ${escapeHtml(request.allergies || "없음")} · 추가인원 ${request.extraHouseholdMembers || 0}명</span></div><div><strong>${clientLinkIssue ? "고객 계정 연결 오류" : issue ? "일정 중복 확인 필요" : isApprovedQueue ? queueTitle : "신청 내용"}</strong><span>${escapeHtml(issueDetail)}</span></div>${isApprovedQueue ? queueAction : `<button class="primary-button mini-button" data-review-client-request="${request.id}" ${clientLinkIssue ? "disabled" : ""}>신청 검토·승인</button>`}</div>`;
   }
 
   function adjustmentManagementMarkup(adjustments) {
@@ -4535,6 +4563,16 @@ import {
     const assignment = assignmentId ? state.assignments.find((item) => item.id === assignmentId) : null;
     const productionDetailOnly = Boolean(assignment && usingCloudData());
     if (assignmentId && !assignment) return showToast("일정 정보를 찾을 수 없습니다.");
+    if (!assignment && usingCloudData()) {
+      const complianceStatus = companyCareComplianceStatus();
+      if (!complianceStatus.ready) {
+        showToast(`필수 운영 증빙 ${complianceStatus.verifiedCount}/${complianceStatus.total}건 확인 상태입니다. 보험·컴플라이언스 메뉴에서 실제 증빙을 먼저 저장해 주세요.`, "error");
+        state.views.admin = "compliance";
+        saveState();
+        render();
+        return;
+      }
+    }
     const requestedRequest = requestId ? state.serviceRequests.find((request) => request.id === requestId && request.status === "APPROVED" && !request.approvedAssignmentId) : null;
     if (!assignment && requestedRequest && !requestHasCapturedDepositEvidence(requestedRequest)) return openApprovedDepositEvidenceModal(requestedRequest.id);
     const approvedQueue = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && clientById(request.clientId) && requestHasCapturedDepositEvidence(request));

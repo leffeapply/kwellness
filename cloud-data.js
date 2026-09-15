@@ -559,7 +559,7 @@ async function loadCloudStateOnce(session) {
   const complianceByKey = new Map(complianceControls.map((item) => [item.control_key, item]));
   const complianceActive = (key) => {
     const control = complianceByKey.get(key);
-    if (!control || control.status !== "ACTIVE" || !control.verified_at) return false;
+    if (!control || control.status !== "ACTIVE" || !control.verified_at || !String(control.evidence_reference || "").trim()) return false;
     return !control.expires_at || control.expires_at >= todayKey;
   };
 
