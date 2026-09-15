@@ -10,6 +10,7 @@ import {
   reassignCaregiverCloud,
   recordApprovedRequestDepositEvidenceCloud,
   recordDepositRefundCloud,
+  recordRetrospectiveCareReportCloud,
   recordServiceBalancePaymentCloud,
   recordMyCurrentConsentsCloud,
   requestPasswordResetCloud,
@@ -629,6 +630,14 @@ import {
     if (message.includes("exceeds the outstanding balance")) return "입력한 수납액이 현재 잔금보다 큽니다.";
     if (message.includes("no outstanding balance")) return "이 신청은 미수 잔금이 없습니다.";
     if (message.includes("payment reference has already been recorded")) return "이미 사용된 거래·영수증 번호입니다. 실제 결제 내역의 다른 고유 번호를 입력해 주세요.";
+    if (message.includes("payment date cannot be in the future")) return "실제 수납일은 오늘 또는 지난 날짜로 입력해 주세요.";
+    if (message.includes("assigned service days")) return "선택한 날짜는 해당 배정의 서비스 요일이 아닙니다.";
+    if (message.includes("retrospective report cannot be entered for a future date") || message.includes("retrospective report cannot end in the future")) return "지난 근무 리포트에는 완료된 오늘 또는 과거 근무만 입력할 수 있습니다.";
+    if (message.includes("published care report is immutable")) return "이미 고객에게 발행된 보관 리포트는 변경할 수 없습니다. 관리자에게 정정 절차를 요청해 주세요.";
+    if (message.includes("active care session before adding a retrospective")) return "현재 진행 중인 근무를 먼저 종료한 뒤 지난 근무 리포트를 입력해 주세요.";
+    if (message.includes("only the active assigned caregiver can report")) return "본인에게 실제 배정된 서비스만 소급 기록할 수 있습니다.";
+    if (message.includes("matching captured reservation deposit is required")) return "일정 배치 전에 해당 서비스의 예약금 수납 확인을 완료해 주세요.";
+    if (message.includes("overlapping service-day schedule")) return "선택한 관리사에게 같은 요일·시간의 중복 일정이 있습니다.";
     if (message.includes("required consents must be recorded")) return "관리사 권한을 추가하려면 해당 계정에서 최신 필수 약관 동의를 먼저 저장해야 합니다.";
     if (message.includes("client active service records")) return "진행 중인 고객 신청·계약이 있어 고객 권한을 제거할 수 없습니다. 고객 권한을 유지하거나 관련 서비스를 먼저 종료해 주세요.";
     if (message.includes("caregiver active schedule")) return "진행 중이거나 예정된 배정이 있어 관리사 권한을 제거할 수 없습니다. 관리사 권한을 유지하거나 배정을 먼저 완료·재배정해 주세요.";
@@ -1541,7 +1550,17 @@ import {
   }
 
   function adminAssignmentActionsMarkup(assignment) {
-    if (usingCloudData()) return `<button class="secondary-button mini-button" data-edit-assignment="${assignment.id}">상세 보기</button>`;
+    if (usingCloudData()) {
+      const request = state.serviceRequests.find((item) => item.id === assignment.serviceRequestId || item.approvedAssignmentId === assignment.id);
+      const paymentAction = request && canReviewServiceRequests()
+        ? requestDepositNet(request) <= 0
+          ? `<button class="primary-button mini-button" data-record-approved-deposit="${request.id}">예약금 확인</button>`
+          : requestOutstandingBalance(request) > 0
+            ? `<button class="primary-button mini-button" data-record-service-balance="${request.id}">잔금 확인</button>`
+            : '<span class="status-chip">수납 완료</span>'
+        : "";
+      return `<button class="secondary-button mini-button" data-edit-assignment="${assignment.id}">상세 보기</button>${paymentAction}`;
+    }
     return `<button class="secondary-button mini-button" data-edit-assignment="${assignment.id}">변경</button><button class="danger-button mini-button" data-cancel-assignment="${assignment.id}">삭제</button>`;
   }
 
@@ -1942,6 +1961,10 @@ import {
     const balancePaid = requestBalanceNet(request);
     const outstanding = requestOutstandingBalance(request);
     const depositReference = request.depositTransaction?.externalReference || request.depositTransaction?.external_reference || "";
+    const depositReceivedAt = request.depositTransaction?.capturedAt || request.depositTransaction?.captured_at || request.depositPaidAt;
+    const latestBalancePayment = [...(request.balanceTransactions || [])]
+      .filter((transaction) => transaction.status === "CAPTURED")
+      .sort((first, second) => new Date(second.capturedAt || second.captured_at || 0) - new Date(first.capturedAt || first.captured_at || 0))[0];
     const depositLabel = deposit > 0
       ? `${money(deposit)} 수납`
       : request.depositTransaction?.status === "REFUNDED"
@@ -1950,8 +1973,18 @@ import {
           ? clientLinkIssue ? "고객 연결 복구 필요" : "증빙 미등록"
           : "미수납";
     const canRecordBalance = usingCloudData() && request.status === "APPROVED" && deposit > 0 && outstanding > 0 && !clientLinkIssue;
+    const canRecordDeposit = usingCloudData() && request.status === "APPROVED" && deposit <= 0 && !clientLinkIssue;
     const statusTone = ["REJECTED", "CANCELLED"].includes(request.status) || clientLinkIssue ? "coral" : request.status === "PENDING" ? "gold" : "";
-    return `<div class="finance-ledger-row ${clientLinkIssue ? "has-lifecycle-issue" : ""}"><div class="finance-ledger-primary"><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${formatDate(request.desiredStartDate)} 시작 · ${request.weeks}주</span><small>신청 ${request.createdAt ? formatDate(request.createdAt) : "일자 미등록"}</small></div><div><span>신청 상태</span><strong class="status-chip ${statusTone}">${escapeHtml(serviceRequestStatusLabel(request))}</strong><small>${escapeHtml(clientLinkIssue || (request.approvedAssignmentId ? "일정 배정 연결됨" : ""))}</small></div><div><span>총 예정금액</span><strong>${total > 0 ? money(total) : "계산 필요"}</strong><small>${assignmentServiceType(request) === "POSTPARTUM" ? `주 ${money(Number(request.weeklyRate || POSTPARTUM_WEEKLY_RATE))}` : `시간당 ${money(BABYSITTING_HOURLY_RATE)}`}</small></div><div><span>예약금</span><strong>${depositLabel}</strong><small>${escapeHtml(depositReference ? `거래 ${depositReference}` : "실제 증빙 기준")}</small></div><div><span>잔금</span><strong>${money(balancePaid)} 수납</strong><small>${request.status === "APPROVED" ? `${money(outstanding)} 미수` : "승인 건만 미수 계산"}</small></div><div class="finance-ledger-action">${canRecordBalance ? `<button class="primary-button mini-button" data-record-service-balance="${request.id}">잔금 수납 기록</button>` : request.status === "APPROVED" && clientLinkIssue ? `<span class="status-chip coral">연결 복구 필요</span>` : outstanding === 0 && request.status === "APPROVED" ? `<span class="status-chip">수납 완료</span>` : ""}</div></div>`;
+    const actionMarkup = canRecordDeposit
+      ? `<button class="primary-button mini-button" data-record-approved-deposit="${request.id}">예약금 확인·기록</button>`
+      : canRecordBalance
+        ? `<button class="primary-button mini-button" data-record-service-balance="${request.id}">잔금 확인·기록</button>`
+        : request.status === "APPROVED" && clientLinkIssue
+          ? '<span class="status-chip coral">연결 복구 필요</span>'
+          : outstanding === 0 && request.status === "APPROVED"
+            ? '<span class="status-chip">수납 완료</span>'
+            : "";
+    return `<div class="finance-ledger-row ${clientLinkIssue ? "has-lifecycle-issue" : ""}"><div class="finance-ledger-primary"><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${formatDate(request.desiredStartDate)} 시작 · ${request.weeks}주</span><small>신청 ${request.createdAt ? formatDate(request.createdAt) : "일자 미등록"}</small></div><div><span>신청 상태</span><strong class="status-chip ${statusTone}">${escapeHtml(serviceRequestStatusLabel(request))}</strong><small>${escapeHtml(clientLinkIssue || (request.approvedAssignmentId ? "일정 배정 연결됨" : ""))}</small></div><div><span>총 예정금액</span><strong>${total > 0 ? money(total) : "계산 필요"}</strong><small>${assignmentServiceType(request) === "POSTPARTUM" ? `주 ${money(Number(request.weeklyRate || POSTPARTUM_WEEKLY_RATE))}` : `시간당 ${money(BABYSITTING_HOURLY_RATE)}`}</small></div><div><span>예약금</span><strong>${depositLabel}</strong><small>${escapeHtml(depositReference ? `거래 ${depositReference}` : "실제 증빙 기준")}${depositReceivedAt ? ` · ${formatDate(depositReceivedAt)}` : ""}</small></div><div><span>잔금</span><strong>${money(balancePaid)} 수납</strong><small>${request.status === "APPROVED" ? `${money(outstanding)} 미수` : "승인 건만 미수 계산"}${latestBalancePayment ? ` · 최근 ${formatDate(latestBalancePayment.capturedAt || latestBalancePayment.captured_at)}` : ""}</small></div><div class="finance-ledger-action">${actionMarkup}</div></div>`;
   }
 
   function adminFinance() {
@@ -2063,7 +2096,27 @@ import {
     const user = authUser();
     const activeAssignments = state.assignments.filter((assignment) => assignment.caregiverUserId === user.id && isAssignmentCurrent(assignment));
     const upcomingAssignments = state.assignments.filter((assignment) => assignment.caregiverUserId === user.id && assignment.status !== "CANCELLED" && new Date(assignment.startAt) > new Date());
-    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY CAREGIVING", "나의 케어기빙 현황", "산후조리와 베이비시팅 배정을 분리해 확인하고 각 작업공간으로 이동합니다.")}<div class="grid stats">${statCard("Current", activeAssignments.length, "현재 진행 중인 전체 배정", "◷")}${statCard("Postpartum", activeAssignments.filter((item) => assignmentServiceType(item) === "POSTPARTUM").length, "산후조리 진행 중", "♡")}${statCard("Babysitting", activeAssignments.filter((item) => assignmentServiceType(item) === "BABYSITTING").length, "베이비시팅 진행 중", "☆")}${statCard("Employment", "W-2", "보험 적용 정식 직원", "◈")}</div><div class="service-overview-grid" style="margin-top:18px">${caregiverServiceOverviewCard(user, "POSTPARTUM")}${caregiverServiceOverviewCard(user, "BABYSITTING")}</div><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>서비스별 기록·업무 범위</strong><p>산후조리에는 산모·신생아 케어와 차트만, 베이비시팅에는 식사·생활 이벤트만 표시됩니다. 의료행위와 무면허 마사지는 업무 범위에 포함되지 않으며, 프리미엄 산모 마사지는 향후 조지아주 라이선스 보유 전문가에게만 별도 배정됩니다.</p></article></section>`;
+    const retrospectiveAssignments = retrospectiveAssignmentsFor(user.id);
+    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY CAREGIVING", "나의 케어기빙 현황", "산후조리와 베이비시팅 배정을 분리해 확인하고 각 작업공간으로 이동합니다.")}<div class="grid stats">${statCard("Current", activeAssignments.length, "현재 진행 중인 전체 배정", "◷")}${statCard("Postpartum", activeAssignments.filter((item) => assignmentServiceType(item) === "POSTPARTUM").length, "산후조리 진행 중", "♡")}${statCard("Babysitting", activeAssignments.filter((item) => assignmentServiceType(item) === "BABYSITTING").length, "베이비시팅 진행 중", "☆")}${statCard("Employment", "W-2", "보험 적용 정식 직원", "◈")}</div><div class="service-overview-grid" style="margin-top:18px">${caregiverServiceOverviewCard(user, "POSTPARTUM")}${caregiverServiceOverviewCard(user, "BABYSITTING")}</div><article class="card card-pad retrospective-entry-card" style="margin-top:18px"><div><p class="eyebrow">RETROSPECTIVE CARE RECORD</p><h3>지난 근무 리포트 보완</h3><p>웹 기록을 놓친 실제 근무를 소급 입력할 수 있습니다. 서비스 날짜와 실제 근무시간은 그대로 기록되고, 입력자와 뒤늦게 입력한 시각은 감사 이력에 별도로 남습니다.</p></div><button type="button" class="primary-button" data-open-retrospective-report ${retrospectiveAssignments.length ? "" : "disabled"}>지난 근무 리포트 입력</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>서비스별 기록·업무 범위</strong><p>산후조리에는 산모·신생아 케어와 차트만, 베이비시팅에는 식사·생활 이벤트만 표시됩니다. 의료행위와 무면허 마사지는 업무 범위에 포함되지 않으며, 프리미엄 산모 마사지는 향후 조지아주 라이선스 보유 전문가에게만 별도 배정됩니다.</p></article></section>`;
+  }
+
+  function retrospectiveAssignmentsFor(userId) {
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+    return state.assignments
+      .filter((assignment) => assignment.caregiverUserId === userId
+        && assignment.status !== "CANCELLED"
+        && new Date(assignment.startAt) <= todayEnd)
+      .sort((first, second) => new Date(second.endAt) - new Date(first.endAt));
+  }
+
+  function latestRetrospectiveServiceDate(assignment) {
+    const assignmentStart = startOfLocalDay(assignment.startAt);
+    const assignmentEnd = startOfLocalDay(assignment.endAt);
+    const today = startOfLocalDay(new Date());
+    const cursor = new Date(Math.min(assignmentEnd.getTime(), today.getTime()));
+    while (cursor >= assignmentStart && !assignmentOccursOnDate(assignment, cursor)) cursor.setDate(cursor.getDate() - 1);
+    return cursor >= assignmentStart ? localDateKey(cursor) : localDateKey(assignmentStart);
   }
 
   function caregiverAssignmentPeekMarkup(assignment, label) {
@@ -3458,6 +3511,7 @@ import {
     }));
 
     document.querySelectorAll("[data-caregiver-assignment-detail]").forEach((button) => button.addEventListener("click", () => openCaregiverAssignmentDetailModal(button.dataset.caregiverAssignmentDetail)));
+    document.querySelectorAll("[data-open-retrospective-report]").forEach((button) => button.addEventListener("click", () => openRetrospectiveCareReportModal(button.dataset.assignmentId || null)));
     document.querySelectorAll("[data-open-review]").forEach((button) => button.addEventListener("click", () => openServiceReviewModal(button.dataset.openReview)));
 
     document.querySelectorAll("[data-start-care]").forEach((button) => {
@@ -4907,7 +4961,7 @@ import {
     const reviewForm = modalRoot.querySelector("[data-client-request-form]");
     const reviewActions = reviewForm.querySelector(".form-actions");
     reviewActions.classList.add("request-review-actions");
-    reviewActions.insertAdjacentHTML("beforebegin", `<div class="field"><label for="request-review-note">검토 메모·반려 사유</label><textarea id="request-review-note" name="reviewNote" placeholder="반려할 때는 고객이 이해할 수 있는 사유를 반드시 입력해 주세요."></textarea></div><fieldset class="deposit-confirmation"><legend>예약금 수납 기록</legend><p><strong>$${requestDeposit.toLocaleString("en-US")} 수납 근거를 기록해야 승인할 수 있습니다.</strong><small>${depositPolicyCopy} 정책이 적용됩니다.</small></p><div class="form-grid two"><div class="field"><label for="request-payment-method">결제 수단</label><select id="request-payment-method" name="paymentMethod" required><option value="">선택해 주세요</option><option value="CARD">카드</option><option value="ACH">ACH 계좌이체</option><option value="CASH">현금</option><option value="CHECK">수표</option><option value="OTHER">기타</option></select></div><div class="field"><label for="request-payment-reference">거래·영수증 번호</label><input id="request-payment-reference" name="paymentReference" minlength="3" maxlength="255" autocomplete="off" placeholder="결제사 거래번호 또는 수기 영수증 번호" required/><small>고유한 번호를 입력해 중복 수납을 방지합니다.</small></div></div></fieldset>`);
+    reviewActions.insertAdjacentHTML("beforebegin", `<div class="field"><label for="request-review-note">검토 메모·반려 사유</label><textarea id="request-review-note" name="reviewNote" placeholder="반려할 때는 고객이 이해할 수 있는 사유를 반드시 입력해 주세요."></textarea></div><fieldset class="deposit-confirmation"><legend>예약금 수납 기록</legend><p><strong>$${requestDeposit.toLocaleString("en-US")} 수납 근거를 기록해야 승인할 수 있습니다.</strong><small>${depositPolicyCopy} 정책이 적용됩니다.</small></p><div class="form-grid three"><div class="field"><label for="request-payment-date">실제 수납일</label><input id="request-payment-date" name="paymentDate" type="date" value="${localDateKey(new Date())}" max="${localDateKey(new Date())}" required/><small>뒤늦게 입력해도 실제 받은 날짜로 수입에 반영됩니다.</small></div><div class="field"><label for="request-payment-method">결제 수단</label><select id="request-payment-method" name="paymentMethod" required><option value="">선택해 주세요</option><option value="CARD">카드</option><option value="ACH">ACH 계좌이체</option><option value="CASH">현금</option><option value="CHECK">수표</option><option value="OTHER">기타</option></select></div><div class="field"><label for="request-payment-reference">거래·영수증 번호</label><input id="request-payment-reference" name="paymentReference" minlength="3" maxlength="255" autocomplete="off" placeholder="결제사 거래번호 또는 수기 영수증 번호" required/><small>고유한 번호를 입력해 중복 수납을 방지합니다.</small></div></div></fieldset>`);
     reviewActions.querySelector('button[type="submit"]').insertAdjacentHTML("beforebegin", `<button type="button" class="secondary-button" data-reject-client-request="${request.id}">신청 반려</button>`);
     bindModalFrame();
     reviewForm.addEventListener("submit", (event) => approveClientRequest(event, request.id));
@@ -4923,7 +4977,7 @@ import {
     const clientLinkIssue = requestClientLinkIssue(request);
     if (clientLinkIssue) return showToast(`${clientLinkIssue} 회원 관리에서 고객 권한과 고객 프로필 연결을 먼저 복구해 주세요.`, "error");
     const depositAmount = Number(request.depositAmount || (assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT));
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal" role="dialog" aria-modal="true" aria-labelledby="approved-deposit-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<p class="eyebrow">LEGACY DEPOSIT EVIDENCE</p><h3 id="approved-deposit-title">기존 승인 건 예약금 증빙 보완</h3><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-approved-deposit-form><div class="request-review-grid"><div><span>승인 상태</span><strong>승인 완료</strong></div><div><span>필수 예약금</span><strong>${money(depositAmount)}</strong></div><div class="wide"><span>서비스</span><strong>${serviceMetaFor(request.serviceType).label} · ${formatDate(request.desiredStartDate)} 시작 예정</strong></div></div><div class="status-banner warning"><strong>실제 수납 내역만 기록하세요.</strong><span>이 화면은 결제를 실행하지 않습니다. 기존에 받은 예약금의 결제사·은행·영수증 근거를 감사 기록으로 보완합니다.</span></div><div class="form-grid two"><div class="field"><label for="approved-payment-method">결제 수단</label><select id="approved-payment-method" name="paymentMethod" required><option value="">선택해 주세요</option><option value="CARD">카드</option><option value="ACH">ACH 계좌이체</option><option value="CASH">현금</option><option value="CHECK">수표</option><option value="OTHER">기타</option></select></div><div class="field"><label for="approved-payment-reference">거래·영수증 번호</label><input id="approved-payment-reference" name="paymentReference" minlength="3" maxlength="255" autocomplete="off" placeholder="실제 거래번호 또는 수기 영수증 번호" required/></div></div><label class="consent-line"><input type="checkbox" name="evidenceConfirmed" required/><span>실제 예약금 수납 근거와 일치함을 확인합니다.</span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">증빙 저장·배치 잠금 해제</button></div></form></section></div>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal" role="dialog" aria-modal="true" aria-labelledby="approved-deposit-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<p class="eyebrow">DEPOSIT RECEIPT</p><h3 id="approved-deposit-title">예약금 수납 확인·기록</h3><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-approved-deposit-form><div class="request-review-grid"><div><span>승인 상태</span><strong>승인 완료</strong></div><div><span>필수 예약금</span><strong>${money(depositAmount)}</strong></div><div class="wide"><span>서비스</span><strong>${serviceMetaFor(request.serviceType).label} · ${formatDate(request.desiredStartDate)} 시작 예정</strong></div></div><div class="status-banner warning"><strong>실제 수납 내역만 기록하세요.</strong><span>이 화면은 결제를 실행하지 않습니다. 누락분은 실제 받은 날짜를 선택하면 해당 월·연도 수입에 소급 반영됩니다.</span></div><div class="form-grid three"><div class="field"><label for="approved-payment-date">실제 수납일</label><input id="approved-payment-date" name="paymentDate" type="date" value="${localDateKey(new Date())}" max="${localDateKey(new Date())}" required/></div><div class="field"><label for="approved-payment-method">결제 수단</label><select id="approved-payment-method" name="paymentMethod" required><option value="">선택해 주세요</option><option value="CARD">카드</option><option value="ACH">ACH 계좌이체</option><option value="CASH">현금</option><option value="CHECK">수표</option><option value="OTHER">기타</option></select></div><div class="field"><label for="approved-payment-reference">거래·영수증 번호</label><input id="approved-payment-reference" name="paymentReference" minlength="3" maxlength="255" autocomplete="off" placeholder="실제 거래번호 또는 수기 영수증 번호" required/></div></div><label class="consent-line"><input type="checkbox" name="evidenceConfirmed" required/><span>실제 예약금 수납 근거와 일치함을 확인합니다.</span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">예약금 수납 저장</button></div></form></section></div>`;
     bindModalFrame();
     const form = modalRoot.querySelector("[data-approved-deposit-form]");
     form.addEventListener("submit", async (event) => {
@@ -4932,19 +4986,20 @@ import {
       const paymentMethod = String(values.paymentMethod || "").trim();
       const paymentReference = String(values.paymentReference || "").trim();
       if (!paymentMethod || paymentReference.length < 3) return showToast("결제 수단과 3자 이상의 실제 거래·영수증 번호를 입력해 주세요.", "error");
+      if (!values.paymentDate || values.paymentDate > localDateKey(new Date())) return showToast("실제 수납일은 오늘 또는 지난 날짜로 선택해 주세요.", "error");
       if (values.evidenceConfirmed !== "on") return showToast("실제 수납 근거 확인에 동의해 주세요.", "error");
       const submitButton = form.querySelector('button[type="submit"]');
       submitButton.disabled = true;
       submitButton.textContent = "저장 중…";
       try {
-        await recordApprovedRequestDepositEvidenceCloud({ requestId, paymentMethod, paymentReference });
+        await recordApprovedRequestDepositEvidenceCloud({ requestId, paymentMethod, paymentReference, receivedOn: values.paymentDate });
         closeModal();
         await refreshCloudState();
         showToast(`${client.motherName} 고객의 예약금 증빙을 보완했습니다. 이제 일정을 배치할 수 있습니다.`);
       } catch (error) {
         showToast(friendlyErrorMessage(error, "예약금 증빙을 저장하지 못했습니다."), "error");
         submitButton.disabled = false;
-        submitButton.textContent = "증빙 저장·배치 잠금 해제";
+        submitButton.textContent = "예약금 수납 저장";
       }
     });
   }
@@ -4962,7 +5017,7 @@ import {
     if (outstanding <= 0) return showToast("이 신청은 미수 잔금이 없습니다.", "info");
     const total = requestServiceTotal(request);
     const alreadyPaid = requestDepositNet(request) + requestBalanceNet(request);
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal" role="dialog" aria-modal="true" aria-labelledby="balance-payment-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<p class="eyebrow">BALANCE PAYMENT</p><h3 id="balance-payment-title">잔금 수납 기록</h3><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-balance-payment-form><div class="request-review-grid"><div><span>총 예정금액</span><strong>${money(total)}</strong></div><div><span>기수납액</span><strong>${money(alreadyPaid)}</strong></div><div class="wide"><span>현재 미수 잔금</span><strong>${money(outstanding)}</strong></div></div><div class="status-banner warning"><strong>실제 수납 내역만 기록하세요.</strong><span>이 화면은 결제를 실행하지 않습니다. 결제사·은행에서 확인한 수납액과 고유 거래번호를 감사 원장에 저장합니다.</span></div><div class="form-grid two"><div class="field"><label for="balance-payment-amount">수납액</label><input id="balance-payment-amount" name="amount" type="number" min="0.01" max="${outstanding.toFixed(2)}" step="0.01" value="${outstanding.toFixed(2)}" required/><small>최대 ${money(outstanding)}</small></div><div class="field"><label for="balance-payment-method">결제 수단</label><select id="balance-payment-method" name="paymentMethod" required><option value="CARD">카드</option><option value="BANK_TRANSFER">계좌이체</option><option value="CHECK">수표</option><option value="CASH">현금</option><option value="OTHER">기타</option></select></div></div><div class="field"><label for="balance-payment-reference">거래·영수증 번호</label><input id="balance-payment-reference" name="paymentReference" minlength="3" maxlength="255" autocomplete="off" placeholder="결제사·은행의 고유 거래번호" required/><small>중복 사용할 수 없는 실제 외부 거래번호를 입력합니다.</small></div><label class="consent-line"><input type="checkbox" name="paymentConfirmed" required/><span>위 금액의 실제 잔금 수납 내역과 일치함을 확인합니다.</span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">잔금 수납 저장</button></div></form></section></div>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal" role="dialog" aria-modal="true" aria-labelledby="balance-payment-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<p class="eyebrow">BALANCE PAYMENT</p><h3 id="balance-payment-title">잔금 수납 확인·기록</h3><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-balance-payment-form><div class="request-review-grid"><div><span>총 예정금액</span><strong>${money(total)}</strong></div><div><span>기수납액</span><strong>${money(alreadyPaid)}</strong></div><div class="wide"><span>현재 미수 잔금</span><strong>${money(outstanding)}</strong></div></div><div class="status-banner warning"><strong>실제 수납 내역만 기록하세요.</strong><span>이 화면은 결제를 실행하지 않습니다. 누락분은 실제 받은 날짜를 선택하면 해당 월·연도 수입에 소급 반영됩니다.</span></div><div class="form-grid three"><div class="field"><label for="balance-payment-date">실제 수납일</label><input id="balance-payment-date" name="paymentDate" type="date" value="${localDateKey(new Date())}" max="${localDateKey(new Date())}" required/></div><div class="field"><label for="balance-payment-amount">수납액</label><input id="balance-payment-amount" name="amount" type="number" min="0.01" max="${outstanding.toFixed(2)}" step="0.01" value="${outstanding.toFixed(2)}" required/><small>최대 ${money(outstanding)}</small></div><div class="field"><label for="balance-payment-method">결제 수단</label><select id="balance-payment-method" name="paymentMethod" required><option value="CARD">카드</option><option value="BANK_TRANSFER">계좌이체</option><option value="CHECK">수표</option><option value="CASH">현금</option><option value="OTHER">기타</option></select></div></div><div class="field"><label for="balance-payment-reference">거래·영수증 번호</label><input id="balance-payment-reference" name="paymentReference" minlength="3" maxlength="255" autocomplete="off" placeholder="결제사·은행의 고유 거래번호" required/><small>중복 사용할 수 없는 실제 외부 거래번호를 입력합니다.</small></div><label class="consent-line"><input type="checkbox" name="paymentConfirmed" required/><span>위 금액의 실제 잔금 수납 내역과 일치함을 확인합니다.</span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">잔금 수납 저장</button></div></form></section></div>`;
     bindModalFrame();
     const form = modalRoot.querySelector("[data-balance-payment-form]");
     form.addEventListener("submit", async (event) => {
@@ -4970,11 +5025,12 @@ import {
       const values = Object.fromEntries(new FormData(form).entries());
       const amount = Number(values.amount);
       if (!Number.isFinite(amount) || amount <= 0 || amount > outstanding) return showToast(`수납액은 0보다 크고 ${money(outstanding)} 이하여야 합니다.`, "error");
+      if (!values.paymentDate || values.paymentDate > localDateKey(new Date())) return showToast("실제 수납일은 오늘 또는 지난 날짜로 선택해 주세요.", "error");
       const submitButton = form.querySelector('button[type="submit"]');
       submitButton.disabled = true;
       submitButton.textContent = "저장 중…";
       try {
-        await recordServiceBalancePaymentCloud({ requestId, amount, paymentMethod: values.paymentMethod, paymentReference: values.paymentReference });
+        await recordServiceBalancePaymentCloud({ requestId, amount, paymentMethod: values.paymentMethod, paymentReference: values.paymentReference, receivedOn: values.paymentDate });
         closeModal();
         await refreshCloudState();
         showToast(`${client.motherName} 고객의 잔금 ${money(amount)} 수납 기록을 저장했습니다.`);
@@ -5117,7 +5173,9 @@ import {
     const formData = new FormData(event.currentTarget);
     const paymentMethod = String(formData.get("paymentMethod") || "").trim();
     const paymentReference = String(formData.get("paymentReference") || "").trim();
+    const paymentDate = String(formData.get("paymentDate") || "").trim();
     if (!paymentMethod || paymentReference.length < 3) return showToast("결제 수단과 3자 이상의 거래·영수증 번호를 입력해 주세요.", "error");
+    if (!paymentDate || paymentDate > localDateKey(new Date())) return showToast("실제 수납일은 오늘 또는 지난 날짜로 선택해 주세요.", "error");
     const request = state.serviceRequests.find((item) => item.id === requestId && item.status === "PENDING");
     if (!request) return showToast("이미 처리되었거나 존재하지 않는 신청입니다.");
     const startDate = dateInputValue(request.desiredStartDate);
@@ -5131,7 +5189,7 @@ import {
       submitButton.disabled = true;
       submitButton.textContent = "승인 저장 중…";
       try {
-        await reviewServiceRequestCloud(request.id, true, String(formData.get("reviewNote") || "").trim() || null, { method: paymentMethod, reference: paymentReference });
+        await reviewServiceRequestCloud(request.id, true, String(formData.get("reviewNote") || "").trim() || null, { method: paymentMethod, reference: paymentReference, receivedOn: paymentDate });
         closeModal();
         await refreshCloudState();
         showToast(`${client.motherName} 고객의 ${serviceMetaFor(request.serviceType).label} 신청을 승인했습니다. 일정·배정 메뉴에서 관리사를 배치해 주세요.`);
@@ -5142,7 +5200,8 @@ import {
       }
       return;
     }
-    Object.assign(request, { status: "APPROVED", approvedAssignmentId: null, approvedAt: new Date().toISOString(), approvedBy: authUser().id, depositAmount: assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT, depositStatus: "PAID", depositPaidAt: new Date().toISOString(), depositTransaction: { paymentMethod, externalReference: paymentReference, status: "CAPTURED" } });
+    const depositPaidAt = new Date(`${paymentDate}T12:00:00`).toISOString();
+    Object.assign(request, { status: "APPROVED", approvedAssignmentId: null, approvedAt: new Date().toISOString(), approvedBy: authUser().id, depositAmount: assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT, depositStatus: "PAID", depositPaidAt, depositTransaction: { paymentMethod, externalReference: paymentReference, capturedAt: depositPaidAt, status: "CAPTURED" } });
     Object.assign(client, { approvalStatus: "APPROVED_AWAITING_SCHEDULE", clientStatus: "LEAD", address: request.address, allergies: request.allergies, extraHouseholdMembers: request.extraHouseholdMembers, requestNote: request.specialNotes });
     saveState();
     closeModal();
@@ -5181,6 +5240,78 @@ import {
       default:
         return `<div class="field"><label for="note-text">케어 메모</label><textarea id="note-text" name="text" placeholder="특이사항이나 보호자에게 공유할 내용을 기록하세요." required></textarea><small>진단이나 확정적 의료 판단 대신 관찰한 사실을 기록하세요.</small></div>`;
     }
+  }
+
+  function openRetrospectiveCareReportModal(initialAssignmentId = null) {
+    const user = authUser();
+    const assignments = retrospectiveAssignmentsFor(user?.id);
+    if (!assignments.length) return showToast("소급 기록을 입력할 수 있는 본인 배정이 없습니다.", "info");
+    const initialAssignment = assignments.find((item) => item.id === initialAssignmentId) || assignments[0];
+    const today = localDateKey(new Date());
+    const optionMarkup = assignments.map((assignment) => {
+      const client = clientById(assignment.clientId);
+      return `<option value="${assignment.id}" ${assignment.id === initialAssignment.id ? "selected" : ""}>${escapeHtml(serviceMetaFor(assignment.serviceType).label)} · ${escapeHtml(client?.motherName || "고객")} / ${escapeHtml(babyNameFor(assignment, client) || "아이")} · ${formatDate(assignment.startAt)}–${formatDate(assignment.endAt)}</option>`;
+    }).join("");
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal retrospective-report-modal" role="dialog" aria-modal="true" aria-labelledby="retrospective-report-title"><header class="modal-header"><div><p class="eyebrow">RETROSPECTIVE CARE RECORD</p><h3 id="retrospective-report-title">지난 근무 리포트 보완</h3><p>실제로 제공한 서비스만 해당 근무일 기준으로 입력해 주세요.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-retrospective-report-form><div class="field"><label for="retrospective-assignment">서비스 배정</label><select id="retrospective-assignment" name="assignmentId" required>${optionMarkup}</select></div><div class="form-grid three"><div class="field"><label for="retrospective-date">실제 서비스 날짜</label><input id="retrospective-date" name="serviceDate" type="date" max="${today}" required/></div><div class="field"><label for="retrospective-start">실제 시작시간</label><input id="retrospective-start" name="startedTime" type="time" required/></div><div class="field"><label for="retrospective-end">실제 종료시간</label><input id="retrospective-end" name="endedTime" type="time" required/></div></div><div class="field"><label for="retrospective-summary">근무 리포트·보완 내용</label><textarea id="retrospective-summary" name="summary" minlength="5" maxlength="3000" placeholder="실제로 제공한 케어, 식사·활동, 관찰사항과 보호자 인계내용을 사실 중심으로 입력하세요." required></textarea><small>관리자는 이 완료 방문을 검토한 뒤 고객용 보관 리포트로 발행할 수 있습니다.</small></div><div class="status-banner warning"><strong>소급 입력 기록</strong><span>서비스 날짜와 실제 근무시간 외에 입력자·입력시각이 감사 로그에 남습니다. 이미 고객에게 발행된 불변 리포트는 변경할 수 없습니다.</span></div><label class="consent-line"><input type="checkbox" name="workConfirmed" required/><span>위 날짜에 실제로 서비스를 제공했으며 입력 내용이 사실과 일치함을 확인합니다.</span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">지난 근무 리포트 저장</button></div></form></section></div>`;
+    bindModalFrame();
+    const form = modalRoot.querySelector("[data-retrospective-report-form]");
+    const assignmentSelect = form.elements.assignmentId;
+    const serviceDateInput = form.elements.serviceDate;
+    const startedTimeInput = form.elements.startedTime;
+    const endedTimeInput = form.elements.endedTime;
+    const applyAssignmentDefaults = () => {
+      const assignment = assignments.find((item) => item.id === assignmentSelect.value) || assignments[0];
+      serviceDateInput.min = localDateKey(assignment.startAt);
+      serviceDateInput.max = localDateKey(new Date(Math.min(startOfLocalDay(assignment.endAt).getTime(), startOfLocalDay(new Date()).getTime())));
+      serviceDateInput.value = latestRetrospectiveServiceDate(assignment);
+      startedTimeInput.value = assignment.dailyStart || "09:00";
+      endedTimeInput.value = assignment.dailyEnd || "17:00";
+      refreshEnhancedDateInput(serviceDateInput);
+    };
+    assignmentSelect.addEventListener("change", applyAssignmentDefaults);
+    applyAssignmentDefaults();
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(form).entries());
+      const assignment = assignments.find((item) => item.id === values.assignmentId);
+      if (!assignment) return showToast("선택한 서비스 배정을 찾을 수 없습니다.", "error");
+      const serviceDate = parseLocalDateValue(values.serviceDate);
+      if (serviceDate < startOfLocalDay(assignment.startAt) || serviceDate > startOfLocalDay(assignment.endAt) || serviceDate > startOfLocalDay(new Date())) return showToast("실제 서비스 날짜는 해당 배정 기간 안의 오늘 또는 지난 날짜여야 합니다.", "error");
+      if (!assignmentOccursOnDate(assignment, serviceDate)) return showToast("선택한 날짜는 이 배정의 서비스 요일이 아닙니다.", "error");
+      if (String(values.endedTime) <= String(values.startedTime)) return showToast("실제 종료시간은 시작시간보다 늦어야 합니다.", "error");
+      if (String(values.summary || "").trim().length < 5) return showToast("5자 이상의 실제 근무 내용을 입력해 주세요.", "error");
+      if (values.workConfirmed !== "on") return showToast("실제 근무 사실 확인에 동의해 주세요.", "error");
+      const submitButton = form.querySelector('button[type="submit"]');
+      submitButton.disabled = true;
+      submitButton.textContent = "저장 중…";
+      try {
+        if (usingCloudData()) {
+          await recordRetrospectiveCareReportCloud({
+            assignmentId: assignment.id,
+            serviceDate: values.serviceDate,
+            startedTime: values.startedTime,
+            endedTime: values.endedTime,
+            summary: values.summary,
+          });
+          closeModal();
+          await refreshCloudState();
+        } else {
+          const sessionId = `session-retro-${Date.now()}`;
+          const startAt = new Date(`${values.serviceDate}T${values.startedTime}:00`).toISOString();
+          const endAt = new Date(`${values.serviceDate}T${values.endedTime}:00`).toISOString();
+          state.careSessions.push({ id: sessionId, assignmentId: assignment.id, serviceDate: values.serviceDate, status: "COMPLETED", startedAt: startAt, endedAt: endAt });
+          state.events.push({ id: `evt-retro-${Date.now()}`, careSessionId: sessionId, assignmentId: assignment.id, clientId: assignment.clientId, babyId: assignment.babyId, type: assignmentServiceType(assignment) === "BABYSITTING" ? "sitter_note" : "note", at: endAt, author: user.fullName, data: assignmentServiceType(assignment) === "BABYSITTING" ? { category: "소급 리포트", text: String(values.summary).trim(), retrospective: true } : { text: String(values.summary).trim(), retrospective: true } });
+          saveState();
+          closeModal();
+          render();
+        }
+        showToast(`${formatDate(`${values.serviceDate}T12:00:00`)} 지난 근무 리포트를 저장했습니다.`);
+      } catch (error) {
+        showToast(friendlyErrorMessage(error, "지난 근무 리포트를 저장하지 못했습니다."), "error");
+        submitButton.disabled = false;
+        submitButton.textContent = "지난 근무 리포트 저장";
+      }
+    });
   }
 
   function openLogModal(type) {

@@ -727,32 +727,46 @@ export async function submitServiceRequestCloud(values, derived) {
 }
 
 export async function reviewServiceRequestCloud(requestId, approve, note = null, payment = null) {
-  return throwIfError(await supabase.rpc("review_service_request_with_deposit", {
+  return throwIfError(await supabase.rpc("review_service_request_with_dated_deposit", {
     p_request_id: requestId,
     p_approve: approve,
     p_review_note: note,
     p_payment_method: approve ? payment?.method || null : null,
     p_payment_reference: approve ? payment?.reference || null : null,
+    p_received_on: approve ? payment?.receivedOn || null : null,
   }), "서비스 신청 검토");
 }
 
-export async function recordApprovedRequestDepositEvidenceCloud({ requestId, paymentMethod, paymentReference }) {
+export async function recordApprovedRequestDepositEvidenceCloud({ requestId, paymentMethod, paymentReference, receivedOn }) {
   await authenticatedUserId();
-  return throwIfError(await supabase.rpc("record_approved_request_deposit_evidence", {
+  return throwIfError(await supabase.rpc("record_approved_request_deposit_evidence_dated", {
     p_request_id: requestId,
     p_payment_method: String(paymentMethod || "").trim(),
     p_payment_reference: String(paymentReference || "").trim(),
+    p_received_on: receivedOn,
   }), "기존 예약금 증빙 보완");
 }
 
-export async function recordServiceBalancePaymentCloud({ requestId, amount, paymentMethod, paymentReference }) {
+export async function recordServiceBalancePaymentCloud({ requestId, amount, paymentMethod, paymentReference, receivedOn }) {
   await authenticatedUserId();
-  return throwIfError(await supabase.rpc("record_service_balance_payment", {
+  return throwIfError(await supabase.rpc("record_service_balance_payment_dated", {
     p_request_id: requestId,
     p_amount: Number(amount),
     p_payment_method: String(paymentMethod || "").trim(),
     p_payment_reference: String(paymentReference || "").trim(),
+    p_received_on: receivedOn,
   }), "서비스 잔금 수납 기록");
+}
+
+export async function recordRetrospectiveCareReportCloud({ assignmentId, serviceDate, startedTime, endedTime, summary }) {
+  await authenticatedUserId();
+  return throwIfError(await supabase.rpc("record_retrospective_care_report", {
+    p_assignment_id: assignmentId,
+    p_service_date: serviceDate,
+    p_started_time: startedTime,
+    p_ended_time: endedTime,
+    p_summary: String(summary || "").trim(),
+  }), "지난 근무 리포트 저장");
 }
 
 export async function scheduleServiceRequestCloud(requestId, caregiverId) {
