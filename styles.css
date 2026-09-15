@@ -2922,8 +2922,6 @@ body:has(#modal-root:not(:empty)) {
   .order-row { grid-template-columns: 1fr auto; }
   .order-row > div:nth-child(2) { display: none; }
   .form-grid.two, .form-grid.three { grid-template-columns: 1fr; }
-  .schedule-compliance-blocker { align-items: stretch; flex-direction: column; }
-  .schedule-compliance-blocker > button { width: 100%; }
   .assignment-row { grid-template-columns: 1fr; }
   .assignment-actions { justify-content: stretch; }
   .assignment-actions > * { flex: 1 1 140px; }
@@ -3369,9 +3367,6 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
 .request-service-column .client-request-row button { width: 100%; }
 .approved-request-queue { border: 1px solid #d8e5de; background: linear-gradient(145deg, white, #f1f7f3); }
 .schedule-source-card { border-left: 4px solid var(--green-2); }
-.schedule-compliance-blocker { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 18px; }
-.schedule-compliance-blocker > div { display: grid; gap: 3px; min-width: 0; }
-.schedule-compliance-blocker > button { flex: 0 0 auto; }
 .approved-schedule-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .approved-schedule-card { display: grid; gap: 5px; padding: 15px; border: 1px solid #dfd7d0; border-radius: 13px; color: var(--ink); background: #fff9f5; text-align: left; }
 .approved-schedule-card.babysitting { border-color: #cde2d9; background: #eef7f2; }
@@ -3402,41 +3397,9 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
 .shift-check-list input:checked + span { color: white; background: var(--green); }
 .shift-check-list label > div { display: grid; gap: 3px; }
 .shift-check-list small { color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
-.compliance-grid { align-items: stretch; }
-.compliance-card { border-top: 4px solid var(--green); }
-.compliance-control-list { display: grid; gap: 11px; margin: 18px 0 0; padding: 0; list-style: none; }
-.compliance-control-item { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; padding: 15px; border: 1px solid var(--line); border-radius: 14px; background: #f7faf7; }
-.compliance-control-item.needs-review { border-color: #efd0c7; background: #fff8f4; }
-.compliance-control-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; color: white; background: var(--green); font-size: 13px; font-weight: 800; }
-.compliance-control-item.needs-review .compliance-control-icon { color: #884c3e; background: var(--coral-light); }
-.compliance-control-body { display: grid; min-width: 0; gap: 12px; }
-.compliance-control-heading { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.compliance-control-heading > div { display: grid; min-width: 0; gap: 4px; }
-.compliance-control-heading strong { font-size: 14px; }
-.compliance-control-heading small { color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
-.compliance-control-details { display: grid; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 13px; margin: 0; }
-.compliance-control-details > div { display: grid; min-width: 0; gap: 3px; }
-.compliance-control-details > .wide { grid-column: 1 / -1; }
-.compliance-control-details dt { color: var(--ink-soft); font-size: 11px; font-weight: 700; }
-.compliance-control-details dd { margin: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 700; line-height: 1.5; }
-.compliance-edit-button { justify-self: start; }
-.compliance-edit-modal { width: min(680px, 100%); }
-.compliance-edit-modal [data-compliance-guidance] { margin: 0; }
 .profile-summary + .status-banner { display: grid; gap: 4px; margin: 0; }
 .profile-summary + .status-banner strong { font-size: 13px; }
 .profile-summary + .status-banner span { font-size: 12px; }
-.compliance-check-list { display: grid; gap: 9px; margin: 18px 0 0; padding: 0; list-style: none; }
-.compliance-check-list li { display: grid; grid-template-columns: auto 1fr; gap: 11px; align-items: center; padding: 12px; border-radius: 12px; background: #f2f6f2; }
-.compliance-check-list li > span { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: white; background: var(--green); }
-.compliance-check-list li > div { display: grid; gap: 3px; }
-.compliance-check-list small { color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
-.massage-readiness { border-top-color: #be8968; }
-.readiness-list { display: grid; gap: 0; margin: 17px 0; }
-.readiness-list div { display: grid; grid-template-columns: 120px 1fr; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
-.readiness-list dt { color: var(--ink-soft); font-size: 12px; font-weight: 700; }
-.readiness-list dd { margin: 0; font-size: 13px; font-weight: 700; }
-.compliance-note { border-left: 4px solid #c98266; background: #fff7f1; }
-.compliance-note p { margin: 7px 0 0; color: var(--ink-soft); line-height: 1.7; }
 
 @media (max-width: 1080px) {
   .public-header { grid-template-columns: auto auto 1fr; }
@@ -3851,24 +3814,6 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
 
   .modal {
     max-height: calc(100dvh - max(8px, env(safe-area-inset-top)));
-  }
-
-  .compliance-control-heading {
-    display: grid;
-  }
-
-  .compliance-control-heading .status-chip,
-  .compliance-edit-button {
-    justify-self: stretch;
-    justify-content: center;
-  }
-
-  .compliance-control-details {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .compliance-control-details > .wide {
-    grid-column: auto;
   }
 
   .modal-form > .form-actions {

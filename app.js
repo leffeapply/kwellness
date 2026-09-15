@@ -30,7 +30,6 @@ import {
   submitServiceAdjustmentCloud,
   updateCaregiverManagementCloud,
   updateClientManagementCloud,
-  updateCompanyComplianceCloud,
   updateMyClientProfileCloud,
   updateMyProfileCloud,
   updatePasswordCloud,
@@ -58,30 +57,6 @@ import {
     POSTPARTUM: { label: "산후조리", shortLabel: "산후조리", icon: "♡", tone: "postpartum", description: "산모 회복과 신생아 일상 케어" },
     BABYSITTING: { label: "베이비시팅", shortLabel: "베이비시팅", icon: "☆", tone: "babysitting", description: "식사·놀이·생활 중심 돌봄" },
   };
-
-  const REQUIRED_COMPLIANCE_CONTROLS = Object.freeze({
-    GENERAL_LIABILITY: {
-      title: "책임보상보험",
-      detail: "보험 증서·보장 한도·만료일",
-      evidenceLabel: "보험사·증권/증빙 참조",
-    },
-    WORKERS_COMP: {
-      title: "근로자재해보험",
-      detail: "보험 증서·적용 직원 범위",
-      evidenceLabel: "보험사·증권/증빙 참조",
-    },
-    W2_EMPLOYMENT: {
-      title: "W-2 고용·급여 체계",
-      detail: "직원 분류·급여·원천징수 운영",
-      evidenceLabel: "고용·급여 증빙 참조",
-    },
-  });
-
-  const COMPLIANCE_STATUS_META = Object.freeze({
-    ACTIVE: { label: "검증 완료", tone: "" },
-    REVIEW_REQUIRED: { label: "검토 필요", tone: "coral" },
-    INACTIVE: { label: "비활성", tone: "gold" },
-  });
 
   const POSTPARTUM_WEEKLY_RATE = 1800;
   const MIN_SERVICE_WEEKS = 2;
@@ -118,7 +93,6 @@ import {
       { id: "finance", label: "수납·수익 관리", icon: "$" },
       { id: "people", label: "고객·관리사", icon: "♙" },
       { id: "reports", label: "차트·리포트", icon: "▤" },
-      { id: "compliance", label: "보험·컴플라이언스", icon: "◈" },
       { id: "retail", label: "리테일", icon: "◇" },
       { id: "analytics", label: "통합 분석", icon: "↗" },
     ],
@@ -258,15 +232,6 @@ import {
       chartRangeByRole: { admin: "week", caregiver: "week", client: "week" },
       adminSelectedReportSessionId: null,
       shiftChecklists: {},
-      compliance: {
-        generalLiabilityCoverage: false,
-        workersCompCoverage: false,
-        employeeClassification: "확인 필요",
-        payrollTaxHandledByCompany: false,
-        massageLiabilityRiderVerified: false,
-        licensedMassageTherapistCount: 0,
-        controls: [],
-      },
       serviceCatalog: { MASSAGE: { ...PREMIUM_ADD_ONS.MASSAGE } },
       views: { admin: "overview", caregiver: "caregiving", client: "services", retail: "pos" },
       auth: { currentUserId: null, screen: "public", termsVersion: CURRENT_CONSENT_VERSION },
@@ -313,19 +278,6 @@ import {
       chartRangeByRole: { admin: "week", caregiver: "week", client: "week" },
       adminSelectedReportSessionId: null,
       shiftChecklists: {},
-      compliance: {
-        generalLiabilityCoverage: true,
-        workersCompCoverage: true,
-        employeeClassification: "W-2 정식 직원",
-        payrollTaxHandledByCompany: true,
-        massageLiabilityRiderVerified: false,
-        licensedMassageTherapistCount: 0,
-        controls: [
-          { key: "GENERAL_LIABILITY", name: "General Liability", status: "ACTIVE", verifiedAt: dateOffset(-30), expiresAt: localDateKey(dateOffset(335)), evidenceReference: "책임보상보험 증권 참조", notes: "운영 범위와 보장 한도 확인 완료" },
-          { key: "WORKERS_COMP", name: "Workers’ Compensation", status: "ACTIVE", verifiedAt: dateOffset(-30), expiresAt: localDateKey(dateOffset(335)), evidenceReference: "근로자재해보험 증권 참조", notes: "적용 직원 범위 확인 완료" },
-          { key: "W2_EMPLOYMENT", name: "W-2 Employment", status: "ACTIVE", verifiedAt: dateOffset(-30), expiresAt: null, evidenceReference: "W-2 급여·원천징수 운영 문서", notes: "직원 분류와 급여 처리 체계 확인 완료" },
-        ],
-      },
       serviceCatalog: { MASSAGE: { ...PREMIUM_ADD_ONS.MASSAGE } },
       views: { admin: "overview", caregiver: "caregiving", client: "services", retail: "pos" },
       auth: { currentUserId: null, screen: "public", termsVersion: CURRENT_CONSENT_VERSION },
@@ -485,7 +437,6 @@ import {
             financeFilters: { ...seed.financeFilters, ...(saved.financeFilters || {}) },
             chartRangeByRole: { ...seed.chartRangeByRole, ...(saved.chartRangeByRole || {}) },
             shiftChecklists: { ...seed.shiftChecklists, ...(saved.shiftChecklists || {}) },
-            compliance: { ...seed.compliance, ...(saved.compliance || {}) },
             serviceCatalog: { ...seed.serviceCatalog, ...(saved.serviceCatalog || {}) },
             auth: { ...seed.auth, ...(saved.auth || {}), screen: saved.version >= 8 ? (saved.auth?.screen || "public") : "public" },
             retail: { ...seed.retail, ...(saved.retail || {}) },
@@ -638,7 +589,6 @@ import {
     if (message.includes("only the active assigned caregiver can report")) return "본인에게 실제 배정된 서비스만 소급 기록할 수 있습니다.";
     if (message.includes("matching captured reservation deposit is required")) return "일정 배치 전에 해당 서비스의 예약금 수납 확인을 완료해 주세요.";
     if (message.includes("overlapping service-day schedule")) return "선택한 관리사에게 같은 요일·시간의 중복 일정이 있습니다.";
-    if (message.includes("current liability, workers compensation, and w-2 evidence must be verified before scheduling")) return "일정 배치 전에 책임보상보험·근로자재해보험·W-2 고용 증빙을 모두 검증 완료로 저장해 주세요.";
     if (message.includes("required consents must be recorded")) return "관리사 권한을 추가하려면 해당 계정에서 최신 필수 약관 동의를 먼저 저장해야 합니다.";
     if (message.includes("client active service records")) return "진행 중인 고객 신청·계약이 있어 고객 권한을 제거할 수 없습니다. 고객 권한을 유지하거나 관련 서비스를 먼저 종료해 주세요.";
     if (message.includes("caregiver active schedule")) return "진행 중이거나 예정된 배정이 있어 관리사 권한을 제거할 수 없습니다. 관리사 권한을 유지하거나 배정을 먼저 완료·재배정해 주세요.";
@@ -705,33 +655,6 @@ import {
 
   function canReviewServiceRequests() {
     return !usingCloudData() || hasDatabaseRole("OWNER") || hasDatabaseRole("ADMIN");
-  }
-
-  function canManageCompanyCompliance() {
-    return !usingCloudData() || hasDatabaseRole("OWNER") || hasDatabaseRole("ADMIN");
-  }
-
-  function companyCareComplianceStatus() {
-    const compliance = state.compliance || {};
-    const storedControls = Array.isArray(compliance.controls) ? compliance.controls : [];
-    const today = localDateKey(new Date());
-    const legacyActive = {
-      GENERAL_LIABILITY: Boolean(compliance.generalLiabilityCoverage),
-      WORKERS_COMP: Boolean(compliance.workersCompCoverage),
-      W2_EMPLOYMENT: Boolean(compliance.payrollTaxHandledByCompany),
-    };
-    const controls = Object.entries(REQUIRED_COMPLIANCE_CONTROLS).map(([key, meta]) => {
-      const stored = storedControls.find((item) => item.key === key) || {};
-      const status = stored.status || (legacyActive[key] ? "ACTIVE" : "REVIEW_REQUIRED");
-      const expired = Boolean(stored.expiresAt && stored.expiresAt < today);
-      const current = status === "ACTIVE"
-        && Boolean(stored.verifiedAt)
-        && Boolean(String(stored.evidenceReference || "").trim())
-        && !expired;
-      return { key, ...meta, ...stored, status, expired, current };
-    });
-    const missing = controls.filter((control) => !control.current);
-    return { controls, missing, verifiedCount: controls.length - missing.length, total: controls.length, ready: missing.length === 0 };
   }
 
   function clientForUser(userId) {
@@ -1349,7 +1272,7 @@ import {
     let items = NAV[role] || [];
     if (usingCloudData()) {
       const liveViews = {
-        admin: new Set(["overview", "schedule", "requests", "finance", "people", "reports", "compliance"]),
+        admin: new Set(["overview", "schedule", "requests", "finance", "people", "reports"]),
         caregiver: new Set(["caregiving", "postpartum", "babysitting", "profile"]),
         client: new Set(["services", "postpartum", "babysitting"]),
         retail: new Set(["pos"]),
@@ -1489,8 +1412,7 @@ import {
     const babysittingQueue = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && assignmentServiceType(request) === "BABYSITTING");
     const pendingCaregivers = state.users.filter(isCaregiverPendingApproval);
     const todaySchedules = todayScheduleItems();
-    const complianceStatus = companyCareComplianceStatus();
-    const attentionCount = Number(babysittingQueue.length > 0) + Number(pendingRequests.length > 0) + Number(pendingCaregivers.length > 0) + Number(!complianceStatus.ready);
+    const attentionCount = Number(babysittingQueue.length > 0) + Number(pendingRequests.length > 0) + Number(pendingCaregivers.length > 0);
     const administratorName = authUser()?.fullName || "관리자";
     return `
       <section class="page">
@@ -1513,35 +1435,11 @@ import {
               ${babysittingQueue.length ? attentionItem("☆", "베이비시팅 일정 배정", `${babysittingQueue.length}건 · 신청 희망일과 관리사 일정 확인`) : ""}
               ${pendingRequests.length ? attentionItem("+", "서비스 신청 검토", `${pendingRequests.length}건 · 예약금과 일정 중복 확인`) : ""}
               ${pendingCaregivers.length ? attentionItem("♙", "관리사 가입 승인", `${pendingCaregivers.length}건 · 자격 및 고용정보 확인`) : ""}
-              ${complianceStatus.ready ? "" : attentionItem("◈", "필수 운영 증빙 확인", `${complianceStatus.verifiedCount}/${complianceStatus.total}건 완료 · 일정 배치 전 보험·W-2 증빙 필요`)}
               ${attentionCount ? "" : `<div class="empty-state compact"><strong>대기 중인 후속 조치가 없습니다.</strong></div>`}
             </div>
           </article>
         </div>
       </section>`;
-  }
-
-  function adminCompliance() {
-    const compliance = state.compliance || {};
-    const massage = state.serviceCatalog.MASSAGE;
-    const massageReady = compliance.massageLiabilityRiderVerified && compliance.licensedMassageTherapistCount > 0;
-    const { controls, verifiedCount } = companyCareComplianceStatus();
-    const controlsMarkup = controls.map((control) => {
-      const statusMeta = control.current
-        ? COMPLIANCE_STATUS_META.ACTIVE
-        : control.status === "INACTIVE"
-          ? COMPLIANCE_STATUS_META.INACTIVE
-          : COMPLIANCE_STATUS_META.REVIEW_REQUIRED;
-      const statusLabel = control.status === "ACTIVE" && !control.current
-        ? (control.expired ? "만료·재검토" : "증빙 보완 필요")
-        : statusMeta.label;
-      return `<li class="compliance-control-item ${control.current ? "is-current" : "needs-review"}"><span class="compliance-control-icon" aria-hidden="true">${control.current ? "✓" : "!"}</span><div class="compliance-control-body"><div class="compliance-control-heading"><div><strong>${escapeHtml(control.title)}</strong><small>${escapeHtml(control.detail)}</small></div><span class="status-chip ${statusMeta.tone}">${escapeHtml(statusLabel)}</span></div><dl class="compliance-control-details"><div><dt>${control.key === "W2_EMPLOYMENT" ? "고용·급여 증빙" : "보험사·증빙"}</dt><dd>${escapeHtml(control.evidenceReference || "미등록")}</dd></div><div><dt>발효·검증일</dt><dd>${control.verifiedAt ? formatDate(control.verifiedAt) : "미등록"}</dd></div><div><dt>만료일</dt><dd>${control.expiresAt ? formatDate(control.expiresAt) : "만료 없음·미등록"}</dd></div><div class="wide"><dt>검증 메모</dt><dd>${escapeHtml(control.notes || "메모 없음")}</dd></div></dl>${canManageCompanyCompliance() ? `<button type="button" class="secondary-button mini-button compliance-edit-button" data-edit-compliance="${control.key}">상태·증빙 수정</button>` : ""}</div></li>`;
-    }).join("");
-    return `<section class="page compliance-page">${demoBanner()}${pageHeading("RISK & COMPLIANCE", "보험·고용·서비스 컴플라이언스", "검증일과 만료일이 유효한 운영 증빙만 완료로 표시합니다.")}
-      <div class="grid stats">${statCard("General Liability", compliance.generalLiabilityCoverage ? "검증 완료" : "확인 필요", "책임보상보험", "◈")}${statCard("Workers’ Comp", compliance.workersCompCoverage ? "검증 완료" : "확인 필요", "근로자재해보험", "✓")}${statCard("Employment", compliance.employeeClassification, "고용·급여 증빙", "♙")}${statCard("Massage", massageReady ? "출시 검토" : "비활성", "GA 라이선스·보험 확인 후", "✦")}</div>
-      <div class="grid two compliance-grid" style="margin-top:18px"><article class="card card-pad compliance-card"><div class="section-header"><div><p class="eyebrow">REQUIRED OPERATING EVIDENCE</p><h3>배정 전 필수 컴플라이언스</h3><p>세 항목 모두 활성 상태이며 발효·검증일, 증빙 참조와 유효한 만료일이 있어야 일정을 확정할 수 있습니다.</p></div><span class="status-chip ${verifiedCount === controls.length ? "" : "coral"}">${verifiedCount}/${controls.length} verified</span></div><ul class="compliance-control-list">${controlsMarkup}</ul></article>
-      <article class="card card-pad compliance-card massage-readiness"><div class="section-header"><div><p class="eyebrow">PREMIUM ADD-ON ROADMAP</p><h3>${massage.label}</h3><p>${massage.description}</p></div><span class="status-chip gold">선택 불가</span></div><dl class="readiness-list"><div><dt>제공 형태</dt><dd>산후조리 계약의 추가 상품</dd></div><div><dt>필수 자격</dt><dd>${massage.licenseRequirement}</dd></div><div><dt>라이선스 인력</dt><dd>${compliance.licensedMassageTherapistCount}명 등록</dd></div><div><dt>보험 특약 확인</dt><dd>${compliance.massageLiabilityRiderVerified ? "완료" : "미완료"}</dd></div></dl><div class="status-banner ${massageReady ? "success" : "warning"}">${massageReady ? "출시 검토가 가능합니다." : "조지아주 라이선스 인력과 마사지 업무 보험 범위를 모두 확인하기 전에는 활성화할 수 없습니다."}</div><button class="secondary-button" disabled>출시 준비 완료 후 활성화</button></article></div>
-      <article class="card card-pad compliance-note" style="margin-top:18px"><strong>운영 문서 권장</strong><p>보험 증서, 직원 분류 및 급여 기록, 배경검사·CPR·자격 만료일, 고객 계약서 버전, 사고보고서와 서비스별 업무범위를 문서로 연결하면 실제 운영 단계의 감사 대응이 쉬워집니다.</p></article></section>`;
   }
 
   function scheduleRows(schedules) {
@@ -1581,20 +1479,16 @@ import {
     const approvedUnscheduled = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && clientById(request.clientId));
     const approvedQueue = approvedUnscheduled.filter(requestHasCapturedDepositEvidence);
     const depositEvidenceQueue = approvedUnscheduled.filter((request) => !requestHasCapturedDepositEvidence(request));
-    const complianceStatus = companyCareComplianceStatus();
-    const schedulingReady = !usingCloudData() || complianceStatus.ready;
-    const missingComplianceNames = complianceStatus.missing.map((control) => control.title).join(" · ");
     const filter = ["POSTPARTUM", "BABYSITTING"].includes(state.adminScheduleFilter) ? state.adminScheduleFilter : "ALL";
     const assignments = state.assignments.filter((item) => item.status !== "CANCELLED" && (filter === "ALL" || assignmentServiceType(item) === filter));
     return `
       <section class="page">
         ${demoBanner()}
         ${pageHeading("SCHEDULE & ASSIGNMENTS", "승인 신청 기반 일정·배정", "승인된 고객 서비스 신청을 불러와 관리사만 선택하고 월간 캘린더에 배치합니다.")}
-        <div class="grid stats">${statCard("Active", state.assignments.filter(isAssignmentCurrent).length, "현재 진행 중", "◷")}${statCard("Postpartum", state.assignments.filter((item) => isAssignmentCurrent(item) && assignmentServiceType(item) === "POSTPARTUM").length, "산후조리 진행", "♡")}${statCard("Babysitting", state.assignments.filter((item) => isAssignmentCurrent(item) && assignmentServiceType(item) === "BABYSITTING").length, "베이비시팅 진행", "☆")}${statCard("Ready to schedule", schedulingReady ? approvedQueue.length : 0, schedulingReady ? "승인 완료 신청" : "운영 증빙 확인 필요", "→")}</div>
-        ${schedulingReady ? "" : `<div class="status-banner warning schedule-compliance-blocker"><div><strong>필수 운영 증빙을 먼저 검증해 주세요.</strong><span>${escapeHtml(missingComplianceNames)} · 현재 ${complianceStatus.verifiedCount}/${complianceStatus.total}건 완료. 실제 증빙이 검증되기 전에는 일정이 서버에 저장되지 않습니다.</span></div><button type="button" class="primary-button mini-button" data-nav="compliance">보험·컴플라이언스 확인</button></div>`}
-        <article class="card card-pad schedule-source-card" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">APPROVED SERVICE REQUESTS</p><h3>일정 배치 대기</h3><p>승인·예약금 수납과 필수 운영 증빙이 모두 확인된 신청만 캘린더에 배치할 수 있습니다.</p></div><span class="status-chip ${schedulingReady ? "gold" : "coral"}">${schedulingReady ? approvedQueue.length : 0} ready</span></div>${depositEvidenceQueue.length ? `<div class="status-banner warning"><strong>${depositEvidenceQueue.length}건의 예약금 증빙을 먼저 보완해 주세요.</strong><span>실제 수납 근거가 없는 기존 승인 건은 일정 배치에서 제외됩니다.</span></div><div class="approved-schedule-strip evidence-schedule-strip">${depositEvidenceQueue.map((request) => { const client = clientById(request.clientId); return `<button type="button" class="approved-schedule-card ${serviceMetaFor(request.serviceType).tone}" data-record-approved-deposit="${request.id}">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이")}</strong><span>${money(Number(request.depositAmount || (assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT)))} 수납 증빙 필요</span><em>증빙 보완 →</em></button>`; }).join("")}</div>` : ""}<div class="approved-schedule-strip">${approvedQueue.length ? approvedQueue.map((request) => { const client = clientById(request.clientId); return `<button type="button" class="approved-schedule-card ${serviceMetaFor(request.serviceType).tone}" ${schedulingReady ? `data-open-assignment data-request-id="${request.id}"` : "disabled"}>${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이")}</strong><span>${formatDate(request.desiredStartDate)} · ${request.dailyStart}–${request.dailyEnd} · ${request.weeks}주</span><em>${schedulingReady ? "일정 배치 →" : "운영 증빙 확인 필요"}</em></button>`; }).join("") : `<div class="empty-state"><strong>배치 가능한 승인 신청이 없습니다.</strong><span>${depositEvidenceQueue.length ? "위 승인 건의 실제 예약금 증빙을 보완해 주세요." : "서비스 신청·승인 메뉴에서 먼저 고객 신청을 승인해 주세요."}</span></div>`}</div></article>
+        <div class="grid stats">${statCard("Active", state.assignments.filter(isAssignmentCurrent).length, "현재 진행 중", "◷")}${statCard("Postpartum", state.assignments.filter((item) => isAssignmentCurrent(item) && assignmentServiceType(item) === "POSTPARTUM").length, "산후조리 진행", "♡")}${statCard("Babysitting", state.assignments.filter((item) => isAssignmentCurrent(item) && assignmentServiceType(item) === "BABYSITTING").length, "베이비시팅 진행", "☆")}${statCard("Ready to schedule", approvedQueue.length, "승인·예약금 확인 완료", "→")}</div>
+        <article class="card card-pad schedule-source-card" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">APPROVED SERVICE REQUESTS</p><h3>일정 배치 대기</h3><p>승인과 예약금 수납이 확인된 신청을 캘린더에 배치할 수 있습니다.</p></div><span class="status-chip gold">${approvedQueue.length} ready</span></div>${depositEvidenceQueue.length ? `<div class="status-banner warning"><strong>${depositEvidenceQueue.length}건의 예약금 증빙을 먼저 보완해 주세요.</strong><span>실제 수납 근거가 없는 기존 승인 건은 일정 배치에서 제외됩니다.</span></div><div class="approved-schedule-strip evidence-schedule-strip">${depositEvidenceQueue.map((request) => { const client = clientById(request.clientId); return `<button type="button" class="approved-schedule-card ${serviceMetaFor(request.serviceType).tone}" data-record-approved-deposit="${request.id}">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이")}</strong><span>${money(Number(request.depositAmount || (assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT)))} 수납 증빙 필요</span><em>증빙 보완 →</em></button>`; }).join("")}</div>` : ""}<div class="approved-schedule-strip">${approvedQueue.length ? approvedQueue.map((request) => { const client = clientById(request.clientId); return `<button type="button" class="approved-schedule-card ${serviceMetaFor(request.serviceType).tone}" data-open-assignment data-request-id="${request.id}">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이")}</strong><span>${formatDate(request.desiredStartDate)} · ${request.dailyStart}–${request.dailyEnd} · ${request.weeks}주</span><em>일정 배치 →</em></button>`; }).join("") : `<div class="empty-state"><strong>배치 가능한 승인 신청이 없습니다.</strong><span>${depositEvidenceQueue.length ? "위 승인 건의 실제 예약금 증빙을 보완해 주세요." : "서비스 신청·승인 메뉴에서 먼저 고객 신청을 승인해 주세요."}</span></div>`}</div></article>
         <div class="schedule-filter-bar" role="group" aria-label="캘린더 서비스 필터"><span>표시 서비스</span>${[["ALL", "전체"], ["POSTPARTUM", "♡ 산후조리"], ["BABYSITTING", "☆ 베이비시팅"]].map(([value, label]) => `<button type="button" class="${filter === value ? "active" : ""}" data-schedule-filter="${value}">${label}</button>`).join("")}</div>
-        <article class="card calendar-card" style="margin-top:12px"><div class="section-header calendar-head"><div><h3>${filter === "ALL" ? "전체 관리사" : serviceMetaFor(filter).label} 월간 일정</h3><p>${calendarMonthLabel()} · ${assignments.length}개 계약·배정</p></div><div class="calendar-actions"><button class="secondary-button mini-button" data-calendar-month="-1">← 이전 달</button><button class="secondary-button mini-button" data-calendar-today>이번 달</button><button class="secondary-button mini-button" data-calendar-month="1">다음 달 →</button><button class="primary-button" data-open-assignment ${approvedQueue.length && schedulingReady ? "" : "disabled"}>+ 승인 신청에서 배치</button></div></div>${assignmentMonthCalendarMarkup()}</article>
+        <article class="card calendar-card" style="margin-top:12px"><div class="section-header calendar-head"><div><h3>${filter === "ALL" ? "전체 관리사" : serviceMetaFor(filter).label} 월간 일정</h3><p>${calendarMonthLabel()} · ${assignments.length}개 계약·배정</p></div><div class="calendar-actions"><button class="secondary-button mini-button" data-calendar-month="-1">← 이전 달</button><button class="secondary-button mini-button" data-calendar-today>이번 달</button><button class="secondary-button mini-button" data-calendar-month="1">다음 달 →</button><button class="primary-button" data-open-assignment ${approvedQueue.length ? "" : "disabled"}>+ 승인 신청에서 배치</button></div></div>${assignmentMonthCalendarMarkup()}</article>
         <article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>${filter === "ALL" ? "전체" : serviceMetaFor(filter).label} 계약·배정 목록</h3><p>${usingCloudData() ? "확정 일정은 고객 변경·취소 요청 승인 절차를 통해서만 바뀌며, 기록 보존을 위해 직접 삭제하지 않습니다." : "로컬 데이터의 일정 수정·삭제가 캘린더와 연동됩니다."}</p></div><span class="status-chip">${assignments.length} records</span></div><div class="assignment-list">${assignments.sort((a,b) => new Date(a.startAt)-new Date(b.startAt)).map((assignment) => { const client = clientById(assignment.clientId); const caregiver = state.users.find((user) => user.id === assignment.caregiverUserId); const status = isAssignmentCurrent(assignment) ? "진행 중" : new Date(assignment.startAt) > new Date() ? "예정" : "종료"; return `<div class="assignment-row"><div>${serviceBadgeMarkup(assignment.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 정보 확인 필요")} · ${escapeHtml(babyNameFor(assignment, client) || "아이 미등록")}</strong><span>${formatDate(assignment.startAt)} – ${formatDate(assignment.endAt)} · ${assignment.weeks}주</span></div><div><strong>${escapeHtml(caregiver?.fullName || assignment.caregiverName || "관리사 미배정")}</strong><span>${assignment.dailyStart} – ${assignment.dailyEnd}</span></div><div><strong>${escapeHtml(assignment.address)}</strong><span>알러지: ${escapeHtml(assignment.allergies)}</span></div><span class="status-chip ${status === "진행 중" ? "" : "gold"}">${status}</span><div class="assignment-actions">${adminAssignmentActionsMarkup(assignment)}</div></div>`; }).join("")}</div></article>
       </section>`;
   }
@@ -1881,28 +1775,19 @@ import {
     const issue = serviceLifecycleIssue(request.clientId, assignmentServiceType(request), window.startAt, window.endAt, null, request.id, request.babyId, request.babyName);
     const price = assignmentServiceType(request) === "POSTPARTUM" ? `$${postpartumEstimate(request.weeks).toLocaleString("en-US")} 예상 · 주 $${POSTPARTUM_WEEKLY_RATE.toLocaleString("en-US")}` : `시간당 $${BABYSITTING_HOURLY_RATE} · 독립 신청 서비스`;
     const clientLinkIssue = requestClientLinkIssue(request);
-    const missingClient = !client;
     const depositEvidenceMissing = isApprovedQueue && !requestHasCapturedDepositEvidence(request);
-    const complianceStatus = companyCareComplianceStatus();
-    const complianceBlocked = isApprovedQueue && usingCloudData() && !complianceStatus.ready;
     const queueTitle = clientLinkIssue
       ? "고객 계정 연결 복구 필요"
       : depositEvidenceMissing
         ? "예약금 수납 증빙 보완 필요"
-        : complianceBlocked
-          ? "필수 운영 증빙 확인 필요"
-          : "승인 완료 · 일정 배정 대기";
+        : "승인 완료 · 일정 배정 대기";
     const queueAction = depositEvidenceMissing
       ? `<button class="primary-button mini-button" data-record-approved-deposit="${request.id}" ${clientLinkIssue ? "disabled" : ""}>예약금 증빙 보완</button>`
-      : complianceBlocked
-        ? '<button class="primary-button mini-button" data-nav="compliance">컴플라이언스 확인</button>'
-        : `<button class="primary-button mini-button" data-open-assignment data-request-id="${request.id}" ${issue || clientLinkIssue ? "disabled" : ""}>캘린더 일정 배치</button>`;
+      : `<button class="primary-button mini-button" data-open-assignment data-request-id="${request.id}" ${issue || clientLinkIssue ? "disabled" : ""}>캘린더 일정 배치</button>`;
     const issueDetail = clientLinkIssue
       ? `${clientLinkIssue} 회원 관리에서 고객 권한과 고객 프로필 연결을 복구한 뒤 처리해 주세요.`
-      : complianceBlocked
-        ? `책임보상보험·근로자재해보험·W-2 고용 증빙 ${complianceStatus.verifiedCount}/${complianceStatus.total}건 검증 완료`
-        : issue?.message || (depositEvidenceMissing ? "실제 수납 내역의 결제수단과 거래·영수증 번호를 기록한 뒤 일정 배치가 열립니다." : detail || "별도 요청 없음");
-    return `<div class="client-request-row service-request-management-row ${issue || clientLinkIssue || depositEvidenceMissing || complianceBlocked ? "has-lifecycle-issue" : ""}"><div><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${request.weeks}주 · ${formatDate(request.desiredStartDate)} · ${request.dailyStart}–${request.dailyEnd}</span><small>${price}</small></div><div><strong>${escapeHtml(request.address)}</strong><span>알러지 ${escapeHtml(request.allergies || "없음")} · 추가인원 ${request.extraHouseholdMembers || 0}명</span></div><div><strong>${clientLinkIssue ? "고객 계정 연결 오류" : issue ? "일정 중복 확인 필요" : isApprovedQueue ? queueTitle : "신청 내용"}</strong><span>${escapeHtml(issueDetail)}</span></div>${isApprovedQueue ? queueAction : `<button class="primary-button mini-button" data-review-client-request="${request.id}" ${clientLinkIssue ? "disabled" : ""}>신청 검토·승인</button>`}</div>`;
+      : issue?.message || (depositEvidenceMissing ? "실제 수납 내역의 결제수단과 거래·영수증 번호를 기록한 뒤 일정 배치가 열립니다." : detail || "별도 요청 없음");
+    return `<div class="client-request-row service-request-management-row ${issue || clientLinkIssue || depositEvidenceMissing ? "has-lifecycle-issue" : ""}"><div><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${request.weeks}주 · ${formatDate(request.desiredStartDate)} · ${request.dailyStart}–${request.dailyEnd}</span><small>${price}</small></div><div><strong>${escapeHtml(request.address)}</strong><span>알러지 ${escapeHtml(request.allergies || "없음")} · 추가인원 ${request.extraHouseholdMembers || 0}명</span></div><div><strong>${clientLinkIssue ? "고객 계정 연결 오류" : issue ? "일정 중복 확인 필요" : isApprovedQueue ? queueTitle : "신청 내용"}</strong><span>${escapeHtml(issueDetail)}</span></div>${isApprovedQueue ? queueAction : `<button class="primary-button mini-button" data-review-client-request="${request.id}" ${clientLinkIssue ? "disabled" : ""}>신청 검토·승인</button>`}</div>`;
   }
 
   function adjustmentManagementMarkup(adjustments) {
@@ -2990,10 +2875,10 @@ import {
     return `<div class="public-site">
       <header class="public-header"><a class="public-brand" href="#home" data-public-anchor="home"><span class="promoms-mark">${brandLogoMarkup()}</span><div><strong>ProMoms</strong><small>엄마 곁의 전문가</small></div></a><button class="public-menu-toggle" type="button" data-public-menu-toggle aria-expanded="false" aria-controls="public-site-nav" aria-label="메뉴 열기">☰</button><nav class="public-nav" id="public-site-nav" aria-label="사이트 주요 메뉴"><button data-public-anchor="about">회사 소개</button><button data-public-anchor="services">서비스</button><button data-public-anchor="caregivers">관리사 안내</button><button data-public-anchor="shop-preview">스토어</button><button data-public-anchor="location">서비스 지역</button><button data-public-anchor="contact">Contact</button><div class="public-nav-account">${accountActions}</div></nav><div class="public-account-actions">${accountActions}</div></header>
       <main>
-        <section class="public-hero" id="home"><div class="public-hero-copy"><p class="eyebrow">ProMoms PROFESSIONAL FAMILY CARE</p><h1>회복의 시간부터<br/><em>아이의 일상까지.</em></h1><p>전문가의 믿음직한 손길과 엄마의 따뜻한 마음. 산후조리 케어, 베이비 케어, 맘스 뷰티를 ProMoms에서 만나보세요.</p><div class="public-hero-actions"><button class="primary-button public-cta" data-service-apply="${defaultApplicationType}">${defaultApplicationType === "BABYSITTING" ? "베이비시팅 미리 신청" : "서비스 신청하기"}</button><button class="secondary-button public-cta" data-public-anchor="services">서비스 살펴보기</button></div><div class="public-trust-row"><span>✓ 배정 전 책임보험 확인</span><span>✓ 근로자재해보험 확인</span><span>✓ W-2 직접 고용 원칙</span><span>✓ 고객에게 고용 리스크 전가 없음</span></div></div><div class="public-hero-visual promoms-hero">${brandLogoMarkup(true)}<p class="promoms-brand-lines">POSTPARTUM CARE · BABY CARE · MOMS BEAUTY</p></div></section>
+        <section class="public-hero" id="home"><div class="public-hero-copy"><p class="eyebrow">ProMoms PROFESSIONAL FAMILY CARE</p><h1>회복의 시간부터<br/><em>아이의 일상까지.</em></h1><p>전문가의 믿음직한 손길과 엄마의 따뜻한 마음. 산후조리 케어, 베이비 케어, 맘스 뷰티를 ProMoms에서 만나보세요.</p><div class="public-hero-actions"><button class="primary-button public-cta" data-service-apply="${defaultApplicationType}">${defaultApplicationType === "BABYSITTING" ? "베이비시팅 미리 신청" : "서비스 신청하기"}</button><button class="secondary-button public-cta" data-public-anchor="services">서비스 살펴보기</button></div><div class="public-trust-row"><span>✓ 책임보상보험 운영 원칙</span><span>✓ 근로자재해보험 운영 원칙</span><span>✓ W-2 직접 고용 원칙</span><span>✓ 고객에게 고용 리스크 전가 없음</span></div></div><div class="public-hero-visual promoms-hero">${brandLogoMarkup(true)}<p class="promoms-brand-lines">POSTPARTUM CARE · BABY CARE · MOMS BEAUTY</p></div></section>
         <div class="public-content">${publicServiceStatusMarkup(user)}
-          <section class="public-section public-about" id="about"><div class="public-section-heading"><p class="eyebrow">ABOUT ProMoms</p><h2>가족에게 필요한 케어를<br/>더 투명하고 책임 있게.</h2></div><div class="about-story"><p>ProMoms는 조지아 애틀랜타 메트로 지역의 가족을 중심으로 산모의 회복, 아이의 안전한 돌봄, 생활에 필요한 제품까지 연결하는 패밀리 웰니스 서비스입니다. W-2 직접 고용을 운영 원칙으로 삼고, 배정 전 고용·보험 증빙의 유효성을 확인해 고객에게 고용 및 업무상 재해 리스크를 전가하지 않는 체계를 지향합니다.</p><div class="about-metrics"><div><strong>W-2</strong><span>직접 고용 운영 원칙</span></div><div><strong>Verified</strong><span>배정 전 보험 증빙 확인</span></div><div><strong>Atlanta</strong><span>메트로 지역 방문 케어</span></div></div></div></section>
-          <section class="public-section" id="services"><div class="public-section-heading centered"><p class="eyebrow">OUR SERVICES</p><h2>가족에게 필요한 돌봄을 선택하세요.</h2><p>산후조리와 베이비시팅은 각각 독립적으로 신청할 수 있으며, 동일 아기의 서비스 기간만 겹치지 않도록 운영합니다.</p></div><div class="public-service-grid"><article class="public-service-card featured"><span class="service-number">01</span><div class="service-symbol">♡</div><p class="eyebrow">POSTPARTUM CARE</p><h3>산후조리 서비스</h3><p>산모 회복 지원과 신생아 수유·수면·체온·목욕·체중 기록을 세심하게 관리합니다.</p><ul><li>2·3·4주 맞춤 일정</li><li>산모 식사·휴식·회복 지원</li><li>신생아 케어 기록과 주간 차트</li><li>배정 전 보험·W-2 고용 증빙 확인</li></ul><div class="service-price"><span>2주 기본 패키지</span><strong>$3,600<small> · 주 $1,800</small></strong></div><button class="primary-button" data-service-apply="POSTPARTUM">산후조리 신청</button></article><article class="public-service-card"><span class="service-number">02</span><div class="service-symbol">☆</div><p class="eyebrow">BABYSITTING</p><h3>베이비시팅 서비스</h3><p>아이의 식사와 한국형 이유식·유아식, 놀이·산책과 생활 이벤트를 보호자에게 정확하게 공유합니다.</p><ul><li>배정 전 보험·W-2 고용 증빙 확인</li><li>고용 및 사고 Risk 고객 전가 없음</li><li>이유식 및 유아식 한국형 준비</li><li>놀이·산책·특이 이벤트 메모</li></ul><div class="service-price"><span>4시간분 예약금 $128 · 최소 2주</span><strong>$32<small>부터</small></strong></div><button class="primary-button" data-service-apply="BABYSITTING">베이비시팅 신청</button></article><article class="public-service-card premium-coming-soon"><span class="service-number">03</span><div class="service-symbol">✦</div><p class="eyebrow">PREMIUM ADD-ON · COMING SOON</p><h3>산모 마사지</h3><p>산후조리 고객을 위한 프리미엄 추가 상품으로 준비하고 있습니다.</p><ul><li>Georgia Massage Therapist License 필수</li><li>라이선스 확인된 전문가만 제공</li><li>마사지 업무 보험 범위 확인</li><li>산후조리 계약 Add-on 형태</li></ul><div class="service-price"><span>출시 준비 중</span><strong>미정</strong></div><button class="secondary-button" disabled>현재 선택 불가</button></article></div><section class="insured-staffing-panel"><div><p class="eyebrow">WHY INSURED STAFFING MATTERS</p><h3>보험·고용 증빙을 확인한 뒤 배정합니다.</h3><p>ProMoms는 W-2 직접 고용을 운영 원칙으로 하며, 배정 시점에 책임보상·근로자재해보험 증빙의 유효성을 확인합니다.</p></div><ul><li><span>◈</span><strong>책임보상보험</strong><small>서비스 수행 중 대인·대물 리스크 관리</small></li><li><span>✓</span><strong>근로자재해보험</strong><small>업무상 재해 책임을 고객에게 전가하지 않음</small></li><li><span>W-2</span><strong>정식 직원</strong><small>독립계약자 편법 운영 없이 회사가 고용 의무 처리</small></li></ul></section><div class="public-rules" id="rules"><div><strong>이용 규칙</strong><span>① 산후조리 예약금 $500 · 시작 30일 전까지 취소 시 환불</span><span>② 시작 30일 이내 산후조리 예약금 환불 불가</span><span>③ 베이비시팅 예약금 $128 · 4시간분</span><span>④ 시작 72시간 이전 취소 시 베이비시팅 예약금 환불</span><span>⑤ 시작 72시간 이내 취소·노쇼 시 예약금 환불 불가</span><span>⑥ 동일 아기의 산후조리·베이비시팅 기간 중복 불가</span><span>⑦ 의료행위·무면허 마사지는 제공하지 않음</span></div></div></section>
+          <section class="public-section public-about" id="about"><div class="public-section-heading"><p class="eyebrow">ABOUT ProMoms</p><h2>가족에게 필요한 케어를<br/>더 투명하고 책임 있게.</h2></div><div class="about-story"><p>ProMoms는 조지아 애틀랜타 메트로 지역의 가족을 중심으로 산모의 회복, 아이의 안전한 돌봄, 생활에 필요한 제품까지 연결하는 패밀리 웰니스 서비스입니다. W-2 직접 고용과 회사 차원의 책임보상보험·근로자재해보험 운영을 원칙으로 삼아 고객에게 고용 및 업무상 재해 리스크를 전가하지 않는 체계를 지향합니다.</p><div class="about-metrics"><div><strong>W-2</strong><span>직접 고용 운영 원칙</span></div><div><strong>Company</strong><span>보험 책임 회사 관리</span></div><div><strong>Atlanta</strong><span>메트로 지역 방문 케어</span></div></div></div></section>
+          <section class="public-section" id="services"><div class="public-section-heading centered"><p class="eyebrow">OUR SERVICES</p><h2>가족에게 필요한 돌봄을 선택하세요.</h2><p>산후조리와 베이비시팅은 각각 독립적으로 신청할 수 있으며, 동일 아기의 서비스 기간만 겹치지 않도록 운영합니다.</p></div><div class="public-service-grid"><article class="public-service-card featured"><span class="service-number">01</span><div class="service-symbol">♡</div><p class="eyebrow">POSTPARTUM CARE</p><h3>산후조리 서비스</h3><p>산모 회복 지원과 신생아 수유·수면·체온·목욕·체중 기록을 세심하게 관리합니다.</p><ul><li>2·3·4주 맞춤 일정</li><li>산모 식사·휴식·회복 지원</li><li>신생아 케어 기록과 주간 차트</li><li>보험 적용·W-2 정식 직원 운영 원칙</li></ul><div class="service-price"><span>2주 기본 패키지</span><strong>$3,600<small> · 주 $1,800</small></strong></div><button class="primary-button" data-service-apply="POSTPARTUM">산후조리 신청</button></article><article class="public-service-card"><span class="service-number">02</span><div class="service-symbol">☆</div><p class="eyebrow">BABYSITTING</p><h3>베이비시팅 서비스</h3><p>아이의 식사와 한국형 이유식·유아식, 놀이·산책과 생활 이벤트를 보호자에게 정확하게 공유합니다.</p><ul><li>보험 적용·W-2 정식 직원 운영 원칙</li><li>고용 및 사고 Risk 고객 전가 없음</li><li>이유식 및 유아식 한국형 준비</li><li>놀이·산책·특이 이벤트 메모</li></ul><div class="service-price"><span>4시간분 예약금 $128 · 최소 2주</span><strong>$32<small>부터</small></strong></div><button class="primary-button" data-service-apply="BABYSITTING">베이비시팅 신청</button></article><article class="public-service-card premium-coming-soon"><span class="service-number">03</span><div class="service-symbol">✦</div><p class="eyebrow">PREMIUM ADD-ON · COMING SOON</p><h3>산모 마사지</h3><p>산후조리 고객을 위한 프리미엄 추가 상품으로 준비하고 있습니다.</p><ul><li>Georgia Massage Therapist License 필수</li><li>라이선스 확인된 전문가만 제공</li><li>마사지 업무 보험 범위 확인</li><li>산후조리 계약 Add-on 형태</li></ul><div class="service-price"><span>출시 준비 중</span><strong>미정</strong></div><button class="secondary-button" disabled>현재 선택 불가</button></article></div><section class="insured-staffing-panel"><div><p class="eyebrow">WHY INSURED STAFFING MATTERS</p><h3>보험·고용 책임을 회사가 관리합니다.</h3><p>ProMoms는 W-2 직접 고용과 책임보상보험·근로자재해보험 운영을 회사의 원칙으로 두고 있습니다.</p></div><ul><li><span>◈</span><strong>책임보상보험</strong><small>서비스 수행 중 대인·대물 리스크 관리</small></li><li><span>✓</span><strong>근로자재해보험</strong><small>업무상 재해 책임을 고객에게 전가하지 않음</small></li><li><span>W-2</span><strong>정식 직원</strong><small>독립계약자 편법 운영 없이 회사가 고용 의무 처리</small></li></ul></section><div class="public-rules" id="rules"><div><strong>이용 규칙</strong><span>① 산후조리 예약금 $500 · 시작 30일 전까지 취소 시 환불</span><span>② 시작 30일 이내 산후조리 예약금 환불 불가</span><span>③ 베이비시팅 예약금 $128 · 4시간분</span><span>④ 시작 72시간 이전 취소 시 베이비시팅 예약금 환불</span><span>⑤ 시작 72시간 이내 취소·노쇼 시 예약금 환불 불가</span><span>⑥ 동일 아기의 산후조리·베이비시팅 기간 중복 불가</span><span>⑦ 의료행위·무면허 마사지는 제공하지 않음</span></div></div></section>
           <section class="public-section public-caregiver-section" id="caregivers"><div class="public-section-heading"><p class="eyebrow">TRUSTED CARE TEAM</p><h2>확인된 기준으로 관리사를 배정합니다.</h2><p>실제 등록된 관리사의 자격·경력·활동 지역과 일정을 관리자가 확인한 뒤 고객에게 배정합니다.</p></div><div class="public-caregiver-grid"><article><div class="public-person-art mint">✓</div><h3>신원·경력 확인</h3><span>IDENTITY & EXPERIENCE</span><p>지원 서류와 경력 정보를 확인하고 승인된 계정만 배정 후보에 포함합니다.</p></article><article><div class="public-person-art blush">CPR</div><h3>자격·안전 기준</h3><span>CREDENTIALS & SAFETY</span><p>서비스에 필요한 교육과 자격, 만료일을 확인한 뒤 업무 범위를 구분합니다.</p></article><article><div class="public-person-art mint">↔</div><h3>일정·가정 맞춤 배정</h3><span>SCHEDULE & FAMILY FIT</span><p>서비스 유형, 지역, 요일과 시간의 실제 가용성을 확인해 중복 없이 배정합니다.</p></article></div></section>
           <section class="public-section" id="shop-preview"><div class="public-section-heading public-shop-heading"><div><p class="eyebrow">ProMoms SELECT · COMING SOON</p><h2>Beauty & Baby Store</h2><p>상품·결제·재고 운영 체계가 준비된 뒤 별도 스토어로 선보일 예정입니다.</p></div><button class="secondary-button" disabled>출시 준비 중</button></div><div class="store-readiness-note"><strong>지금은 돌봄 서비스 신청과 기록 기능만 운영합니다.</strong><span>샘플 상품이나 재고를 실제 판매 상품처럼 표시하지 않습니다.</span></div></section>
           <section class="public-section public-location" id="location"><div class="location-card"><p class="eyebrow">SERVICE AREA</p><h2>Atlanta Metro 방문 케어</h2><p>고객의 서비스 주소와 일정, 관리사 이동 가능 범위를 확인한 뒤 방문 가능 여부를 안내합니다.</p><dl><div><dt>기본 지역</dt><dd>Atlanta Metro, Georgia</dd></div><div><dt>상담 방식</dt><dd>전화 상담 후 일정·주소 확인</dd></div><div><dt>방문 안내</dt><dd>신청 승인 전 최종 서비스 가능 지역을 확인합니다.</dd></div></dl><a class="primary-button public-link-button" href="tel:+14704049467">전화로 가능 지역 문의</a></div><div class="location-map" role="img" aria-label="Atlanta Metro 방문 서비스 지역 안내"><div class="map-road road-one"></div><div class="map-road road-two"></div><div class="map-pin"><span class="promoms-mark">${brandLogoMarkup()}</span><strong>ProMoms</strong></div><small>Atlanta Metro · Georgia</small></div></section>
@@ -3361,7 +3246,7 @@ import {
       return `<section class="page">${pageHeading("RETAIL", "리테일 백엔드 연결 준비 중", "결제·주문·재고 데이터가 운영 시스템과 안전하게 연결된 후 제공됩니다.")}<article class="card card-pad"><div class="empty-state"><span>◇</span><strong>주문·결제·재고 백엔드 연결 준비 중입니다.</strong><p>연결이 완료될 때까지 조회와 변경 기능은 비활성화됩니다.</p></div></article></section>`;
     }
     const operationalPages = {
-      admin: { overview: adminOverview, schedule: adminSchedule, requests: adminRequests, finance: adminFinance, people: adminPeople, reports: adminReports, compliance: adminCompliance },
+      admin: { overview: adminOverview, schedule: adminSchedule, requests: adminRequests, finance: adminFinance, people: adminPeople, reports: adminReports },
       caregiver: { caregiving: caregiverCaregivingHub, postpartum: () => caregiverServiceWorkspace("POSTPARTUM"), babysitting: () => caregiverServiceWorkspace("BABYSITTING"), profile: caregiverProfile },
       client: { services: clientServicesHub, postpartum: () => clientServiceWorkspace("POSTPARTUM"), babysitting: () => clientServiceWorkspace("BABYSITTING") },
       retail: {},
@@ -3426,9 +3311,6 @@ import {
     if (state.role === "admin" && !canManageCaregiverHr()) {
       document.querySelectorAll("[data-manage-caregiver], [data-approve-user]").forEach((control) => control.remove());
       document.querySelector(".approval-panel")?.remove();
-    }
-    if (state.role === "admin" && !canManageCompanyCompliance()) {
-      document.querySelectorAll("[data-edit-compliance]").forEach((control) => control.remove());
     }
     if (state.role === "admin" && !canManageMemberAccounts()) {
       document.querySelector(".member-governance")?.remove();
@@ -3824,7 +3706,6 @@ import {
     document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", logout));
     document.querySelectorAll("[data-edit-profile]").forEach((button) => button.addEventListener("click", openProfileModal));
     document.querySelectorAll("[data-change-password]").forEach((button) => button.addEventListener("click", openPasswordModal));
-    document.querySelectorAll("[data-edit-compliance]").forEach((button) => button.addEventListener("click", () => openCompanyComplianceModal(button.dataset.editCompliance)));
     document.querySelectorAll("[data-open-assignment]").forEach((button) => button.addEventListener("click", () => openAssignmentModal(null, button.dataset.requestId || null)));
     document.querySelectorAll("[data-edit-assignment]").forEach((button) => button.addEventListener("click", () => openAssignmentModal(button.dataset.editAssignment)));
     document.querySelectorAll("[data-cancel-assignment]").forEach((button) => button.addEventListener("click", () => openDeleteAssignmentModal(button.dataset.cancelAssignment)));
@@ -4172,113 +4053,6 @@ import {
     showToast(`${user.fullName} 관리사의 인사정보를 저장했습니다.`);
   }
 
-  function openCompanyComplianceModal(controlKey) {
-    if (state.role !== "admin" || !canManageCompanyCompliance()) {
-      return showToast("소유자 또는 관리자만 컴플라이언스 증빙을 수정할 수 있습니다.", "error");
-    }
-    const definition = REQUIRED_COMPLIANCE_CONTROLS[controlKey];
-    if (!definition) return showToast("수정할 컴플라이언스 항목을 찾을 수 없습니다.", "error");
-    const compliance = state.compliance || {};
-    const storedControls = Array.isArray(compliance.controls) ? compliance.controls : [];
-    const stored = storedControls.find((item) => item.key === controlKey) || {};
-    const fallbackActive = controlKey === "GENERAL_LIABILITY"
-      ? compliance.generalLiabilityCoverage
-      : controlKey === "WORKERS_COMP"
-        ? compliance.workersCompCoverage
-        : compliance.payrollTaxHandledByCompany;
-    const status = stored.status || (fallbackActive ? "ACTIVE" : "REVIEW_REQUIRED");
-    const verifiedDate = stored.verifiedAt ? dateInputValue(stored.verifiedAt) : "";
-    const expiresDate = stored.expiresAt ? dateInputValue(stored.expiresAt) : "";
-    const today = localDateKey(new Date());
-
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal assignment-modal compliance-edit-modal" role="dialog" aria-modal="true" aria-labelledby="company-compliance-title"><header class="modal-header"><div><p class="eyebrow">COMPLIANCE EVIDENCE</p><h3 id="company-compliance-title">${escapeHtml(definition.title)} 관리</h3><p>배정 차단에 사용되는 상태와 증빙 유효기간을 정확하게 기록하세요.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-company-compliance-form><input type="hidden" name="controlKey" value="${controlKey}"/><div class="field"><label for="compliance-status">상태</label><select id="compliance-status" name="status" required><option value="REVIEW_REQUIRED" ${status === "REVIEW_REQUIRED" ? "selected" : ""}>검토 필요</option><option value="ACTIVE" ${status === "ACTIVE" ? "selected" : ""}>검증 완료·활성</option><option value="INACTIVE" ${status === "INACTIVE" ? "selected" : ""}>비활성</option></select><small>‘검증 완료·활성’ 상태만 서비스 일정 확정 조건을 충족할 수 있습니다.</small></div><div class="field"><label for="compliance-evidence">${escapeHtml(definition.evidenceLabel)}</label><input id="compliance-evidence" name="evidenceReference" maxlength="500" value="${escapeHtml(stored.evidenceReference || "")}" placeholder="보험사·증권 번호 또는 보안 문서 저장소 참조"/><small>민감한 원문 대신 담당자가 확인할 수 있는 보험사, 증권 번호 또는 보안 문서 참조를 기록하세요.</small></div><div class="form-grid two"><div class="field"><label for="compliance-verified-date">발효·검증일</label><input id="compliance-verified-date" name="verifiedDate" type="date" max="${today}" value="${verifiedDate}"/><small>현재 구조에서는 배정 가능 여부를 판단하는 검증일로 저장됩니다.</small></div><div class="field"><label for="compliance-expires-date">만료일</label><input id="compliance-expires-date" name="expiresDate" type="date" value="${expiresDate}"/><small>만료가 없는 증빙만 비워 둘 수 있습니다.</small></div></div><div class="field"><label for="compliance-notes">검증 메모</label><textarea id="compliance-notes" name="notes" maxlength="2000" placeholder="확인한 보장 범위, 적용 대상, 갱신 주의사항을 기록하세요.">${escapeHtml(stored.notes || "")}</textarea></div><div class="status-banner warning" data-compliance-guidance aria-live="polite"></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">증빙 저장</button></div></form></section></div>`;
-    bindModalFrame();
-    const form = modalRoot.querySelector("[data-company-compliance-form]");
-    const statusInput = form.elements.status;
-    const verifiedInput = form.elements.verifiedDate;
-    const evidenceInput = form.elements.evidenceReference;
-    const guidance = form.querySelector("[data-compliance-guidance]");
-    const updateRequirements = () => {
-      const activating = statusInput.value === "ACTIVE";
-      verifiedInput.setAttribute("aria-required", String(activating));
-      evidenceInput.setAttribute("aria-required", String(activating));
-      guidance.className = "status-banner warning";
-      guidance.textContent = activating
-        ? "활성화하려면 발효·검증일과 증빙 참조가 필수이며, 만료일이 오늘보다 이전일 수 없습니다."
-        : "검토 필요 또는 비활성 상태는 서비스 일정 확정을 차단합니다.";
-    };
-    statusInput.addEventListener("change", updateRequirements);
-    updateRequirements();
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const values = Object.fromEntries(new FormData(form).entries());
-      const activating = values.status === "ACTIVE";
-      if (values.verifiedDate && values.verifiedDate > today) {
-        (verifiedInput.closest(".date-enhancement")?.querySelector("[data-date-picker-trigger]") || verifiedInput).focus();
-        return showToast("발효·검증일은 오늘 이후로 설정할 수 없습니다.", "error");
-      }
-      if (values.verifiedDate && values.expiresDate && values.expiresDate < values.verifiedDate) {
-        (form.elements.expiresDate.closest(".date-enhancement")?.querySelector("[data-date-picker-trigger]") || form.elements.expiresDate).focus();
-        return showToast("만료일은 발효·검증일보다 빠를 수 없습니다.", "error");
-      }
-      if (activating && (!values.verifiedDate || !String(values.evidenceReference || "").trim())) {
-        const missingControl = !values.verifiedDate
-          ? verifiedInput.closest(".date-enhancement")?.querySelector("[data-date-picker-trigger]") || verifiedInput
-          : evidenceInput;
-        missingControl.focus();
-        return showToast("활성화하려면 발효·검증일과 증빙 참조를 모두 입력해 주세요.", "error");
-      }
-      if (activating && values.expiresDate && values.expiresDate < today) {
-        (form.elements.expiresDate.closest(".date-enhancement")?.querySelector("[data-date-picker-trigger]") || form.elements.expiresDate).focus();
-        return showToast("만료된 증빙은 활성 상태로 저장할 수 없습니다.", "error");
-      }
-      const submitButton = form.querySelector('button[type="submit"]');
-      submitButton.disabled = true;
-      submitButton.textContent = "저장 중…";
-      try {
-        if (usingCloudData()) {
-          await updateCompanyComplianceCloud(values);
-          closeModal();
-          await refreshCloudState();
-        } else {
-          const nextRecord = {
-            ...stored,
-            key: controlKey,
-            name: stored.name || definition.title,
-            status: values.status,
-            verifiedAt: values.verifiedDate ? new Date(`${values.verifiedDate}T12:00:00`).toISOString() : null,
-            expiresAt: values.expiresDate || null,
-            evidenceReference: String(values.evidenceReference || "").trim(),
-            notes: String(values.notes || "").trim(),
-            updatedAt: new Date().toISOString(),
-            updatedBy: authUser().id,
-          };
-          state.compliance.controls = storedControls.some((item) => item.key === controlKey)
-            ? storedControls.map((item) => item.key === controlKey ? nextRecord : item)
-            : [...storedControls, nextRecord];
-          const isCurrent = nextRecord.status === "ACTIVE"
-            && Boolean(nextRecord.verifiedAt)
-            && Boolean(nextRecord.evidenceReference)
-            && (!nextRecord.expiresAt || nextRecord.expiresAt >= today);
-          if (controlKey === "GENERAL_LIABILITY") state.compliance.generalLiabilityCoverage = isCurrent;
-          if (controlKey === "WORKERS_COMP") state.compliance.workersCompCoverage = isCurrent;
-          if (controlKey === "W2_EMPLOYMENT") {
-            state.compliance.payrollTaxHandledByCompany = isCurrent;
-            state.compliance.employeeClassification = isCurrent ? "W-2 확인 완료" : "확인 필요";
-          }
-          saveState();
-          closeModal();
-          render();
-        }
-        showToast(`${definition.title} 상태와 증빙을 저장했습니다.`);
-      } catch (error) {
-        showToast(friendlyErrorMessage(error, "컴플라이언스 증빙을 저장하지 못했습니다."), "error");
-        submitButton.disabled = false;
-        submitButton.textContent = "증빙 저장";
-      }
-    });
-  }
-
   function openProfileModal() {
     const user = authUser();
     if (!user) return showToast("로그인 정보를 확인할 수 없습니다.", "error");
@@ -4563,16 +4337,6 @@ import {
     const assignment = assignmentId ? state.assignments.find((item) => item.id === assignmentId) : null;
     const productionDetailOnly = Boolean(assignment && usingCloudData());
     if (assignmentId && !assignment) return showToast("일정 정보를 찾을 수 없습니다.");
-    if (!assignment && usingCloudData()) {
-      const complianceStatus = companyCareComplianceStatus();
-      if (!complianceStatus.ready) {
-        showToast(`필수 운영 증빙 ${complianceStatus.verifiedCount}/${complianceStatus.total}건 확인 상태입니다. 보험·컴플라이언스 메뉴에서 실제 증빙을 먼저 저장해 주세요.`, "error");
-        state.views.admin = "compliance";
-        saveState();
-        render();
-        return;
-      }
-    }
     const requestedRequest = requestId ? state.serviceRequests.find((request) => request.id === requestId && request.status === "APPROVED" && !request.approvedAssignmentId) : null;
     if (!assignment && requestedRequest && !requestHasCapturedDepositEvidence(requestedRequest)) return openApprovedDepositEvidenceModal(requestedRequest.id);
     const approvedQueue = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && clientById(request.clientId) && requestHasCapturedDepositEvidence(request));
@@ -4991,7 +4755,7 @@ import {
     const requestBabyName = babyNameFor(request, client) || "아이 미등록";
     modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal assignment-modal" role="dialog" aria-modal="true" aria-labelledby="client-request-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<h3 id="client-request-title">${serviceMetaFor(request.serviceType).label} 신청 검토·승인</h3><p>${escapeHtml(client.motherName)} · ${escapeHtml(requestBabyName)}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-client-request-form>
       <div class="request-review-grid"><div><span>희망 기간</span><strong>${request.weeks}주 · ${formatDate(startAt)}–${formatDate(endAt)}</strong></div><div><span>방문 시간</span><strong>${request.dailyStart}–${request.dailyEnd}</strong></div><div><span>희망 요일</span><strong>${escapeHtml((request.daysOfWeek || []).join(" · ") || "미지정")}</strong></div><div><span>출생/출산(예정)일</span><strong>${formatDate(request.birthOrDueDate)}</strong></div><div><span>추가인원</span><strong>${request.extraHouseholdMembers}명</strong></div>${assignmentServiceType(request) === "POSTPARTUM" ? `<div><span>예상 서비스 비용</span><strong>$${postpartumEstimate(request.weeks).toLocaleString("en-US")} · 주 $${POSTPARTUM_WEEKLY_RATE.toLocaleString("en-US")}</strong></div>` : ""}<div class="wide"><span>주소</span><strong>${escapeHtml(request.address)}</strong></div><div class="wide"><span>알러지</span><strong>${escapeHtml(request.allergies)}</strong></div>${assignmentServiceType(request) === "BABYSITTING" ? `<div class="wide"><span>식사·간식 지침</span><strong>${escapeHtml(request.mealInstructions || "없음")}</strong></div><div class="wide"><span>생활 루틴·인계</span><strong>${escapeHtml([request.routineNotes, request.pickupNotes].filter(Boolean).join(" · ") || "없음")}</strong></div>` : `<div class="wide"><span>산모 상태·회복 요청</span><strong>${escapeHtml(request.maternalNotes || "없음")}</strong></div>`}<div class="wide"><span>특이사항·요청</span><strong>${escapeHtml(request.specialNotes || "없음")}</strong></div></div>
-      <div class="insured-contract-note"><strong>컴플라이언스 확인</strong><span>책임보상보험 · 근로자재해보험 · W-2 정식 직원 배정 원칙이 계약에 적용됩니다.</span></div>${lifecycleIssue ? `<div class="status-banner warning">${escapeHtml(lifecycleIssue.message)}</div>` : `<div class="privacy-boundary-note"><strong>승인 후 일정·배정 메뉴로 이동</strong><span>일정 중복 검증을 통과했습니다. 승인된 신청은 캘린더의 ‘일정 배치 대기’ 목록에 자동으로 표시됩니다.</span></div>`}
+      <div class="insured-contract-note"><strong>회사 운영 원칙</strong><span>책임보상보험 · 근로자재해보험 · W-2 정식 직원 운영 원칙이 서비스에 적용됩니다.</span></div>${lifecycleIssue ? `<div class="status-banner warning">${escapeHtml(lifecycleIssue.message)}</div>` : `<div class="privacy-boundary-note"><strong>승인 후 일정·배정 메뉴로 이동</strong><span>일정 중복 검증을 통과했습니다. 승인된 신청은 캘린더의 ‘일정 배치 대기’ 목록에 자동으로 표시됩니다.</span></div>`}
       <div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button" ${lifecycleIssue ? "disabled" : ""}>서비스 신청 승인</button></div>
     </form></section></div>`;
     const requestDeposit = assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT;

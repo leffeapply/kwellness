@@ -229,7 +229,6 @@ async function loadCloudStateOnce(session) {
     deposits,
     balanceTransactions,
     shiftChecks,
-    complianceControls,
     assignmentBriefs,
   ] = await Promise.all([
     table("profiles"),
@@ -252,7 +251,6 @@ async function loadCloudStateOnce(session) {
     table("deposit_transactions"),
     table("service_balance_transactions"),
     table("care_shift_checks"),
-    table("company_compliance_controls"),
     throwIfError(await supabase.rpc("my_assignment_briefs"), "배정 안전정보 조회"),
   ]);
 
@@ -556,13 +554,6 @@ async function loadCloudStateOnce(session) {
       shiftChecklists[item.assignment_id] ||= {};
       shiftChecklists[item.assignment_id][item.check_key] = Boolean(item.checked);
     });
-  const complianceByKey = new Map(complianceControls.map((item) => [item.control_key, item]));
-  const complianceActive = (key) => {
-    const control = complianceByKey.get(key);
-    if (!control || control.status !== "ACTIVE" || !control.verified_at || !String(control.evidence_reference || "").trim()) return false;
-    return !control.expires_at || control.expires_at >= todayKey;
-  };
-
   return {
     currentUser,
     users: appUsers,
@@ -597,26 +588,6 @@ async function loadCloudStateOnce(session) {
       reviewNote: item.review_note || "",
     })),
     shiftChecklists,
-    compliance: {
-      generalLiabilityCoverage: complianceActive("GENERAL_LIABILITY"),
-      workersCompCoverage: complianceActive("WORKERS_COMP"),
-      employeeClassification: complianceActive("W2_EMPLOYMENT") ? "W-2 확인 완료" : "확인 필요",
-      payrollTaxHandledByCompany: complianceActive("W2_EMPLOYMENT"),
-      massageLiabilityRiderVerified: complianceActive("MASSAGE_LIABILITY_RIDER"),
-      licensedMassageTherapistCount: 0,
-      controls: complianceControls.map((item) => ({
-        id: item.id,
-        key: item.control_key,
-        name: item.display_name,
-        status: item.status,
-        verifiedAt: item.verified_at,
-        expiresAt: item.expires_at,
-        evidenceReference: item.evidence_reference || "",
-        notes: item.notes || "",
-        updatedAt: item.updated_at,
-        updatedBy: item.updated_by,
-      })),
-    },
     events: appEvents,
     reviews: reviews.map((item) => ({
       id: item.id,
@@ -899,28 +870,6 @@ export async function updateCaregiverManagementCloud(user, values) {
     p_service_area_notes: values.serviceArea.trim() || null,
     p_hr_notes: values.hrNotes.trim() || null,
   }), "관리사 인사정보 저장");
-}
-
-export async function updateCompanyComplianceCloud({
-  controlKey,
-  status,
-  verifiedDate,
-  expiresDate,
-  evidenceReference,
-  notes,
-}) {
-  await authenticatedUserId();
-  const verifiedAt = verifiedDate
-    ? new Date(`${verifiedDate}T12:00:00`).toISOString()
-    : null;
-  return throwIfError(await supabase.rpc("admin_update_company_compliance", {
-    p_control_key: String(controlKey || "").trim().toUpperCase(),
-    p_status: String(status || "").trim().toUpperCase(),
-    p_verified_at: verifiedAt,
-    p_expires_at: expiresDate || null,
-    p_evidence_reference: String(evidenceReference || "").trim() || null,
-    p_notes: String(notes || "").trim() || null,
-  }), "컴플라이언스 증빙 저장");
 }
 
 export async function updatePasswordCloud(password) {
