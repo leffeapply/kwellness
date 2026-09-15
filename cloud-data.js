@@ -228,6 +228,7 @@ async function loadCloudStateOnce(session) {
     reports,
     deposits,
     balanceTransactions,
+    serviceRefunds,
     shiftChecks,
     assignmentBriefs,
   ] = await Promise.all([
@@ -250,6 +251,7 @@ async function loadCloudStateOnce(session) {
     table("care_reports"),
     table("deposit_transactions"),
     table("service_balance_transactions"),
+    table("service_refund_transactions"),
     table("care_shift_checks"),
     throwIfError(await supabase.rpc("my_assignment_briefs"), "배정 안전정보 조회"),
   ]);
@@ -470,6 +472,17 @@ async function loadCloudStateOnce(session) {
     refundedAt: item.refunded_at,
     recordedBy: item.recorded_by,
   }));
+  const appServiceRefunds = serviceRefunds.map((item) => ({
+    ...item,
+    requestId: item.client_service_request_id,
+    clientId: item.client_id,
+    amount: Number(item.amount || 0),
+    paymentMethod: item.payment_method,
+    refundReference: item.refund_reference,
+    refundReason: item.refund_reason,
+    refundedAt: item.refunded_at,
+    recordedBy: item.recorded_by,
+  }));
 
   const appRequests = serviceRequests.map((request) => ({
     id: request.id,
@@ -503,8 +516,12 @@ async function loadCloudStateOnce(session) {
     createdAt: request.created_at,
     approvedAt: request.reviewed_at,
     reviewNote: request.review_note || "",
+    administrativelyRemovedAt: request.administratively_removed_at,
+    administrativelyRemovedBy: request.administratively_removed_by,
+    administrativeRemovalReason: request.administrative_removal_reason || "",
     depositTransaction: appDeposits.find((item) => item.requestId === request.id) || null,
     balanceTransactions: appBalanceTransactions.filter((item) => item.requestId === request.id),
+    refundTransactions: appServiceRefunds.filter((item) => item.requestId === request.id),
   }));
 
   const assignmentBySession = new Map(careSessions.map((item) => [item.id, appAssignments.find((assignment) => assignment.id === item.assignment_id)]));
@@ -562,6 +579,7 @@ async function loadCloudStateOnce(session) {
     serviceRequests: appRequests,
     depositTransactions: appDeposits,
     balanceTransactions: appBalanceTransactions,
+    refundTransactions: appServiceRefunds,
     serviceAdjustments: serviceAdjustments.map((item) => ({
       id: item.id,
       targetType: item.care_assignment_id ? "ASSIGNMENT" : "REQUEST",
@@ -729,6 +747,18 @@ export async function recordServiceBalancePaymentCloud({ requestId, amount, paym
   }), "서비스 잔금 수납 기록");
 }
 
+export async function recordServiceRefundCloud({ requestId, amount, paymentMethod, refundReference, refundReason, refundedOn }) {
+  await authenticatedUserId();
+  return throwIfError(await supabase.rpc("record_service_refund", {
+    p_request_id: requestId,
+    p_amount: Number(amount),
+    p_payment_method: String(paymentMethod || "").trim(),
+    p_refund_reference: String(refundReference || "").trim(),
+    p_refund_reason: String(refundReason || "").trim(),
+    p_refunded_on: refundedOn,
+  }), "서비스 환불 기록");
+}
+
 export async function recordRetrospectiveCareReportCloud({ assignmentId, serviceDate, startedTime, endedTime, summary }) {
   await authenticatedUserId();
   return throwIfError(await supabase.rpc("record_retrospective_care_report", {
@@ -825,6 +855,13 @@ export async function archiveMemberCloud(userId) {
   return throwIfError(await supabase.rpc("admin_archive_member", {
     p_user_id: userId,
   }), "회원 삭제");
+}
+
+export async function archiveServiceRequestCloud(requestId, reason) {
+  return throwIfError(await supabase.rpc("admin_archive_service_request", {
+    p_request_id: requestId,
+    p_reason: String(reason || "").trim(),
+  }), "서비스 삭제");
 }
 
 async function authenticatedUserId() {

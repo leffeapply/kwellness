@@ -3,15 +3,16 @@ import proMomsLogoUrl from "./assets/promoms-logo.png";
 import {
   approveCaregiverCloud,
   archiveMemberCloud,
+  archiveServiceRequestCloud,
   cloudEnabled,
   currentCloudSession,
   loadCloudState,
   publishCareReportCloud,
   reassignCaregiverCloud,
   recordApprovedRequestDepositEvidenceCloud,
-  recordDepositRefundCloud,
   recordRetrospectiveCareReportCloud,
   recordServiceBalancePaymentCloud,
+  recordServiceRefundCloud,
   recordMyCurrentConsentsCloud,
   requestPasswordResetCloud,
   reviewServiceAdjustmentCloud,
@@ -91,6 +92,7 @@ import {
       { id: "schedule", label: "일정·배정", icon: "◷" },
       { id: "requests", label: "서비스 신청·승인", icon: "✓" },
       { id: "finance", label: "수납·수익 관리", icon: "$" },
+      { id: "history", label: "서비스 히스토리", icon: "≡" },
       { id: "people", label: "고객·관리사", icon: "♙" },
       { id: "reports", label: "차트·리포트", icon: "▤" },
       { id: "retail", label: "리테일", icon: "◇" },
@@ -215,6 +217,7 @@ import {
       calendarMonthOffset: 0,
       adminScheduleFilter: "ALL",
       financeFilters: { period: "MONTH", year: String(new Date().getFullYear()), month: String(new Date().getMonth() + 1) },
+      serviceHistoryFilters: { query: "", serviceType: "ALL", status: "ALL", sort: "newest" },
       serviceTabs: {
         client: { POSTPARTUM: "summary", BABYSITTING: "summary" },
         caregiver: { POSTPARTUM: "today", BABYSITTING: "today" },
@@ -241,6 +244,7 @@ import {
       serviceRequests: [],
       depositTransactions: [],
       balanceTransactions: [],
+      refundTransactions: [],
       serviceAdjustments: [],
       reports: [],
       careSessions: [],
@@ -261,6 +265,7 @@ import {
       calendarMonthOffset: 0,
       adminScheduleFilter: "ALL",
       financeFilters: { period: "MONTH", year: String(new Date().getFullYear()), month: String(new Date().getMonth() + 1) },
+      serviceHistoryFilters: { query: "", serviceType: "ALL", status: "ALL", sort: "newest" },
       serviceTabs: {
         client: { POSTPARTUM: "summary", BABYSITTING: "summary" },
         caregiver: { POSTPARTUM: "today", BABYSITTING: "today" },
@@ -304,6 +309,9 @@ import {
         { id: "request-sarah-sitting", serviceType: "BABYSITTING", clientId: "client-sarah", userId: "user-client-sarah", status: "APPROVED", weeks: 3, depositAmount: BABYSITTING_DEPOSIT, depositStatus: "PAID", depositPaidAt: dateOffset(-1), desiredStartDate: dateOffset(28, 14), dailyStart: "14:00", dailyEnd: "18:00", daysOfWeek: ["화", "목", "토"], address: "Duluth, Georgia", extraHouseholdMembers: 1, allergies: "없음", specialNotes: "놀이와 간식 중심의 베이비시팅을 희망합니다.", mealInstructions: "오후 3시 간식 · 새로운 식품은 보호자 확인 후 제공", routineNotes: "그림책과 바닥 놀이, 오후 4시 짧은 휴식", pickupNotes: "보호자에게 간식량과 놀이 활동을 인계", birthOrDueDate: dateOffset(-34), approvedAssignmentId: null, approvedAt: dateOffset(-1), createdAt: dateOffset(-7) },
         { id: "request-sophia", serviceType: "BABYSITTING", clientId: "client-sophia", userId: "user-client-sophia", status: "APPROVED", weeks: 3, depositAmount: BABYSITTING_DEPOSIT, depositStatus: "PAID", depositPaidAt: dateOffset(-25), desiredStartDate: dateOffset(-10, 9), dailyStart: "09:00", dailyEnd: "17:00", daysOfWeek: ["월", "수", "금"], address: "Sandy Springs, Georgia", extraHouseholdMembers: 2, allergies: "견과류", specialNotes: "식사 준비 시 견과류 알러지를 확인해 주세요.", mealInstructions: "견과류 제외 · 점심 12시", routineNotes: "오후 그림책 놀이", pickupNotes: "보호자에게 활동 내용 인계", birthOrDueDate: dateOffset(-18), approvedAssignmentId: "assignment-ava", createdAt: dateOffset(-24) },
       ],
+      depositTransactions: [],
+      balanceTransactions: [],
+      refundTransactions: [],
       serviceAdjustments: [],
       reports: [],
       careSessions: [],
@@ -402,6 +410,7 @@ import {
         adminSelectedAssignmentId: preferences.adminSelectedAssignmentId || null,
         adminSelectedClientId: preferences.adminSelectedClientId || null,
         financeFilters: { ...seed.financeFilters, ...(preferences.financeFilters || {}) },
+        serviceHistoryFilters: { ...seed.serviceHistoryFilters, ...(preferences.serviceHistoryFilters || {}) },
         views: { ...seed.views, ...(preferences.views || {}) },
         auth: { ...seed.auth, currentUserId: null, screen: preferences.screen || "public" },
       };
@@ -435,6 +444,7 @@ import {
             },
             peopleDirectory: { ...seed.peopleDirectory, ...(saved.peopleDirectory || {}) },
             financeFilters: { ...seed.financeFilters, ...(saved.financeFilters || {}) },
+            serviceHistoryFilters: { ...seed.serviceHistoryFilters, ...(saved.serviceHistoryFilters || {}) },
             chartRangeByRole: { ...seed.chartRangeByRole, ...(saved.chartRangeByRole || {}) },
             shiftChecklists: { ...seed.shiftChecklists, ...(saved.shiftChecklists || {}) },
             serviceCatalog: { ...seed.serviceCatalog, ...(saved.serviceCatalog || {}) },
@@ -476,6 +486,7 @@ import {
           serviceTabs: seed.serviceTabs,
           peopleDirectory: { ...seed.peopleDirectory, ...(saved.peopleDirectory || {}) },
           financeFilters: { ...seed.financeFilters, ...(saved.financeFilters || {}) },
+          serviceHistoryFilters: { ...seed.serviceHistoryFilters, ...(saved.serviceHistoryFilters || {}) },
           chartRangeByRole: { ...seed.chartRangeByRole, ...(saved.chartRangeByRole || {}) },
           retail: upgradedRetail,
         };
@@ -521,6 +532,7 @@ import {
         adminSelectedAssignmentId: state.adminSelectedAssignmentId || null,
         adminSelectedClientId: state.adminSelectedClientId || null,
         financeFilters: state.financeFilters,
+        serviceHistoryFilters: state.serviceHistoryFilters,
         screen: state.auth.screen,
         views: state.views,
       }));
@@ -582,6 +594,12 @@ import {
     if (message.includes("no outstanding balance")) return "이 신청은 미수 잔금이 없습니다.";
     if (message.includes("payment reference has already been recorded")) return "이미 사용된 거래·영수증 번호입니다. 실제 결제 내역의 다른 고유 번호를 입력해 주세요.";
     if (message.includes("payment date cannot be in the future")) return "실제 수납일은 오늘 또는 지난 날짜로 입력해 주세요.";
+    if (message.includes("refund amount exceeds")) return "환불액이 이 서비스의 실제 환불 가능 수납액보다 큽니다.";
+    if (message.includes("no refundable collected amount")) return "이 서비스에는 추가로 환불할 수 있는 수납액이 없습니다.";
+    if (message.includes("refund date cannot be in the future")) return "환불 처리일은 오늘 또는 지난 날짜로 입력해 주세요.";
+    if (message.includes("refund reference has already been recorded")) return "이미 사용된 환불 참조번호입니다. 실제 환불 거래의 다른 고유 번호를 입력해 주세요.";
+    if (message.includes("in-progress care session")) return "진행 중인 케어 세션을 먼저 종료하거나 취소한 뒤 서비스를 삭제해 주세요.";
+    if (message.includes("detailed service removal reason")) return "서비스 삭제 사유를 5자 이상 구체적으로 입력해 주세요.";
     if (message.includes("assigned service days")) return "선택한 날짜는 해당 배정의 서비스 요일이 아닙니다.";
     if (message.includes("retrospective report cannot be entered for a future date") || message.includes("retrospective report cannot end in the future")) return "지난 근무 리포트에는 완료된 오늘 또는 과거 근무만 입력할 수 있습니다.";
     if (message.includes("published care report is immutable")) return "이미 고객에게 발행된 보관 리포트는 변경할 수 없습니다. 관리자에게 정정 절차를 요청해 주세요.";
@@ -1671,6 +1689,33 @@ import {
     return (request?.balanceTransactions || []).reduce((sum, transaction) => sum + transactionNetAmount(transaction), 0);
   }
 
+  function requestServiceRefundTotal(request) {
+    return (request?.refundTransactions || []).reduce((sum, transaction) => {
+      if (transaction?.status !== "COMPLETED") return sum;
+      return sum + Number(transaction.amount || 0);
+    }, 0);
+  }
+
+  function requestLegacyRefundTotal(request) {
+    const depositRefund = Number(request?.depositTransaction?.refundedAmount ?? request?.depositTransaction?.refunded_amount ?? 0);
+    const balanceRefunds = (request?.balanceTransactions || []).reduce((sum, transaction) => (
+      sum + Number(transaction?.refundedAmount ?? transaction?.refunded_amount ?? 0)
+    ), 0);
+    return depositRefund + balanceRefunds;
+  }
+
+  function requestRefundTotal(request) {
+    return requestLegacyRefundTotal(request) + requestServiceRefundTotal(request);
+  }
+
+  function requestRefundableCollectedAmount(request) {
+    return Math.max(0, requestDepositNet(request) + requestBalanceNet(request) - requestServiceRefundTotal(request));
+  }
+
+  function requestNetCollectedAmount(request) {
+    return requestDepositNet(request) + requestBalanceNet(request) - requestServiceRefundTotal(request);
+  }
+
   function requestOutstandingBalance(request) {
     if (request?.status !== "APPROVED") return 0;
     return Math.max(0, requestServiceTotal(request) - requestDepositNet(request) - requestBalanceNet(request));
@@ -1835,11 +1880,14 @@ import {
     const balances = state.balanceTransactions?.length
       ? state.balanceTransactions
       : state.serviceRequests.flatMap((request) => request.balanceTransactions || []);
-    return { deposits, balances };
+    const refunds = state.refundTransactions?.length
+      ? state.refundTransactions
+      : state.serviceRequests.flatMap((request) => request.refundTransactions || []);
+    return { deposits, balances, refunds };
   }
 
   function financeRevenueEvents() {
-    const { deposits, balances } = financeTransactions();
+    const { deposits, balances, refunds } = financeTransactions();
     const toEvents = (transactions, category) => transactions.flatMap((transaction) => {
       const events = [];
       const amount = Number(transaction.amount || 0);
@@ -1854,7 +1902,16 @@ import {
       }
       return events;
     });
-    return [...toEvents(deposits, "DEPOSIT"), ...toEvents(balances, "BALANCE")]
+    const explicitRefundEvents = refunds
+      .filter((transaction) => transaction.status === "COMPLETED" && Number(transaction.amount || 0) > 0)
+      .map((transaction) => ({
+        requestId: transaction.requestId || transaction.client_service_request_id,
+        category: "REFUND",
+        kind: "REFUND",
+        amount: -Number(transaction.amount || 0),
+        at: transaction.refundedAt || transaction.refunded_at,
+      }));
+    return [...toEvents(deposits, "DEPOSIT"), ...toEvents(balances, "BALANCE"), ...explicitRefundEvents]
       .filter((event) => Number.isFinite(new Date(event.at).getTime()))
       .sort((a, b) => new Date(b.at) - new Date(a.at));
   }
@@ -1924,6 +1981,24 @@ import {
     return `<article class="finance-collection-item ${clientLinkIssue ? "has-lifecycle-issue" : ""}"><div class="finance-collection-identity"><div>${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${formatDate(request.desiredStartDate)} 시작 · ${request.weeks}주</span></div><div class="finance-collection-amounts"><div><span>총 예정금액</span><strong>${money(total)}</strong></div><div><span>예약금 수납</span><strong>${money(deposit)}</strong></div><div><span>본 금액 수납</span><strong>${money(balancePaid)}</strong></div><div class="outstanding"><span>현재 미수금</span><strong>${money(outstanding)}</strong></div></div><div class="finance-collection-progress" aria-label="총 예정금액 중 ${Math.round(progress)}% 수납"><span style="width:${progress.toFixed(2)}%"></span></div><div class="finance-collection-footer"><small>${escapeHtml(clientLinkIssue || nextStep)}</small>${actionMarkup}</div></article>`;
   }
 
+  function financeRefundQueueItemMarkup(request) {
+    const client = clientById(request.clientId);
+    const deposit = requestDepositNet(request);
+    const balancePaid = requestBalanceNet(request);
+    const refunded = requestRefundTotal(request);
+    const refundable = requestRefundableCollectedAmount(request);
+    const removed = Boolean(request.administrativelyRemovedAt);
+    return `<article class="finance-collection-item finance-refund-item"><div class="finance-collection-identity"><div>${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${formatDate(request.desiredStartDate)} 시작 · ${removed ? "삭제된 서비스" : serviceRequestStatusLabel(request)}</span></div><div class="finance-collection-amounts"><div><span>예약금 수납</span><strong>${money(deposit)}</strong></div><div><span>본 금액 수납</span><strong>${money(balancePaid)}</strong></div><div><span>누적 환불</span><strong>${money(refunded)}</strong></div><div class="refundable"><span>추가 환불 가능</span><strong>${money(refundable)}</strong></div></div><div class="finance-collection-footer"><small>실제 환불 완료 후 환불액·처리일·참조번호·사유를 기록하세요.</small><button type="button" class="secondary-button" data-record-service-refund="${request.id}">환불 입력</button></div></article>`;
+  }
+
+  function financeRefundQueueMarkup() {
+    const requests = state.serviceRequests
+      .filter((request) => requestRefundableCollectedAmount(request) > 0)
+      .sort((first, second) => new Date(second.createdAt || 0) - new Date(first.createdAt || 0));
+    const refundableTotal = requests.reduce((sum, request) => sum + requestRefundableCollectedAmount(request), 0);
+    return `<article class="card card-pad finance-refund-card"><div class="section-header"><div><p class="eyebrow">REFUND CONTROL</p><h3>서비스별 환불 처리</h3><p>관리자만 실제 환불 완료 내역을 입력할 수 있으며, 처리일 기준 수납·수익 집계에서 자동 차감됩니다.</p></div><span class="status-chip coral">${requests.length}건 · ${money(refundableTotal)} 환불 가능</span></div><div class="finance-collection-list">${requests.length ? requests.map(financeRefundQueueItemMarkup).join("") : `<div class="empty-state"><strong>환불 가능한 수납액이 없습니다.</strong><span>실제 수납이 등록된 서비스가 여기에 표시됩니다.</span></div>`}</div></article>`;
+  }
+
   function adminFinance() {
     const events = financeRevenueEvents();
     const now = new Date();
@@ -1957,6 +2032,81 @@ import {
     }).join("");
     const applications = [...state.serviceRequests].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     return `<section class="page admin-finance-page">${demoBanner()}${pageHeading("SERVICE FINANCE", "수납·수익 관리", "신청별 예약금과 본 금액을 실제 거래 기준으로 관리하고 수납일 기준 실수납 순액을 확인합니다.")}<form class="card finance-filter-bar" data-finance-filter><div><label for="finance-period">조회 단위</label><select id="finance-period" name="period"><option value="MONTH" ${filters.period === "MONTH" ? "selected" : ""}>월별</option><option value="YEAR" ${filters.period === "YEAR" ? "selected" : ""}>연도별</option><option value="ALL" ${filters.period === "ALL" ? "selected" : ""}>전체 기간</option></select></div><div><label for="finance-year">연도</label><select id="finance-year" name="year" ${filters.period === "ALL" ? "disabled" : ""}>${years.map((year) => `<option value="${year}" ${String(year) === filters.year ? "selected" : ""}>${year}년</option>`).join("")}</select></div><div><label for="finance-month">월</label><select id="finance-month" name="month" ${filters.period !== "MONTH" ? "disabled" : ""}>${Array.from({ length: 12 }, (_, index) => `<option value="${index + 1}" ${Number(filters.month) === index + 1 ? "selected" : ""}>${index + 1}월</option>`).join("")}</select></div><button type="submit" class="primary-button">조회</button><span>${periodLabel} · 실제 수납/환불 발생일 기준</span></form><div class="grid stats finance-stats">${statCard("Net collected", money(netRevenue), `${periodLabel} 실수납 순액`, "$ ")}${statCard("Deposits", money(depositReceipts), "예약금 수납", "◈")}${statCard("Service payments", money(balanceReceipts), "본 금액 수납", "✓")}${statCard("Outstanding", money(outstanding), `전체 승인 건 미수 · 환불 ${money(refunds)}`, "!")}</div><div class="finance-reconciliation-note"><div><strong>미수금 ${money(outstanding)}은 아직 수익에 포함되지 않습니다.</strong><span>실제로 받은 금액을 아래에서 확인·저장하면 선택한 실제 수납일의 월별·연도별 실수납 순액에 자동 반영됩니다.</span></div><span>실수납 순액 = 예약금 + 본 금액 − 환불액</span></div><article class="card card-pad finance-collection-card"><div class="section-header"><div><p class="eyebrow">OUTSTANDING COLLECTION</p><h3>미수금 수납 처리</h3><p>예약금과 그 외 본 금액을 단계별로 확인합니다. 본 금액은 전액 또는 분할 수납할 수 있습니다.</p></div><span class="status-chip gold">${collectionQueue.length}건 · ${money(outstanding)}</span></div><div class="finance-collection-list">${collectionQueue.length ? collectionQueue.map(financeCollectionQueueItemMarkup).join("") : `<div class="empty-state"><strong>현재 미수금이 없습니다.</strong><span>모든 승인 건의 수납 확인이 완료되었습니다.</span></div>`}</div></article><div class="grid two finance-summary-grid"><article class="card card-pad"><div class="section-header"><div><p class="eyebrow">MONTHLY COLLECTION</p><h3>${filters.year}년 월별 실수납 순액</h3><p>실제 수납액에서 같은 달의 환불액을 차감합니다.</p></div></div><div class="revenue-summary-list">${monthlyRows}</div></article><article class="card card-pad"><div class="section-header"><div><p class="eyebrow">YEARLY COLLECTION</p><h3>연도별 실수납 순액</h3><p>저장된 실제 거래 전체를 연도 단위로 합산합니다.</p></div></div><div class="revenue-summary-list">${yearlyRows || `<div class="empty-state"><strong>수납 거래가 없습니다.</strong></div>`}</div></article></div><article class="card card-pad finance-ledger-card"><div class="section-header"><div><p class="eyebrow">APPLICATION & PAYMENT LEDGER</p><h3>신청·예약금·본 금액 원장</h3><p>모든 서비스 신청과 실제 수납 내역을 최신순으로 표시합니다. 예약금 수납 후 본 금액을 기록할 수 있습니다.</p></div><span class="status-chip">${applications.length}건</span></div><div class="finance-ledger-scroll"><div class="finance-ledger-head"><span>신청</span><span>상태</span><span>총 예정금액</span><span>예약금</span><span>본 금액</span><span>관리</span></div><div class="finance-ledger-list">${applications.length ? applications.map(financeApplicationRowMarkup).join("") : `<div class="empty-state"><strong>서비스 신청 내역이 없습니다.</strong></div>`}</div></div></article></section>`;
+  }
+
+  function serviceHistoryAssignment(request) {
+    return state.assignments.find((assignment) => assignment.id === request.approvedAssignmentId)
+      || state.assignments.find((assignment) => assignment.serviceRequestId === request.id)
+      || null;
+  }
+
+  function serviceHistoryLifecycle(request) {
+    if (request.administrativelyRemovedAt) return { code: "REMOVED", label: "관리자 삭제", tone: "coral" };
+    const assignment = serviceHistoryAssignment(request);
+    const assignmentStatus = assignment?.databaseStatus || assignment?.status;
+    if (assignmentStatus === "COMPLETED") return { code: "COMPLETED", label: "서비스 완료", tone: "" };
+    if (assignmentStatus === "CANCELLED" || request.status === "CANCELLED") return { code: "CANCELLED", label: "서비스 취소", tone: "coral" };
+    if (assignment && new Date(assignment.endAt) < new Date()) return { code: "COMPLETED", label: "기간 종료", tone: "" };
+    if (assignment && new Date(assignment.startAt) <= new Date()) return { code: "ACTIVE", label: "서비스 진행", tone: "gold" };
+    if (request.status === "APPROVED") return { code: "APPROVED", label: assignment ? "서비스 예정" : "배정 대기", tone: "gold" };
+    if (request.status === "PENDING") return { code: "PENDING", label: "승인 대기", tone: "gold" };
+    if (request.status === "REJECTED") return { code: "REJECTED", label: "신청 반려", tone: "coral" };
+    return { code: request.status || "UNKNOWN", label: serviceRequestStatusLabel(request), tone: "" };
+  }
+
+  function serviceHistoryPeriod(request, assignment = serviceHistoryAssignment(request)) {
+    const start = assignment?.startAt || request.desiredStartDate;
+    const end = assignment?.endAt || request.desiredEndDate;
+    return `${start ? formatDate(start) : "미정"}${end ? ` – ${formatDate(end)}` : ""}`;
+  }
+
+  function serviceHistoryRowMarkup(request) {
+    const client = clientById(request.clientId);
+    const requester = state.users.find((user) => user.id === request.userId);
+    const assignment = serviceHistoryAssignment(request);
+    const caregiver = state.users.find((user) => user.id === assignment?.caregiverUserId);
+    const lifecycle = serviceHistoryLifecycle(request);
+    const total = requestServiceTotal(request);
+    const refunded = requestRefundTotal(request);
+    const outstanding = requestOutstandingBalance(request);
+    return `<div class="service-history-row ${lifecycle.code === "REMOVED" ? "removed" : ""}"><div class="service-history-person"><strong>${escapeHtml(client?.motherName || requester?.fullName || "고객 연결 확인 필요")}</strong><span>${escapeHtml(babyNameFor(request, client) || "아이 정보 미등록")}</span></div><div>${serviceBadgeMarkup(request.serviceType)}<small>${request.requestKind === "EXTENSION" ? "기간 연장" : "일반 신청"}</small></div><div><strong>${serviceHistoryPeriod(request, assignment)}</strong><span>${escapeHtml(assignment ? `${assignment.dailyStart}–${assignment.dailyEnd}` : `${request.dailyStart || "--:--"}–${request.dailyEnd || "--:--"}`)}</span></div><div><span class="status-chip ${lifecycle.tone}">${lifecycle.label}</span><small>${escapeHtml(caregiver?.fullName ? `${caregiver.fullName} 관리사` : assignment ? "관리사 연결 확인" : "미배정")}</small></div><div><strong>${money(requestNetCollectedAmount(request))} 순수납</strong><span>예정 ${money(total)} · 환불 ${money(refunded)}</span><small>${outstanding > 0 ? `미수 ${money(outstanding)}` : ""}</small></div><div class="service-history-actions"><button type="button" class="secondary-button mini-button" data-view-service-history="${request.id}">상세</button>${!request.administrativelyRemovedAt ? `<button type="button" class="danger-button mini-button" data-archive-service-request="${request.id}">서비스 삭제</button>` : ""}</div></div>`;
+  }
+
+  function adminServiceHistory() {
+    const filters = {
+      query: String(state.serviceHistoryFilters?.query || "").trim(),
+      serviceType: ["ALL", "POSTPARTUM", "BABYSITTING"].includes(state.serviceHistoryFilters?.serviceType) ? state.serviceHistoryFilters.serviceType : "ALL",
+      status: ["ALL", "PENDING", "APPROVED", "ACTIVE", "COMPLETED", "CANCELLED", "REJECTED", "REMOVED"].includes(state.serviceHistoryFilters?.status) ? state.serviceHistoryFilters.status : "ALL",
+      sort: ["newest", "oldest", "service-newest", "service-oldest"].includes(state.serviceHistoryFilters?.sort) ? state.serviceHistoryFilters.sort : "newest",
+    };
+    const normalizedQuery = normalizeDirectorySearch(filters.query);
+    const rows = state.serviceRequests
+      .filter((request) => {
+        if (filters.serviceType !== "ALL" && assignmentServiceType(request) !== filters.serviceType) return false;
+        if (filters.status !== "ALL" && serviceHistoryLifecycle(request).code !== filters.status) return false;
+        if (!normalizedQuery) return true;
+        const client = clientById(request.clientId);
+        const requester = state.users.find((user) => user.id === request.userId);
+        return normalizeDirectorySearch([
+          client?.motherName,
+          babyNameFor(request, client),
+          requester?.fullName,
+          requester?.email,
+          request.id,
+        ].join(" ")).includes(normalizedQuery);
+      })
+      .sort((first, second) => {
+        const firstDate = filters.sort.startsWith("service-") ? serviceHistoryAssignment(first)?.startAt || first.desiredStartDate : first.createdAt;
+        const secondDate = filters.sort.startsWith("service-") ? serviceHistoryAssignment(second)?.startAt || second.desiredStartDate : second.createdAt;
+        const direction = ["oldest", "service-oldest"].includes(filters.sort) ? 1 : -1;
+        return direction * (new Date(firstDate || 0) - new Date(secondDate || 0));
+      });
+    const counts = state.serviceRequests.reduce((result, request) => {
+      const code = serviceHistoryLifecycle(request).code;
+      result[code] = (result[code] || 0) + 1;
+      return result;
+    }, {});
+    return `<section class="page service-history-page">${demoBanner()}${pageHeading("SERVICE HISTORY", "서비스 히스토리 관리", "발생한 모든 서비스의 신청·배정·수납·환불 상태를 한 줄 원장으로 확인합니다.")}<div class="grid stats">${statCard("All services", state.serviceRequests.length, "전체 발생 서비스", "≡")}${statCard("In operation", Number(counts.ACTIVE || 0) + Number(counts.APPROVED || 0), "진행·예정·배정 대기", "◷")}${statCard("Completed", Number(counts.COMPLETED || 0), "완료·기간 종료", "✓")}${statCard("Archived", Number(counts.REMOVED || 0), "관리자 삭제·감사 보관", "×")}</div><form class="card service-history-filter" data-service-history-filter><div class="field"><label for="history-query">고객명·아이명·이메일</label><input id="history-query" name="query" value="${escapeHtml(filters.query)}" placeholder="예: Sarah Kim" autocomplete="off"/></div><div class="field"><label for="history-service-type">서비스</label><select id="history-service-type" name="serviceType"><option value="ALL" ${filters.serviceType === "ALL" ? "selected" : ""}>전체 서비스</option><option value="POSTPARTUM" ${filters.serviceType === "POSTPARTUM" ? "selected" : ""}>산후조리</option><option value="BABYSITTING" ${filters.serviceType === "BABYSITTING" ? "selected" : ""}>베이비시팅</option></select></div><div class="field"><label for="history-status">상태</label><select id="history-status" name="status"><option value="ALL" ${filters.status === "ALL" ? "selected" : ""}>전체 상태</option><option value="PENDING" ${filters.status === "PENDING" ? "selected" : ""}>승인 대기</option><option value="APPROVED" ${filters.status === "APPROVED" ? "selected" : ""}>예정·배정 대기</option><option value="ACTIVE" ${filters.status === "ACTIVE" ? "selected" : ""}>진행</option><option value="COMPLETED" ${filters.status === "COMPLETED" ? "selected" : ""}>완료</option><option value="CANCELLED" ${filters.status === "CANCELLED" ? "selected" : ""}>취소</option><option value="REJECTED" ${filters.status === "REJECTED" ? "selected" : ""}>반려</option><option value="REMOVED" ${filters.status === "REMOVED" ? "selected" : ""}>관리자 삭제</option></select></div><div class="field"><label for="history-sort">정렬</label><select id="history-sort" name="sort"><option value="newest" ${filters.sort === "newest" ? "selected" : ""}>최근 신청순</option><option value="oldest" ${filters.sort === "oldest" ? "selected" : ""}>오래된 신청순</option><option value="service-newest" ${filters.sort === "service-newest" ? "selected" : ""}>최근 서비스일순</option><option value="service-oldest" ${filters.sort === "service-oldest" ? "selected" : ""}>오래된 서비스일순</option></select></div><div class="service-history-filter-actions"><button type="submit" class="primary-button">조회</button><button type="button" class="secondary-button" data-clear-service-history>초기화</button></div></form><article class="card card-pad service-history-ledger"><div class="section-header"><div><p class="eyebrow">AUDITABLE SERVICE LEDGER</p><h3>서비스 원장</h3><p>삭제는 운영 화면에서만 숨기는 안전 삭제입니다. 당시 서비스·수납·케어·감사 기록은 보존됩니다.</p></div><span class="status-chip">${rows.length}건 표시</span></div><div class="service-history-scroll"><div class="service-history-head"><span>고객·아이</span><span>서비스</span><span>기간·시간</span><span>상태·관리사</span><span>수납·환불</span><span>관리</span></div><div class="service-history-list">${rows.length ? rows.map(serviceHistoryRowMarkup).join("") : `<div class="empty-state"><strong>조건에 맞는 서비스가 없습니다.</strong><span>검색어 또는 필터를 변경해 주세요.</span></div>`}</div></div></article></section>`;
   }
 
   function adminPeople() {
@@ -3273,7 +3423,7 @@ import {
       return `<section class="page">${pageHeading("RETAIL", "리테일 백엔드 연결 준비 중", "결제·주문·재고 데이터가 운영 시스템과 안전하게 연결된 후 제공됩니다.")}<article class="card card-pad"><div class="empty-state"><span>◇</span><strong>주문·결제·재고 백엔드 연결 준비 중입니다.</strong><p>연결이 완료될 때까지 조회와 변경 기능은 비활성화됩니다.</p></div></article></section>`;
     }
     const operationalPages = {
-      admin: { overview: adminOverview, schedule: adminSchedule, requests: adminRequests, finance: adminFinance, people: adminPeople, reports: adminReports },
+      admin: { overview: adminOverview, schedule: adminSchedule, requests: adminRequests, finance: adminFinance, history: adminServiceHistory, people: adminPeople, reports: adminReports },
       caregiver: { caregiving: caregiverCaregivingHub, postpartum: () => caregiverServiceWorkspace("POSTPARTUM"), babysitting: () => caregiverServiceWorkspace("BABYSITTING"), profile: caregiverProfile },
       client: { services: clientServicesHub, postpartum: () => clientServiceWorkspace("POSTPARTUM"), babysitting: () => clientServiceWorkspace("BABYSITTING") },
       retail: {},
@@ -3319,6 +3469,9 @@ import {
       return;
     }
     app.innerHTML = shellMarkup(pageMarkup());
+    if (state.role === "admin" && currentView() === "finance" && canReviewServiceRequests()) {
+      document.querySelector(".finance-collection-card")?.insertAdjacentHTML("afterend", financeRefundQueueMarkup());
+    }
     bindShellEvents();
   }
 
@@ -3348,7 +3501,7 @@ import {
       });
     }
     if (state.role === "admin" && !canReviewServiceRequests()) {
-      document.querySelectorAll("[data-review-client-request], [data-record-deposit-refund]").forEach((control) => control.remove());
+      document.querySelectorAll("[data-review-client-request], [data-record-deposit-refund], [data-record-service-refund], [data-archive-service-request]").forEach((control) => control.remove());
     }
     if (state.role === "admin" && currentView() === "requests") {
       const adjustments = state.serviceAdjustments.filter((item) => item.status === "PENDING");
@@ -3738,6 +3891,9 @@ import {
     document.querySelectorAll("[data-cancel-assignment]").forEach((button) => button.addEventListener("click", () => openDeleteAssignmentModal(button.dataset.cancelAssignment)));
     document.querySelectorAll("[data-review-client-request]").forEach((button) => button.addEventListener("click", () => openClientRequestModal(button.dataset.reviewClientRequest)));
     document.querySelectorAll("[data-record-deposit-refund]").forEach((button) => button.addEventListener("click", () => openDepositRefundModal(button.dataset.recordDepositRefund)));
+    document.querySelectorAll("[data-record-service-refund]").forEach((button) => button.addEventListener("click", () => openServiceRefundModal(button.dataset.recordServiceRefund)));
+    document.querySelectorAll("[data-view-service-history]").forEach((button) => button.addEventListener("click", () => openServiceHistoryDetailModal(button.dataset.viewServiceHistory)));
+    document.querySelectorAll("[data-archive-service-request]").forEach((button) => button.addEventListener("click", () => openArchiveServiceRequestModal(button.dataset.archiveServiceRequest)));
     document.querySelectorAll("[data-record-approved-deposit]").forEach((button) => button.addEventListener("click", () => openApprovedDepositEvidenceModal(button.dataset.recordApprovedDeposit)));
     document.querySelectorAll("[data-record-service-balance]").forEach((button) => button.addEventListener("click", () => openServiceBalancePaymentModal(button.dataset.recordServiceBalance)));
     document.querySelectorAll("[data-finance-filter]").forEach((form) => {
@@ -3765,6 +3921,23 @@ import {
         render();
       });
     });
+    document.querySelectorAll("[data-service-history-filter]").forEach((form) => form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(form).entries());
+      state.serviceHistoryFilters = {
+        query: String(values.query || "").trim(),
+        serviceType: values.serviceType || "ALL",
+        status: values.status || "ALL",
+        sort: values.sort || "newest",
+      };
+      saveState();
+      render();
+    }));
+    document.querySelectorAll("[data-clear-service-history]").forEach((button) => button.addEventListener("click", () => {
+      state.serviceHistoryFilters = { query: "", serviceType: "ALL", status: "ALL", sort: "newest" };
+      saveState();
+      render();
+    }));
     document.querySelectorAll("[data-approve-adjustment]").forEach((button) => button.addEventListener("click", () => reviewServiceAdjustment(button.dataset.approveAdjustment, "APPROVE")));
     document.querySelectorAll("[data-reject-adjustment]").forEach((button) => button.addEventListener("click", () => reviewServiceAdjustment(button.dataset.rejectAdjustment, "REJECT")));
     document.querySelectorAll("[data-manage-client]").forEach((button) => button.addEventListener("click", () => openClientManagementModal(button.dataset.manageClient)));
@@ -4877,44 +5050,131 @@ import {
   }
 
   function openDepositRefundModal(requestId) {
-    if (!canReviewServiceRequests()) return showToast("예약금 환불 기록은 소유자 또는 관리자만 처리할 수 있습니다.", "error");
-    const request = state.serviceRequests.find((item) => item.id === requestId && item.status === "CANCELLED" && item.depositStatus === "REFUND_DUE");
-    if (!request) return showToast("이미 처리되었거나 환불 대상이 아닌 신청입니다.", "info");
+    const request = state.serviceRequests.find((item) => item.id === requestId);
+    if (!request) return showToast("환불 대상 서비스를 찾을 수 없습니다.", "error");
+    const suggested = Math.min(
+      requestRefundableCollectedAmount(request),
+      Number(request.depositAmount || request.depositTransaction?.amount || 0),
+    );
+    openServiceRefundModal(requestId, suggested);
+  }
+
+  function openServiceRefundModal(requestId, suggestedAmount = null) {
+    if (!canReviewServiceRequests()) return showToast("서비스 환불 기록은 소유자 또는 관리자만 처리할 수 있습니다.", "error");
+    const request = state.serviceRequests.find((item) => item.id === requestId);
+    if (!request) return showToast("환불 대상 서비스를 찾을 수 없습니다.", "error");
     const client = clientById(request.clientId);
-    if (!client) return showToast("환불 대상 고객 정보를 찾을 수 없습니다.", "error");
-    const originalReference = request.depositTransaction?.external_reference || request.depositTransaction?.externalReference || "미등록";
-    const refundAmount = Number(request.depositAmount || request.depositTransaction?.amount || 0);
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal" role="dialog" aria-modal="true" aria-labelledby="deposit-refund-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<p class="eyebrow">DEPOSIT REFUND RECORD</p><h3 id="deposit-refund-title">예약금 환불 완료 기록</h3><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-deposit-refund-form><div class="request-review-grid"><div><span>환불 예정액</span><strong>${money(refundAmount)}</strong></div><div><span>원거래 참조번호</span><strong>${escapeHtml(originalReference)}</strong></div><div class="wide"><span>취소된 서비스</span><strong>${serviceMetaFor(request.serviceType).label} · ${formatDate(request.desiredStartDate)} 시작 예정</strong></div></div><div class="status-banner warning"><strong>환불 실행 화면이 아닙니다.</strong><span>결제사 또는 은행에서 실제 환불을 완료한 뒤 그 결과를 기록해 주세요.</span></div><div class="field"><label for="deposit-refund-reference">환불 참조번호</label><input id="deposit-refund-reference" name="refundReference" minlength="3" maxlength="255" autocomplete="off" placeholder="결제사·은행의 고유 환불 번호" required/><small>감사 추적과 중복 기록 방지를 위해 실제 환불 결과의 고유 번호를 입력합니다.</small></div><label class="consent-line"><input type="checkbox" name="refundConfirmed" required/><span>위 금액의 실제 환불이 완료되었음을 확인합니다.</span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">환불 완료 기록</button></div></form></section></div>`;
+    const refundable = requestRefundableCollectedAmount(request);
+    if (refundable <= 0) return showToast("이 서비스에는 추가로 환불할 수 있는 수납액이 없습니다.", "info");
+    const defaultAmount = Number(suggestedAmount) > 0 ? Math.min(Number(suggestedAmount), refundable) : refundable;
+    const today = new Date();
+    const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal service-refund-modal" role="dialog" aria-modal="true" aria-labelledby="service-refund-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<p class="eyebrow">SERVICE REFUND RECORD</p><h3 id="service-refund-title">서비스 환불 입력</h3><p>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-service-refund-form><div class="request-review-grid"><div><span>예약금 수납</span><strong>${money(requestDepositNet(request))}</strong></div><div><span>본 금액 수납</span><strong>${money(requestBalanceNet(request))}</strong></div><div><span>기존 누적 환불</span><strong>${money(requestRefundTotal(request))}</strong></div><div><span>추가 환불 가능</span><strong>${money(refundable)}</strong></div></div><div class="status-banner warning"><strong>실제 환불을 실행하는 화면이 아닙니다.</strong><span>결제사·은행에서 환불을 완료한 뒤 기록하세요. 저장한 환불액은 처리일 기준 월별·연도별 실수납 순액에서 자동 차감됩니다.</span></div><div class="form-grid two"><div class="field"><label for="service-refund-date">환불 처리일</label><input id="service-refund-date" name="refundedOn" type="date" value="${localToday}" max="${localToday}" required/></div><div class="field"><label for="service-refund-amount">환불액 (USD)</label><input id="service-refund-amount" name="amount" type="number" min="0.01" max="${refundable.toFixed(2)}" step="0.01" value="${defaultAmount.toFixed(2)}" inputmode="decimal" required/><small>최대 ${money(refundable)}</small></div><div class="field"><label for="service-refund-method">환불 수단</label><select id="service-refund-method" name="paymentMethod" required><option value="CARD">카드</option><option value="BANK_TRANSFER">은행 이체</option><option value="CHECK">수표</option><option value="CASH">현금</option><option value="OTHER">기타</option></select></div><div class="field"><label for="service-refund-reference">환불 참조번호</label><input id="service-refund-reference" name="refundReference" minlength="3" maxlength="255" autocomplete="off" placeholder="결제사·은행의 고유 번호" required/></div></div><div class="field"><label for="service-refund-reason">환불 사유</label><textarea id="service-refund-reason" name="refundReason" minlength="3" maxlength="1000" placeholder="환불 근거와 처리 내용을 기록해 주세요." required></textarea></div><label class="consent-line"><input type="checkbox" name="refundConfirmed" required/><span>위 금액이 실제로 환불되었으며 입력 내용이 정확함을 확인합니다.</span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">환불 기록 저장</button></div></form></section></div>`;
     bindModalFrame();
-    const form = modalRoot.querySelector("[data-deposit-refund-form]");
+    const form = modalRoot.querySelector("[data-service-refund-form]");
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const currentRequest = state.serviceRequests.find((item) => item.id === requestId && item.status === "CANCELLED" && item.depositStatus === "REFUND_DUE");
-      if (!currentRequest) return showToast("이미 처리되었거나 환불 대상 상태가 변경되었습니다.", "info");
+      const currentRequest = state.serviceRequests.find((item) => item.id === requestId);
+      const currentRefundable = currentRequest ? requestRefundableCollectedAmount(currentRequest) : 0;
       const values = Object.fromEntries(new FormData(form).entries());
+      const amount = Number(values.amount);
       const refundReference = String(values.refundReference || "").trim();
-      if (refundReference.length < 3) return showToast("3자 이상의 실제 환불 참조번호를 입력해 주세요.", "error");
+      const refundReason = String(values.refundReason || "").trim();
+      if (!currentRequest || currentRefundable <= 0) return showToast("환불 가능 상태가 변경되었습니다. 화면을 새로 확인해 주세요.", "info");
+      if (!Number.isFinite(amount) || amount <= 0 || amount > currentRefundable) return showToast(`환불액은 $0.01 이상 ${money(currentRefundable)} 이하여야 합니다.`, "error");
+      if (refundReference.length < 3 || refundReason.length < 3) return showToast("환불 참조번호와 환불 사유를 입력해 주세요.", "error");
       if (values.refundConfirmed !== "on") return showToast("실제 환불 완료 확인에 동의해 주세요.", "error");
       const submitButton = form.querySelector('button[type="submit"]');
       submitButton.disabled = true;
-      submitButton.textContent = "기록 중…";
+      submitButton.textContent = "저장 중…";
       try {
         if (usingCloudData()) {
-          await recordDepositRefundCloud({ requestId, refundReference });
+          await recordServiceRefundCloud({ requestId, amount, paymentMethod: values.paymentMethod, refundReference, refundReason, refundedOn: values.refundedOn });
           closeModal();
           await refreshCloudState();
         } else {
-          currentRequest.depositStatus = "REFUNDED";
-          currentRequest.depositTransaction = { ...(currentRequest.depositTransaction || {}), status: "REFUNDED", refundReference, refundedAmount: refundAmount, refundedAt: new Date().toISOString(), refundedBy: authUser().id };
+          const transaction = { id: `refund-${Date.now()}`, requestId, clientId: currentRequest.clientId, amount, status: "COMPLETED", paymentMethod: values.paymentMethod, refundReference, refundReason, refundedAt: `${values.refundedOn}T12:00:00`, recordedBy: authUser()?.id };
+          currentRequest.refundTransactions = [...(currentRequest.refundTransactions || []), transaction];
+          state.refundTransactions = [...(state.refundTransactions || []), transaction];
+          if (currentRequest.depositStatus === "REFUND_DUE" && requestServiceRefundTotal(currentRequest) >= Number(currentRequest.depositAmount || 0)) currentRequest.depositStatus = "REFUNDED";
           saveState();
           closeModal();
           render();
         }
-        showToast(`${client.motherName} 고객의 예약금 환불 완료 기록을 저장했습니다.`);
+        showToast(`${client?.motherName || "고객"} 서비스 환불 ${money(amount)} 기록을 저장했습니다.`);
       } catch (error) {
-        showToast(friendlyErrorMessage(error, "예약금 환불 완료 기록을 저장하지 못했습니다."), "error");
+        showToast(friendlyErrorMessage(error, "서비스 환불 기록을 저장하지 못했습니다."), "error");
         submitButton.disabled = false;
-        submitButton.textContent = "환불 완료 기록";
+        submitButton.textContent = "환불 기록 저장";
+      }
+    });
+  }
+
+  function openServiceHistoryDetailModal(requestId) {
+    const request = state.serviceRequests.find((item) => item.id === requestId);
+    if (!request) return showToast("서비스 히스토리를 찾을 수 없습니다.", "error");
+    const client = clientById(request.clientId);
+    const requester = state.users.find((user) => user.id === request.userId);
+    const assignment = serviceHistoryAssignment(request);
+    const caregiver = state.users.find((user) => user.id === assignment?.caregiverUserId);
+    const lifecycle = serviceHistoryLifecycle(request);
+    const refunds = [...(request.refundTransactions || [])].sort((first, second) => new Date(second.refundedAt || 0) - new Date(first.refundedAt || 0));
+    const refundable = requestRefundableCollectedAmount(request);
+    const removedBy = state.users.find((user) => user.id === request.administrativelyRemovedBy);
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal service-history-detail-modal" role="dialog" aria-modal="true" aria-labelledby="service-history-detail-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<p class="eyebrow">SERVICE HISTORY DETAIL</p><h3 id="service-history-detail-title">${escapeHtml(client?.motherName || requester?.fullName || "고객 연결 확인 필요")} 서비스 기록</h3><p>${escapeHtml(babyNameFor(request, client) || "아이 정보 미등록")} · 신청 ${request.createdAt ? formatDate(request.createdAt) : "일자 미등록"}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><div class="modal-form"><div class="request-review-grid"><div><span>현재 상태</span><strong class="status-chip ${lifecycle.tone}">${lifecycle.label}</strong></div><div><span>담당 관리사</span><strong>${escapeHtml(caregiver?.fullName || (assignment ? "관리사 연결 확인" : "미배정"))}</strong></div><div><span>서비스 기간</span><strong>${serviceHistoryPeriod(request, assignment)}</strong></div><div><span>서비스 시간</span><strong>${escapeHtml(assignment ? `${assignment.dailyStart}–${assignment.dailyEnd}` : `${request.dailyStart || "--:--"}–${request.dailyEnd || "--:--"}`)}</strong></div><div><span>총 예정금액</span><strong>${money(requestServiceTotal(request))}</strong></div><div><span>예약금 수납</span><strong>${money(requestDepositNet(request))}</strong></div><div><span>본 금액 수납</span><strong>${money(requestBalanceNet(request))}</strong></div><div><span>누적 환불</span><strong>${money(requestRefundTotal(request))}</strong></div><div class="wide"><span>주소</span><strong>${escapeHtml(request.address || client?.address || "미등록")}</strong></div><div class="wide"><span>당시 요청사항</span><strong>${escapeHtml(request.requestNote || request.specialNotes || request.maternalNotes || request.routineNotes || "별도 요청사항 없음")}</strong></div></div>${request.administrativelyRemovedAt ? `<div class="status-banner warning"><strong>관리자 안전 삭제됨</strong><span>${formatDate(request.administrativelyRemovedAt)} · ${escapeHtml(removedBy?.fullName || "관리자")} · ${escapeHtml(request.administrativeRemovalReason || "사유 미등록")}</span></div>` : ""}<section class="history-refund-log"><div class="section-header"><div><h4>환불 기록</h4><p>환불은 취소·삭제와 별개의 실제 자금 이동 기록입니다.</p></div><span class="status-chip">${refunds.length}건</span></div>${refunds.length ? refunds.map((refund) => `<div class="history-refund-row"><div><strong>${money(refund.amount)}</strong><span>${formatDate(refund.refundedAt)} · ${escapeHtml(refund.paymentMethod || "수단 미등록")}</span></div><div><strong>${escapeHtml(refund.refundReference || "참조 미등록")}</strong><span>${escapeHtml(refund.refundReason || "사유 미등록")}</span></div></div>`).join("") : `<div class="empty-state compact"><strong>기록된 환불이 없습니다.</strong></div>`}</section><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button>${refundable > 0 ? `<button type="button" class="secondary-button" data-detail-refund>환불 입력</button>` : ""}${!request.administrativelyRemovedAt ? `<button type="button" class="danger-button" data-detail-archive>서비스 삭제</button>` : ""}</div></div></section></div>`;
+    bindModalFrame();
+    modalRoot.querySelector("[data-detail-refund]")?.addEventListener("click", () => {
+      closeModal();
+      openServiceRefundModal(requestId);
+    });
+    modalRoot.querySelector("[data-detail-archive]")?.addEventListener("click", () => {
+      closeModal();
+      openArchiveServiceRequestModal(requestId);
+    });
+  }
+
+  function openArchiveServiceRequestModal(requestId) {
+    if (!canReviewServiceRequests()) return showToast("서비스 삭제는 소유자 또는 관리자만 처리할 수 있습니다.", "error");
+    const request = state.serviceRequests.find((item) => item.id === requestId);
+    if (!request || request.administrativelyRemovedAt) return showToast("이미 삭제되었거나 존재하지 않는 서비스입니다.", "info");
+    const client = clientById(request.clientId);
+    const lifecycle = serviceHistoryLifecycle(request);
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal destructive-modal" role="dialog" aria-modal="true" aria-labelledby="archive-service-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<p class="eyebrow">ADMINISTRATIVE SERVICE REMOVAL</p><h3 id="archive-service-title">서비스 안전 삭제</h3><p>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-archive-service-form><div class="status-banner warning"><strong>운영 목록에서 서비스를 종료·숨깁니다.</strong><span>신청 상태는 취소로 바뀌고 예정 일정은 종료됩니다. 수납·환불·케어·감사 기록은 법적·회계 추적을 위해 삭제하지 않습니다. 진행 중인 케어가 있다면 먼저 종료해야 합니다.</span></div><div class="request-review-grid"><div><span>현재 상태</span><strong>${lifecycle.label}</strong></div><div><span>서비스 기간</span><strong>${serviceHistoryPeriod(request)}</strong></div><div><span>실수납</span><strong>${money(requestNetCollectedAmount(request))}</strong></div><div><span>추가 환불 가능</span><strong>${money(requestRefundableCollectedAmount(request))}</strong></div></div><div class="field"><label for="archive-service-reason">삭제 사유</label><textarea id="archive-service-reason" name="reason" minlength="5" maxlength="1000" placeholder="운영 원장에서 삭제해야 하는 구체적인 사유를 입력해 주세요." required></textarea><small>관리자와 처리 시각이 감사 로그에 함께 보존됩니다.</small></div><label class="consent-line"><input type="checkbox" name="confirmed" required/><span>수납·케어 기록은 보존되며 서비스 운영 상태만 종료된다는 점을 확인합니다.</span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="danger-button">서비스 삭제</button></div></form></section></div>`;
+    bindModalFrame();
+    const form = modalRoot.querySelector("[data-archive-service-form]");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(form).entries());
+      const reason = String(values.reason || "").trim();
+      if (reason.length < 5) return showToast("서비스 삭제 사유를 5자 이상 입력해 주세요.", "error");
+      if (values.confirmed !== "on") return showToast("안전 삭제 처리 내용을 확인해 주세요.", "error");
+      const submitButton = form.querySelector('button[type="submit"]');
+      submitButton.disabled = true;
+      submitButton.textContent = "처리 중…";
+      try {
+        if (usingCloudData()) {
+          await archiveServiceRequestCloud(requestId, reason);
+          closeModal();
+          await refreshCloudState();
+        } else {
+          request.status = "CANCELLED";
+          request.administrativelyRemovedAt = new Date().toISOString();
+          request.administrativelyRemovedBy = authUser()?.id;
+          request.administrativeRemovalReason = reason;
+          const assignment = serviceHistoryAssignment(request);
+          if (assignment && assignment.databaseStatus !== "COMPLETED") {
+            assignment.status = "CANCELLED";
+            assignment.databaseStatus = "CANCELLED";
+          }
+          saveState();
+          closeModal();
+          render();
+        }
+        showToast(`${client?.motherName || "고객"} 서비스가 운영 목록에서 안전 삭제되었습니다.`);
+      } catch (error) {
+        showToast(friendlyErrorMessage(error, "서비스를 삭제하지 못했습니다."), "error");
+        submitButton.disabled = false;
+        submitButton.textContent = "서비스 삭제";
       }
     });
   }
