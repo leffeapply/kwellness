@@ -19,7 +19,7 @@ const postpartumAssignment = {
 };
 const postpartumEvents = [
   { assignmentId: "postpartum", type: "feeding", at: "2020-09-01T14:00:00Z", data: { method: "pumped", amount: 80 } },
-  { assignmentId: "postpartum", type: "feeding", at: "2020-09-01T15:00:00Z", data: { method: "breast", amount: 0 } },
+  { assignmentId: "postpartum", type: "feeding", at: "2020-09-01T15:00:00Z", data: { method: "breast", duration: 15, side: "both" } },
   { assignmentId: "postpartum", type: "temperature", at: "2020-09-01T16:00:00Z", data: { value: 36.8 } },
   { assignmentId: "postpartum", type: "weight", at: "2020-09-01T17:00:00Z", data: { value: 4.1 } },
   { assignmentId: "postpartum", type: "weight", at: "2020-09-01T18:00:00Z", data: { value: 4.2 } },
@@ -67,15 +67,17 @@ assert.equal(postpartum.totals.careMinutes, 480);
 assert.equal(postpartum.events.length, 6);
 assert.equal(postpartum.totals.feedingMl, 80);
 assert.equal(postpartum.totals.feedingMeasuredCount, 1);
-assert.equal(postpartum.totals.feedingUnmeasuredCount, 1);
+assert.equal(postpartum.totals.breastfeedingDurationCount, 1);
+assert.equal(postpartum.totals.breastfeedingMinutes, 15);
+assert.equal(postpartum.totals.feedingUnmeasuredCount, 0);
 assert.equal(postpartum.totals.temperatureAverage, 36.8);
 assert.equal(postpartum.totals.weightDelta, 0.1);
-assert.match(postpartum.facts.join(" "), /수유량이 없는 1건은 합계에 넣지 않았습니다/);
+assert.match(postpartum.facts.join(" "), /직접 모유수유 1건의 합계 15분/);
 assert.match(postpartum.facts.join(" "), /서비스일 6일 중 2일/);
 assert.match(postpartum.facts.join(" "), /예정 서비스일은 3일이며, 해당 날짜는 관리사 기록 0건/);
 assert.doesNotMatch(postpartum.facts.join(" "), /정상|위험|호전|악화|건강/);
 assert.equal(objectiveEventValue(postpartumEvents[2]), "36.8℃");
-assert.equal(objectiveEventValue(postpartumEvents[1]), "직접 수유 · 양 미입력");
+assert.equal(objectiveEventValue(postpartumEvents[1]), "직접 모유수유 · 15분");
 
 const babysittingAssignment = { id: "babysitting", serviceType: "BABYSITTING" };
 const babysittingEvents = [

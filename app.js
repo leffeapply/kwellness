@@ -154,6 +154,30 @@ import {
     sitter_note: { label: "이벤트 메모", icon: "☆", subtitle: "Activity note" },
   };
 
+  const POSTPARTUM_QUICK_ACTIONS = Object.freeze([
+    { type: "feeding", preset: "breast", label: "직접 모유수유", icon: "🤱", tone: "sky" },
+    { type: "feeding", preset: "pumped", label: "유축 모유", icon: "🫙", tone: "lilac" },
+    { type: "feeding", preset: "formula", label: "분유", icon: "🍼", tone: "rose" },
+    { type: "diaper", label: "기저귀", icon: "🚼", tone: "sand" },
+    { type: "sleep", label: "수면", icon: "🌙", tone: "mint" },
+    { type: "temperature", label: "체온", icon: "🌡️", tone: "coral" },
+    { type: "bath", label: "목욕", icon: "🫧", tone: "sky" },
+    { type: "weight", label: "체중", icon: "⚖️", tone: "sand" },
+    { type: "mother", label: "산모 케어", icon: "🌿", tone: "mint" },
+    { type: "note", label: "메모", icon: "✎", tone: "lilac" },
+  ]);
+
+  const BABYSITTING_QUICK_ACTIONS = Object.freeze([
+    { type: "meal", label: "식사·간식", icon: "🥣", tone: "sand" },
+    { type: "sitter_note", preset: "놀이", label: "놀이", icon: "🧸", tone: "sky" },
+    { type: "sitter_note", preset: "산책", label: "산책", icon: "🚶", tone: "mint" },
+    { type: "sitter_note", preset: "낮잠", label: "낮잠", icon: "😴", tone: "lilac" },
+    { type: "sitter_note", preset: "배변", label: "배변", icon: "🚼", tone: "sand" },
+    { type: "sitter_note", preset: "등원·하원", label: "등원·하원", icon: "🎒", tone: "rose" },
+    { type: "sitter_note", preset: "안전 확인", label: "안전 확인", icon: "✓", tone: "mint" },
+    { type: "sitter_note", preset: "기타", label: "기타", icon: "✎", tone: "coral" },
+  ]);
+
   const DATABASE_EVENT_TO_APP = Object.freeze({
     FEEDING: "feeding",
     DIAPER: "diaper",
@@ -2442,6 +2466,32 @@ import {
     return `<article class="card card-pad shift-checklist-card" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">PRE-SHIFT CHECK</p><h3>근무 전 안전 체크</h3><p>현재 기기의 현지 날짜(${escapeHtml(formatDate(localDateKey(new Date())))}) 기준으로 저장됩니다.</p></div><span class="status-chip ${completed === items.length ? "" : "gold"}">${completed}/${items.length} 완료</span></div><div class="shift-check-list">${items.map(([id, title, detail]) => `<label><input type="checkbox" data-shift-check="${assignment.id}" data-check-id="${id}" ${saved[id] ? "checked" : ""}/><span>✓</span><div><strong>${title}</strong><small>${detail}</small></div></label>`).join("")}</div></article>`;
   }
 
+  function quickActionEvents(action, events) {
+    return events.filter((event) => event.type === action.type
+      && (!action.preset
+        || (action.type === "feeding" ? event.data?.method === action.preset : event.data?.category === action.preset)));
+  }
+
+  function quickActionMetric(action, events) {
+    const matching = quickActionEvents(action, events);
+    if (action.type === "feeding" && action.preset === "breast") {
+      const minutes = matching.reduce((sum, event) => sum + (Number(event.data?.duration) || 0), 0);
+      return minutes ? `${matching.length}회 · ${minutes}분` : `${matching.length}회`;
+    }
+    if (action.type === "feeding" && ["pumped", "formula"].includes(action.preset)) {
+      const milliliters = matching.reduce((sum, event) => sum + (Number(event.data?.amount) || 0), 0);
+      return milliliters ? `${matching.length}회 · ${milliliters}ml` : `${matching.length}회`;
+    }
+    return `${matching.length}회`;
+  }
+
+  function instantRecordDockMarkup(assignment, serviceType, canLog, lockedReason) {
+    const actions = serviceType === "BABYSITTING" ? BABYSITTING_QUICK_ACTIONS : POSTPARTUM_QUICK_ACTIONS;
+    const events = visibleCareEvents(assignment);
+    const dateLabel = TODAY_FORMATTER.format(new Date());
+    return `<article class="card instant-record-dock" aria-label="${serviceType === "BABYSITTING" ? "베이비시팅" : "산후조리"} 바로 기록"><div class="instant-record-heading"><div><p class="eyebrow">QUICK RECORD</p><h3>${escapeHtml(dateLabel)} 바로 기록</h3><p>아이콘을 누르면 해당 기록 화면이 바로 열립니다.</p></div><span class="status-chip ${canLog ? "" : "gold"}">${canLog ? `오늘 ${events.length}건` : lockedReason}</span></div><div class="instant-record-scroll" role="group" aria-label="기록 종류">${actions.map((action) => `<button type="button" class="instant-record-action tone-${action.tone}" data-log-type="${action.type}"${action.preset ? ` data-log-preset="${escapeHtml(action.preset)}"` : ""} ${canLog ? "" : "disabled"} aria-label="${escapeHtml(action.label)} 기록 열기"><span class="instant-record-icon" aria-hidden="true">${action.icon}</span><strong>${escapeHtml(action.label)}</strong><small>${quickActionMetric(action, events)}</small></button>`).join("")}</div>${canLog ? "" : `<p class="instant-record-hint">${escapeHtml(lockedReason)} · 근무를 시작하면 아이콘이 활성화됩니다.</p>`}</article>`;
+  }
+
   function caregiverBabysittingToday(user, assignment, nextAssignment, workspaceNav = "") {
     const client = clientById(assignment.clientId);
     if (!client) return `<section class="page">${demoBanner()}${workspaceNav}${pageHeading("BABYSITTING WORKSPACE", "배정 정보를 확인할 수 없습니다.", "관리자가 고객·아이 데이터 연결 상태를 확인해야 합니다.")}<article class="card"><div class="empty-state"><strong>고객 정보가 연결되지 않았습니다.</strong><span>정보가 복구될 때까지 시팅 시작과 기록 저장은 차단됩니다.</span></div></article></section>`;
@@ -2451,7 +2501,18 @@ import {
     const completedToday = assignmentCompletedToday(assignment);
     const sitterEvents = visibleCareEvents(assignment).filter((event) => ["meal", "sitter_note"].includes(event.type));
     const babyName = babyNameFor(assignment, client) || "아이";
-    return `<section class="page babysitting-workspace">${demoBanner()}${workspaceNav}${pageHeading("BABYSITTING WORKSPACE", `안녕하세요, ${escapeHtml(user.fullName)}님.`, `${escapeHtml(client.motherName)} 보호자의 ${escapeHtml(babyName)} 아이에게 배정된 베이비시팅 화면입니다. 계약 기간에는 요청 시간과 관계없이 기록할 수 있습니다.`)}<article class="card babysitting-hero"><div><div class="hero-care-top"><div>${serviceBadgeMarkup("BABYSITTING")}<p class="eyebrow">TODAY'S SITTING</p><h3>${escapeHtml(babyName)}</h3><p>고객 요청 참고시간 ${assignment.dailyStart}–${assignment.dailyEnd} · ${escapeHtml(assignment.address)}</p></div><div class="live-pill"><span class="live-dot"></span>${staleSession ? "CLOSE PREVIOUS SESSION" : active ? "SITTING IN PROGRESS" : completedToday ? "TODAY COMPLETED" : "SESSION READY"}</div></div><div class="assignment-brief"><span>보호자 ${escapeHtml(client.motherName)}</span><span>알러지 ${escapeHtml(assignment.allergies)}</span><span>추가인원 ${assignment.extraHouseholdMembers}명</span><span>${assignment.weeks}주 일정</span></div><div class="care-actions">${active ? `<button class="primary-button" data-notice="${sitterEvents.length}개의 해당 근무일 시팅 기록이 저장되어 있습니다.">시팅 진행 중 · ${timeLabel(state.session.startedAt)}</button><button class="secondary-button" data-end-care>시팅 종료</button>` : completedToday ? '<button class="secondary-button" disabled>오늘 시팅 완료</button>' : `<button class="primary-button" data-start-care data-assignment-id="${assignment.id}">시팅 시작하기</button>`}<button class="secondary-button" data-caregiver-assignment-detail="${assignment.id}">아이 상세정보</button></div></div></article>${staleSessionBannerMarkup()}<div class="assignment-peek-grid" style="margin-top:18px">${caregiverAssignmentPeekMarkup(assignment, "현재 시팅")}${caregiverAssignmentPeekMarkup(nextAssignment, "다음 일정")}</div>${staleSession ? "" : caregiverSafetyChecklistMarkup(assignment)}<div class="grid two babysitting-guide-grid" style="margin-top:18px"><article class="card card-pad"><div class="section-header"><div><h3>식사·안전 지침</h3><p>보호자가 신청 시 전달한 내용</p></div><span class="status-chip coral">확인 필수</span></div><dl class="sitting-instructions"><div><dt>알러지</dt><dd>${escapeHtml(assignment.allergies || "없음")}</dd></div><div><dt>식사·간식</dt><dd>${escapeHtml(assignment.mealInstructions || "별도 지침 없음")}</dd></div><div><dt>생활 루틴</dt><dd>${escapeHtml(assignment.routineNotes || "별도 지침 없음")}</dd></div><div><dt>인계·출입</dt><dd>${escapeHtml(assignment.pickupNotes || "별도 지침 없음")}</dd></div></dl></article><article class="card quick-log-card sitter-quick-card"><div class="section-header"><div><h3>빠른 시팅 기록</h3><p>식사와 주요 이벤트만 간단히 공유</p></div><span class="status-chip ${canLog ? "" : "gold"}">${canLog ? "기록 가능" : staleSession ? "이전 근무 종료 필요" : completedToday ? "오늘 기록 완료" : "시팅 시작 필요"}</span></div><div class="quick-log-grid sitter-grid">${["meal", "sitter_note"].map((type) => { const meta = EVENT_META[type]; return `<button class="quick-button" data-log-type="${type}" ${canLog ? "" : "disabled"}><span class="quick-icon">${meta.icon}</span><span>${meta.label}</span></button>`; }).join("")}</div>${canLog ? "" : `<p class="session-hint">${staleSession ? "이전 근무 세션을 종료하면 오늘 일정으로 진행할 수 있습니다." : completedToday ? "오늘 시팅이 종료되어 기록이 잠겼습니다." : "계약 기간에는 언제든 ‘시팅 시작하기’를 누른 뒤 기록할 수 있습니다."}</p>`}</article></div><article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>${staleSession ? "미종료 근무일" : "오늘의"} 식사·이벤트</h3><p>${sitterEvents.length}개의 베이비시팅 기록</p></div><button class="text-button" data-service-tab="timeline" data-service-type="BABYSITTING">전체 보기 →</button></div>${timelineMarkup(6, assignment)}</article></section>`;
+    const lockedReason = staleSession ? "이전 근무 종료 필요" : completedToday ? "오늘 시팅 완료" : "시팅 시작 필요";
+    return `<section class="page babysitting-workspace">
+      ${demoBanner()}${workspaceNav}
+      ${pageHeading("BABYSITTING WORKSPACE", `안녕하세요, ${escapeHtml(user.fullName)}님.`, `${escapeHtml(client.motherName)} 보호자의 ${escapeHtml(babyName)} 아이에게 배정된 베이비시팅 화면입니다. 계약 기간에는 요청 시간과 관계없이 기록할 수 있습니다.`)}
+      ${instantRecordDockMarkup(assignment, "BABYSITTING", canLog, lockedReason)}
+      <article class="card babysitting-hero"><div><div class="hero-care-top"><div>${serviceBadgeMarkup("BABYSITTING")}<p class="eyebrow">TODAY'S SITTING</p><h3>${escapeHtml(babyName)}</h3><p>고객 요청 참고시간 ${assignment.dailyStart}–${assignment.dailyEnd} · ${escapeHtml(assignment.address)}</p></div><div class="live-pill"><span class="live-dot"></span>${staleSession ? "CLOSE PREVIOUS SESSION" : active ? "SITTING IN PROGRESS" : completedToday ? "TODAY COMPLETED" : "SESSION READY"}</div></div><div class="assignment-brief"><span>보호자 ${escapeHtml(client.motherName)}</span><span>알러지 ${escapeHtml(assignment.allergies)}</span><span>추가인원 ${assignment.extraHouseholdMembers}명</span><span>${assignment.weeks}주 일정</span></div><div class="care-actions">${active ? `<button class="primary-button" data-notice="${sitterEvents.length}개의 해당 근무일 시팅 기록이 저장되어 있습니다.">시팅 진행 중 · ${timeLabel(state.session.startedAt)}</button><button class="secondary-button" data-end-care>시팅 종료</button>` : completedToday ? '<button class="secondary-button" disabled>오늘 시팅 완료</button>' : `<button class="primary-button" data-start-care data-assignment-id="${assignment.id}">시팅 시작하기</button>`}<button class="secondary-button" data-caregiver-assignment-detail="${assignment.id}">아이 상세정보</button></div></div></article>
+      ${staleSessionBannerMarkup()}
+      <div class="assignment-peek-grid" style="margin-top:18px">${caregiverAssignmentPeekMarkup(assignment, "현재 시팅")}${caregiverAssignmentPeekMarkup(nextAssignment, "다음 일정")}</div>
+      ${staleSession ? "" : caregiverSafetyChecklistMarkup(assignment)}
+      <article class="card card-pad babysitting-instructions-card" style="margin-top:18px"><div class="section-header"><div><h3>식사·안전 지침</h3><p>보호자가 신청 시 전달한 내용</p></div><span class="status-chip coral">확인 필수</span></div><dl class="sitting-instructions"><div><dt>알러지</dt><dd>${escapeHtml(assignment.allergies || "없음")}</dd></div><div><dt>식사·간식</dt><dd>${escapeHtml(assignment.mealInstructions || "별도 지침 없음")}</dd></div><div><dt>생활 루틴</dt><dd>${escapeHtml(assignment.routineNotes || "별도 지침 없음")}</dd></div><div><dt>인계·출입</dt><dd>${escapeHtml(assignment.pickupNotes || "별도 지침 없음")}</dd></div></dl></article>
+      <article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>${staleSession ? "미종료 근무일" : "오늘의"} 식사·이벤트</h3><p>${sitterEvents.length}개의 베이비시팅 기록</p></div><button class="text-button" data-service-tab="timeline" data-service-type="BABYSITTING">전체 보기 →</button></div>${timelineMarkup(6, assignment)}</article>
+    </section>`;
   }
 
   function caregiverToday(serviceType = "POSTPARTUM", workspaceNav = "") {
@@ -2484,6 +2545,7 @@ import {
         ${demoBanner()}
         ${workspaceNav}
         ${pageHeading("CAREGIVER WORKSPACE", `안녕하세요, ${escapeHtml(user.fullName)}님.`, `배정된 ${escapeHtml(client.motherName)} 산모와 ${escapeHtml(babyName)} 아기의 정보만 접근할 수 있습니다. 계약 기간에는 요청 시간과 관계없이 기록할 수 있습니다.`)}
+        ${instantRecordDockMarkup(assignment, "POSTPARTUM", canLog, staleSession ? "이전 근무 종료 필요" : completedToday ? "오늘 케어 완료" : "케어 시작 필요")}
         <article class="card hero-care">
           <div class="hero-care-top">
             <div><p class="eyebrow">TODAY'S ASSIGNMENT</p><h3>${escapeHtml(babyName)}</h3><p>고객 요청 참고시간 ${assignment.dailyStart} – ${assignment.dailyEnd} · ${escapeHtml(assignment.address)}</p></div>
@@ -2507,18 +2569,6 @@ import {
 
         <article class="card card-pad request-card" style="margin-top:18px"><div class="section-header"><div><h3>고객 요청 및 주의사항</h3><p>관리자가 일정 배정 시 저장한 정보</p></div><span class="status-chip coral">확인 필수</span></div><p>${escapeHtml(assignment.requestNote || "별도 요청사항 없음")}</p></article>
 
-        <article class="card quick-log-card" style="margin-top:18px">
-          <div class="section-header"><div><h3>빠른 기록</h3><p>자주 쓰는 항목만 간단하게</p></div><span class="status-chip ${canLog ? "" : "gold"}">${canLog ? "기록 가능" : staleSession ? "이전 근무 종료 필요" : "세션 시작 필요"}</span></div>
-          <div class="quick-log-grid">
-            ${Object.entries(EVENT_META).filter(([type]) => !["meal", "sitter_note"].includes(type))
-              .map(
-                ([type, meta]) => `<button class="quick-button" data-log-type="${type}" ${canLog ? "" : "disabled"}><span class="quick-icon">${meta.icon}</span><span>${meta.label}</span></button>`,
-              )
-              .join("")}
-          </div>
-          ${canLog ? "" : `<p class="session-hint">${staleSession ? "이전 근무 세션을 종료하면 오늘 일정으로 진행할 수 있습니다." : "계약 기간에는 언제든 ‘케어 시작하기’를 누른 뒤 기록할 수 있습니다."}</p>`}
-        </article>
-
         <article class="card card-pad" style="margin-top:18px">
           <div class="section-header"><div><h3>최근 기록</h3><p>${staleSession ? "미종료 근무일" : "오늘"} ${escapeHtml(babyName)}에게 기록된 케어 이벤트</p></div><button class="text-button" data-service-tab="timeline" data-service-type="POSTPARTUM">전체 보기 →</button></div>
           ${timelineMarkup(4, assignment)}
@@ -2530,7 +2580,7 @@ import {
     const data = event.data || {};
     switch (event.type) {
       case "feeding": {
-        const methods = { breast: "직접 수유", pumped: "유축 모유", formula: "분유" };
+        const methods = { breast: "직접 모유수유", pumped: "유축 모유", formula: "분유" };
         const amount = data.amount ? ` · ${data.amount}ml` : data.duration ? ` · ${data.duration}분` : "";
         return `${methods[data.method] || "수유"}${amount}`;
       }
@@ -3094,7 +3144,7 @@ import {
       return { ...bucket, breast, formula, total: breast + formula };
     });
     const max = Math.max(100, ...daily.map((day) => day.total));
-    return `<div class="chart-legend"><span><i class="legend-swatch breast"></i>모유·유축</span><span><i class="legend-swatch formula"></i>분유</span><small>직접 수유는 입력된 ml만 합산됩니다.</small></div><div class="trend-chart-scroll"><div class="daily-bar-chart" style="--chart-days:${buckets.length};min-width:${Math.max(700, buckets.length * 42)}px">${daily.map((day) => `<div class="daily-bar-column" aria-label="${day.fullLabel} 모유 ${day.breast}ml, 분유 ${day.formula}ml"><span class="chart-value">${day.total || ""}</span><div class="stacked-bar-shell"><div class="stacked-bar ${day.total ? "" : "no-data"}" style="height:${day.total ? Math.max(4, (day.total / max) * 100) : 2}%">${day.total ? `<i class="bar-segment formula" style="flex:${day.formula}"></i><i class="bar-segment breast" style="flex:${day.breast}"></i>` : ""}</div></div><small>${day.shortLabel}</small></div>`).join("")}</div></div>`;
+    return `<div class="chart-legend"><span><i class="legend-swatch breast"></i>유축·기존 모유량</span><span><i class="legend-swatch formula"></i>분유</span><small>직접 모유수유는 ml가 아닌 수유 시간으로 요약합니다.</small></div><div class="trend-chart-scroll"><div class="daily-bar-chart" style="--chart-days:${buckets.length};min-width:${Math.max(700, buckets.length * 42)}px">${daily.map((day) => `<div class="daily-bar-column" aria-label="${day.fullLabel} 유축·기존 모유량 ${day.breast}ml, 분유 ${day.formula}ml"><span class="chart-value">${day.total || ""}</span><div class="stacked-bar-shell"><div class="stacked-bar ${day.total ? "" : "no-data"}" style="height:${day.total ? Math.max(4, (day.total / max) * 100) : 2}%">${day.total ? `<i class="bar-segment formula" style="flex:${day.formula}"></i><i class="bar-segment breast" style="flex:${day.breast}"></i>` : ""}</div></div><small>${day.shortLabel}</small></div>`).join("")}</div></div>`;
   }
 
   function sleepTrendMarkup(buckets) {
@@ -3107,10 +3157,11 @@ import {
     const feedings = periodEvents.filter((event) => event.type === "feeding");
     const breast = feedings.filter((event) => event.data.method !== "formula").reduce((sum, event) => sum + (Number(event.data.amount) || 0), 0);
     const formula = feedings.filter((event) => event.data.method === "formula").reduce((sum, event) => sum + (Number(event.data.amount) || 0), 0);
+    const breastfeedingMinutes = feedings.filter((event) => event.data.method === "breast").reduce((sum, event) => sum + (Number(event.data.duration) || 0), 0);
     const temperatures = periodEvents.filter((event) => event.type === "temperature").map((event) => Number(event.data.value)).filter(Number.isFinite);
     const sleeps = periodEvents.filter((event) => event.type === "sleep").reduce((sum, event) => sum + (Number(event.data.duration) || 0), 0);
     const weights = periodEvents.filter((event) => event.type === "weight").sort((a, b) => new Date(a.at) - new Date(b.at));
-    return `<div class="chart-kpi-grid"><div><span>모유·유축</span><strong>${breast.toLocaleString()} ml</strong></div><div><span>분유</span><strong>${formula.toLocaleString()} ml</strong></div><div><span>평균 체온</span><strong>${temperatures.length ? `${(temperatures.reduce((sum, value) => sum + value, 0) / temperatures.length).toFixed(1)}℃` : "기록 전"}</strong></div><div><span>총 수면</span><strong>${durationLabel(sleeps)}</strong></div><div><span>최근 체중</span><strong>${weights.length ? `${Number(weights.at(-1).data.value).toFixed(2)} kg` : "기록 전"}</strong></div></div>`;
+    return `<div class="chart-kpi-grid"><div><span>직접 모유수유</span><strong>${breastfeedingMinutes ? durationLabel(breastfeedingMinutes) : "기록 전"}</strong></div><div><span>유축·기존 모유량</span><strong>${breast.toLocaleString()} ml</strong></div><div><span>분유</span><strong>${formula.toLocaleString()} ml</strong></div><div><span>평균 체온</span><strong>${temperatures.length ? `${(temperatures.reduce((sum, value) => sum + value, 0) / temperatures.length).toFixed(1)}℃` : "기록 전"}</strong></div><div><span>총 수면</span><strong>${durationLabel(sleeps)}</strong></div><div><span>최근 체중</span><strong>${weights.length ? `${Number(weights.at(-1).data.value).toFixed(2)} kg` : "기록 전"}</strong></div></div>`;
   }
 
   function careChartsMarkup(clientId, assignmentId = null) {
@@ -3129,7 +3180,7 @@ import {
     const temperatureEvents = periodEvents.filter((event) => event.type === "temperature");
     const latestWeight = periodEvents.filter((event) => event.type === "weight").at(-1);
     return `<div class="care-chart-suite"><section class="card chart-suite-header"><div><p class="eyebrow">CARE DATA OVERVIEW</p><h3>${escapeHtml(client.motherName)} · ${escapeHtml(chartBabyName)}</h3><p>같은 기간 기준으로 수유, 체온, 수면, 체중과 산모 케어 기록을 비교합니다.</p></div><div class="chart-range-tabs" role="group" aria-label="차트 조회 기간"><button type="button" class="${range === "week" ? "active" : ""}" data-chart-range="week">최근 1주일</button><button type="button" class="${range === "month" ? "active" : ""}" data-chart-range="month">최근 1개월</button></div></section>${careChartSummaryMarkup(periodEvents)}<div class="care-chart-grid">
-      <article class="card chart-card wide"><div class="section-header"><div><h3>수유량</h3><p>일별 모유·유축과 분유 섭취량 · ml</p></div><span class="status-chip">${periodEvents.filter((event) => event.type === "feeding").length}회</span></div>${feedingTrendMarkup(buckets)}</article>
+      <article class="card chart-card wide"><div class="section-header"><div><h3>수유 기록</h3><p>일별 유축·기존 모유량과 분유 섭취량 · ml</p></div><span class="status-chip">${periodEvents.filter((event) => event.type === "feeding").length}회</span></div>${feedingTrendMarkup(buckets)}</article>
       <article class="card chart-card wide"><div class="section-header"><div><h3>체온 추이</h3><p>일별 평균 관찰 기록 · ℃ · 상태 판정 없음</p></div><span class="status-chip">${temperatureEvents.length ? `${Number(temperatureEvents.at(-1).data.value).toFixed(1)}℃` : "기록 전"}</span></div>${chartLineSvg(buckets, temperaturesByDay, { min: 35.5, max: 38, unit: "℃", decimals: 1, ariaLabel: `${chartBabyName} 체온 추이`, empty: "체온 기록이 아직 없습니다." })}</article>
       <article class="card chart-card wide"><div class="section-header"><div><h3>하루 수면 시간</h3><p>날짜별 기록된 총 수면 시간</p></div><span class="status-chip">${durationLabel(periodEvents.filter((event) => event.type === "sleep").reduce((sum, event) => sum + (Number(event.data.duration) || 0), 0))}</span></div>${sleepTrendMarkup(buckets)}</article>
       <article class="card chart-card wide"><div class="section-header"><div><h3>몸무게</h3><p>성장 추이 · kg</p></div><span class="status-chip">${latestWeight ? `${Number(latestWeight.data.value).toFixed(2)} kg` : "기록 전"}</span></div>${chartLineSvg(buckets, weightsByDay, { unit: "kg", decimals: 2, ariaLabel: `${chartBabyName} 몸무게 추이`, empty: "체중 기록이 아직 없습니다." })}</article>
@@ -3406,7 +3457,7 @@ import {
     ];
     const serviceKpis = model.serviceType === "BABYSITTING"
       ? [["식사·간식 기록", `${totals.mealCount}건`, "관리사가 입력한 횟수"], ["놀이·생활 기록", `${totals.activityCount}건`, "놀이·산책·안전 확인 등"]]
-      : [["입력된 수유량 합계", reportNumber(totals.feedingMl, " ml"), `수유량 입력 ${totals.feedingMeasuredCount}건 · 미입력 ${totals.feedingUnmeasuredCount}건`], ["입력된 수면시간", reportDurationValue(totals.sleepMinutes), `${totals.sleepCount}건을 더한 시간`]];
+      : [["직접 모유수유 시간", reportDurationValue(totals.breastfeedingMinutes), `${totals.breastfeedingDurationCount}건을 더한 시간`], ["입력된 유축·분유량", reportNumber(totals.feedingMl, " ml"), `수유량 입력 ${totals.feedingMeasuredCount}건 · 수치 미입력 ${totals.feedingUnmeasuredCount}건`], ["입력된 수면시간", reportDurationValue(totals.sleepMinutes), `${totals.sleepCount}건을 더한 시간`]];
     return `<div class="objective-report-kpis">${[...common, ...serviceKpis].map(([label, value, note]) => `<div class="objective-report-kpi"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(note)}</small></div>`).join("")}</div>`;
   }
 
@@ -3430,6 +3481,7 @@ import {
       objectiveServiceDayStatus(day),
       reportDurationValue(day.careMinutes),
       `${day.feedingCount}건`,
+      day.breastfeedingMinutes === null ? "기록 없음" : `${day.breastfeedingDurationCount}건 · ${day.breastfeedingMinutes}분`,
       day.feedingMl === null ? "기록 없음" : `${day.feedingMl} ml`,
       `${day.feedingUnmeasuredCount}건`,
       `${day.diaperCount}건 (${day.urineCount}/${day.stoolCount})`,
@@ -3443,7 +3495,7 @@ import {
       `${day.motherCareCount}건`,
       `${day.eventCount}건`,
     ]);
-    return `<div class="objective-report-table-group"><h3>케어 활동</h3>${table(["날짜", "서비스 확인", "근무시간", "수유", "입력된 수유량", "수유량 미입력", "기저귀(소변/대변)", "수면"], activityRows, "산후조리 날짜별 케어 활동")}<h3>측정·지원 기록</h3>${table(["날짜", "체온 최저/평균/최고", "마지막 체중", "목욕", "산모 케어", "관리사 기록 횟수"], measurementRows, "산후조리 날짜별 측정 및 지원 기록")}</div>`;
+    return `<div class="objective-report-table-group"><h3>케어 활동</h3>${table(["날짜", "서비스 확인", "근무시간", "수유", "직접 모유수유", "입력된 유축·분유량", "수치 미입력", "기저귀(소변/대변)", "수면"], activityRows, "산후조리 날짜별 케어 활동")}<h3>측정·지원 기록</h3>${table(["날짜", "체온 최저/평균/최고", "마지막 체중", "목욕", "산모 케어", "관리사 기록 횟수"], measurementRows, "산후조리 날짜별 측정 및 지원 기록")}</div>`;
   }
 
   function objectiveReportHourlyTableMarkup(model) {
@@ -3480,6 +3532,7 @@ import {
           { title: "날짜별 놀이·생활 기록", subtitle: "놀이·산책·안전 확인 등으로 입력된 기록 횟수", accessor: (day) => day.activityCount, formatter: (value) => `${value}건`, color: "#d88f73", empty: "놀이·생활 기록이 없습니다.", type: "bar" },
         ]
       : [
+          { title: "날짜별 직접 모유수유 시간", subtitle: "관리사가 입력한 직접 모유수유 시간을 날짜별로 더한 값 · 분", accessor: (day) => day.breastfeedingMinutes, formatter: (value) => `${Math.round(value)}분`, color: "#5790a8", empty: "직접 모유수유 시간 기록이 없습니다.", type: "bar" },
           { title: "날짜별 입력 수유량", subtitle: "수유량이 숫자로 입력된 기록만 더한 값 · ml", accessor: (day) => day.feedingMl, formatter: (value) => `${Math.round(value)} ml`, color: "#2b6c63", empty: "수유량이 입력된 기록이 없습니다.", type: "bar" },
           { title: "날짜별 수면시간", subtitle: "관리사가 입력한 수면시간을 날짜별로 더한 값 · 분", accessor: (day) => day.sleepMinutes, formatter: (value) => `${Math.round(value)}분`, color: "#6d9188", empty: "수면시간 기록이 없습니다.", type: "bar" },
           { title: "날짜별 평균 체온", subtitle: "해당 날짜에 측정한 체온의 평균 · ℃", accessor: (day) => day.temperatureAverage, formatter: (value) => `${value.toFixed(1)}℃`, axisFormat: (value) => value.toFixed(1), minimumPadding: 0.1, color: "#d88f73", empty: "체온 측정 기록이 없습니다.", type: "line" },
@@ -4276,7 +4329,7 @@ import {
     document.querySelectorAll("[data-service-extend]").forEach((button) => button.addEventListener("click", () => openServiceApplicationModal("BABYSITTING", "EXTENSION", button.dataset.serviceExtend || null)));
 
     document.querySelectorAll("[data-log-type]").forEach((button) => {
-      button.addEventListener("click", () => openLogModal(button.dataset.logType));
+      button.addEventListener("click", () => openLogModal(button.dataset.logType, button.dataset.logPreset || null));
     });
 
     document.querySelectorAll("[data-chart-range]").forEach((button) => button.addEventListener("click", () => {
@@ -6401,12 +6454,23 @@ import {
     showToast(`${client.motherName} 고객의 ${serviceMetaFor(request.serviceType).label} 신청을 승인했습니다. 일정·배정 메뉴에서 관리사를 배치해 주세요.`);
   }
 
-  function fieldsForType(type) {
+  function fieldsForType(type, preset = null) {
     switch (type) {
-      case "feeding":
+      case "feeding": {
+        const method = ["breast", "pumped", "formula"].includes(preset) ? preset : "breast";
         return `
-          <div class="field"><span class="field-label">수유 방법</span><div class="option-grid">${radioOptions("method", [["breast", "직접 수유"], ["pumped", "유축 모유"], ["formula", "분유"]], "pumped")}</div></div>
-          <div class="field"><label for="amount">수유량 (ml)</label><input id="amount" name="amount" type="number" min="0" max="500" step="5" value="80" inputmode="numeric" /><small>직접 수유라면 0으로 두고 메모에 시간을 적어도 됩니다.</small></div>`;
+          <div class="feeding-entry" data-feeding-entry>
+            <div class="field"><span class="field-label">수유 방법</span><div class="option-grid feeding-method-grid">${radioOptions("method", [["breast", "직접 모유수유"], ["pumped", "유축 모유"], ["formula", "분유"]], method)}</div></div>
+            <div class="feeding-measure-panel" data-feeding-panel="breast" ${method === "breast" ? "" : "hidden"}>
+              <div class="field"><label for="feeding-duration">모유수유한 시간 (분)</label><input id="feeding-duration" name="duration" type="number" min="1" max="180" step="1" value="15" inputmode="numeric" ${method === "breast" ? "required" : "disabled"}/><small>직접 모유수유는 양(ml) 대신 실제 수유한 시간을 입력합니다.</small></div>
+              <div class="field"><span class="field-label">수유한 쪽</span><div class="option-grid">${radioOptions("side", [["left", "왼쪽"], ["right", "오른쪽"], ["both", "양쪽"]], "both")}</div></div>
+            </div>
+            <div class="feeding-measure-panel" data-feeding-panel="volume" ${method === "breast" ? "hidden" : ""}>
+              <div class="field"><label for="feeding-amount">수유량 (ml)</label><input id="feeding-amount" name="amount" type="number" min="5" max="500" step="5" value="80" inputmode="numeric" ${method === "breast" ? "disabled" : "required"}/><small>유축 모유와 분유는 실제 먹은 양을 ml로 입력합니다.</small></div>
+            </div>
+            <div class="field"><label for="feeding-note">수유 메모 (선택)</label><textarea id="feeding-note" name="note" placeholder="수유 중 관찰한 사실이나 보호자에게 전달할 내용을 적어주세요."></textarea></div>
+          </div>`;
+      }
       case "diaper":
         return `
           <div class="field"><span class="field-label">소변 양</span><div class="option-grid">${radioOptions("urine", [["small", "소량"], ["medium", "보통"], ["large", "많음"]], "medium")}</div></div>
@@ -6426,12 +6490,41 @@ import {
           <div class="field"><label for="mother-note">간단한 메모</label><textarea id="mother-note" name="note" placeholder="산모의 상태와 제공한 케어를 간단히 기록하세요."></textarea></div>`;
       case "meal":
         return `<div class="form-grid two"><div class="field"><label for="meal-type">식사 구분</label><select id="meal-type" name="mealType"><option>아침</option><option>점심</option><option>저녁</option><option>간식</option><option>분유·우유</option></select></div><div class="field"><label for="meal-appetite">섭취 정도</label><select id="meal-appetite" name="appetite"><option>잘 먹음</option><option>보통</option><option>조금 먹음</option><option>거부함</option></select></div></div><div class="field"><label for="meal-menu">메뉴·양</label><input id="meal-menu" name="menu" placeholder="예: 닭고기 야채죽 1그릇" required /></div><div class="field"><label for="meal-note">식사 메모</label><textarea id="meal-note" name="note" placeholder="알러지 확인, 반응, 보호자에게 전달할 내용을 적어주세요."></textarea></div>`;
-      case "sitter_note":
-        return `<div class="field"><label for="sitter-category">이벤트 구분</label><select id="sitter-category" name="category"><option>놀이</option><option>산책</option><option>낮잠</option><option>배변</option><option>등원·하원</option><option>안전 확인</option><option>기타</option></select></div><div class="field"><label for="sitter-note-text">활동·특이 이벤트</label><textarea id="sitter-note-text" name="text" placeholder="무엇을 했는지, 아이의 반응과 보호자 인계사항을 사실 중심으로 기록하세요." required></textarea><small>의료적 판단 대신 관찰한 사실과 조치만 기록합니다.</small></div>`;
+      case "sitter_note": {
+        const selectedCategory = ["놀이", "산책", "낮잠", "배변", "등원·하원", "안전 확인", "기타"].includes(preset) ? preset : "놀이";
+        return `<div class="field"><label for="sitter-category">이벤트 구분</label><select id="sitter-category" name="category">${["놀이", "산책", "낮잠", "배변", "등원·하원", "안전 확인", "기타"].map((category) => `<option ${category === selectedCategory ? "selected" : ""}>${category}</option>`).join("")}</select></div><div class="field"><label for="sitter-note-text">활동·특이 이벤트</label><textarea id="sitter-note-text" name="text" placeholder="무엇을 했는지, 아이의 반응과 보호자 인계사항을 사실 중심으로 기록하세요." required></textarea><small>의료적 판단 대신 관찰한 사실과 조치만 기록합니다.</small></div>`;
+      }
       case "note":
       default:
         return `<div class="field"><label for="note-text">케어 메모</label><textarea id="note-text" name="text" placeholder="특이사항이나 보호자에게 공유할 내용을 기록하세요." required></textarea><small>진단이나 확정적 의료 판단 대신 관찰한 사실을 기록하세요.</small></div>`;
     }
+  }
+
+  function bindFeedingEntryForm(form) {
+    const entry = form?.querySelector("[data-feeding-entry]");
+    if (!entry) return;
+    const updateMeasurementFields = () => {
+      const method = form.elements.method?.value || "breast";
+      const directPanel = entry.querySelector('[data-feeding-panel="breast"]');
+      const volumePanel = entry.querySelector('[data-feeding-panel="volume"]');
+      const durationInput = form.elements.duration;
+      const amountInput = form.elements.amount;
+      const sideInputs = [...form.querySelectorAll('input[name="side"]')];
+      const direct = method === "breast";
+      directPanel.hidden = !direct;
+      volumePanel.hidden = direct;
+      if (durationInput) {
+        durationInput.disabled = !direct;
+        durationInput.required = direct;
+      }
+      if (amountInput) {
+        amountInput.disabled = direct;
+        amountInput.required = !direct;
+      }
+      sideInputs.forEach((input) => { input.disabled = !direct; });
+    };
+    form.querySelectorAll('input[name="method"]').forEach((input) => input.addEventListener("change", updateMeasurementFields));
+    updateMeasurementFields();
   }
 
   function openRetrospectiveCareReportModal(initialAssignmentId = null) {
@@ -6506,7 +6599,7 @@ import {
     });
   }
 
-  function openLogModal(type) {
+  function openLogModal(type, preset = null) {
     const assignment = activeAssignmentContext();
     if (!assignment || !state.session.active || state.session.assignmentId !== assignment.id) {
       showToast("케어 세션을 먼저 시작해 주세요.");
@@ -6535,13 +6628,15 @@ import {
           </header>
           <form class="modal-form" data-log-form data-log-form-type="${type}">
             <div class="field care-record-time-field"><label for="event-recorded-at">기록 일시</label><div class="care-record-time-control"><input id="event-recorded-at" name="recordedAt" type="datetime-local" min="${sessionDate}T00:00" max="${escapeHtml(currentLocalDateTime)}" value="${escapeHtml(currentLocalDateTime)}" step="60" required /><button type="button" class="secondary-button" data-use-device-now>현재 시각</button></div><small>휴대폰의 현재 시각이 기본으로 입력됩니다. 실제 기록 시각이 다르면 저장 전에 수정하세요. · ${escapeHtml(serviceTimeZoneLabel(sessionTimeZone))} (${escapeHtml(deviceUtcOffsetLabel(deviceNow))})</small></div>
-            ${fieldsForType(type)}
+            ${fieldsForType(type, preset)}
             <div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">기록 저장</button></div>
           </form>
         </section>
       </div>`;
 
     bindModalFrame();
+    const logForm = modalRoot.querySelector("[data-log-form]");
+    bindFeedingEntryForm(logForm);
     modalRoot.querySelector("[data-use-device-now]")?.addEventListener("click", () => {
       const input = modalRoot.querySelector("#event-recorded-at");
       const now = new Date();
@@ -6552,7 +6647,7 @@ import {
       input.max = localDateTimeInputValue(now);
       input.value = localDateTimeInputValue(now);
     });
-    modalRoot.querySelector("[data-log-form]").addEventListener("submit", saveLogEvent);
+    logForm.addEventListener("submit", saveLogEvent);
   }
 
   let modalReturnFocus = null;
@@ -6633,6 +6728,19 @@ import {
     ["amount", "duration", "value", "waterTemperature"].forEach((key) => {
       if (key in data) data[key] = data[key] === "" ? null : Number(data[key]);
     });
+
+    if (type === "feeding") {
+      if (data.method === "breast") {
+        delete data.amount;
+        if (!Number.isFinite(data.duration) || data.duration < 1 || data.duration > 180) return showToast("직접 모유수유한 시간을 1~180분 사이로 입력해 주세요.", "error");
+      } else if (["pumped", "formula"].includes(data.method)) {
+        delete data.duration;
+        delete data.side;
+        if (!Number.isFinite(data.amount) || data.amount < 5 || data.amount > 500) return showToast("실제 수유량을 5~500ml 사이로 입력해 주세요.", "error");
+      } else {
+        return showToast("수유 방법을 선택해 주세요.", "error");
+      }
+    }
 
     if (usingCloudData()) {
       if (!state.session.id || !state.session.active) return showToast("케어를 시작한 뒤 기록할 수 있습니다.");

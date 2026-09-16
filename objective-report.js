@@ -62,6 +62,12 @@ function measuredFeedingAmount(event) {
   return amount;
 }
 
+function measuredBreastfeedingDuration(event) {
+  if (event?.data?.method !== "breast") return null;
+  const duration = numericValue(event?.data?.duration);
+  return duration !== null && duration > 0 ? duration : null;
+}
+
 function round(value, digits = 1) {
   if (!Number.isFinite(value)) return null;
   const factor = 10 ** digits;
@@ -246,6 +252,8 @@ function aggregateDay(dateKey, events, sessions, assignmentId, serviceType, sche
   const daySessions = sessions.filter((session) => session.assignmentId === assignmentId && sessionRepresentsProvidedCare(session) && sessionServiceDateKey(session) === dateKey);
   const feeding = dayEvents.filter((event) => event.type === "feeding");
   const measuredFeeding = feeding.map((event) => measuredFeedingAmount(event)).filter((value) => value !== null);
+  const measuredBreastfeeding = feeding.map((event) => measuredBreastfeedingDuration(event)).filter((value) => value !== null);
+  const measuredFeedingEvents = feeding.filter((event) => measuredFeedingAmount(event) !== null || measuredBreastfeedingDuration(event) !== null);
   const diapers = dayEvents.filter((event) => event.type === "diaper");
   const sleepValues = dayEvents.filter((event) => event.type === "sleep").map((event) => numericValue(event.data?.duration)).filter((value) => value !== null && value >= 0);
   const temperatureValues = dayEvents.filter((event) => event.type === "temperature").map((event) => numericValue(event.data?.value)).filter((value) => value !== null);
@@ -265,7 +273,9 @@ function aggregateDay(dateKey, events, sessions, assignmentId, serviceType, sche
     careMinutes: sessionMinutesForDate(sessions, assignmentId, dateKey),
     feedingCount: feeding.length,
     feedingMeasuredCount: measuredFeeding.length,
-    feedingUnmeasuredCount: feeding.length - measuredFeeding.length,
+    breastfeedingDurationCount: measuredBreastfeeding.length,
+    breastfeedingMinutes: measuredBreastfeeding.length ? round(measuredBreastfeeding.reduce((sum, value) => sum + value, 0), 1) : null,
+    feedingUnmeasuredCount: feeding.length - measuredFeedingEvents.length,
     feedingMl: measuredFeeding.length ? round(measuredFeeding.reduce((sum, value) => sum + value, 0), 1) : null,
     urineCount: diapers.filter((event) => event.data?.urine && event.data.urine !== "none").length,
     stoolCount: diapers.filter((event) => event.data?.stool && event.data.stool !== "none").length,
@@ -293,8 +303,10 @@ function aggregateDay(dateKey, events, sessions, assignmentId, serviceType, sche
 
 function metricTotals(daily, events, serviceType) {
   const measuredFeeding = daily.reduce((sum, day) => sum + day.feedingMeasuredCount, 0);
+  const measuredBreastfeeding = daily.reduce((sum, day) => sum + day.breastfeedingDurationCount, 0);
   const feedingCount = daily.reduce((sum, day) => sum + day.feedingCount, 0);
   const feedingMlValues = daily.map((day) => day.feedingMl).filter((value) => value !== null);
+  const breastfeedingMinuteValues = daily.map((day) => day.breastfeedingMinutes).filter((value) => value !== null);
   const careMinuteValues = daily.map((day) => day.careMinutes).filter((value) => value !== null);
   const temperatureValues = events.filter((event) => event.type === "temperature").map((event) => numericValue(event.data?.value)).filter((value) => value !== null);
   const weights = events.filter((event) => event.type === "weight").map((event) => ({ at: event.at, value: numericValue(event.data?.value) })).filter((item) => item.value !== null).sort((first, second) => new Date(first.at) - new Date(second.at));
@@ -314,7 +326,9 @@ function metricTotals(daily, events, serviceType) {
     careMinutes: careMinuteValues.length ? careMinuteValues.reduce((sum, value) => sum + value, 0) : null,
     feedingCount,
     feedingMeasuredCount: measuredFeeding,
-    feedingUnmeasuredCount: feedingCount - measuredFeeding,
+    breastfeedingDurationCount: measuredBreastfeeding,
+    breastfeedingMinutes: breastfeedingMinuteValues.length ? round(breastfeedingMinuteValues.reduce((sum, value) => sum + value, 0), 1) : null,
+    feedingUnmeasuredCount: daily.reduce((sum, day) => sum + day.feedingUnmeasuredCount, 0),
     feedingMl: feedingMlValues.length ? round(feedingMlValues.reduce((sum, value) => sum + value, 0), 1) : null,
     diaperCount: daily.reduce((sum, day) => sum + day.diaperCount, 0),
     urineCount: daily.reduce((sum, day) => sum + day.urineCount, 0),
@@ -350,7 +364,10 @@ function buildPostpartumFacts(totals) {
   if (totals.careMinutes !== null) facts.push(`완료된 근무 ${totals.sessionDays}일의 시작·종료 시간을 더하면 총 ${totals.careMinutes}분입니다.`);
   else facts.push("선택한 서비스 배치에는 시작 시간과 종료 시간이 모두 입력된 완료 근무가 없어 총 근무시간을 계산하지 않았습니다.");
   if (totals.feedingCount) {
-    facts.push(`수유 기록 ${totals.feedingCount}건 중 수유량이 입력된 ${totals.feedingMeasuredCount}건의 합계는 ${totals.feedingMl ?? 0}ml입니다. 수유량이 없는 ${totals.feedingUnmeasuredCount}건은 합계에 넣지 않았습니다.`);
+    const measurements = [];
+    if (totals.breastfeedingDurationCount) measurements.push(`직접 모유수유 ${totals.breastfeedingDurationCount}건의 합계 ${totals.breastfeedingMinutes ?? 0}분`);
+    if (totals.feedingMeasuredCount) measurements.push(`수유량이 입력된 ${totals.feedingMeasuredCount}건의 합계 ${totals.feedingMl ?? 0}ml`);
+    facts.push(`수유 기록은 ${totals.feedingCount}건이며, ${measurements.join(" · ") || "시간 또는 양이 입력된 기록이 없습니다"}.${totals.feedingUnmeasuredCount ? ` 시간이나 양이 없는 ${totals.feedingUnmeasuredCount}건은 합계에 넣지 않았습니다.` : ""}`);
   } else facts.push("선택한 서비스 배치에 수유 기록이 없습니다.");
   if (totals.sleepCount) facts.push(`수면 기록 ${totals.sleepCount}건을 더하면 총 ${totals.sleepMinutes}분이며, 기록 1건당 평균은 ${totals.sleepAverage}분입니다.`);
   else facts.push("선택한 서비스 배치에 수면시간 기록이 없습니다.");
@@ -463,7 +480,7 @@ export function objectiveEventValue(event) {
   const text = (value, fallback = "미입력") => String(value ?? "").trim() || fallback;
   switch (event?.type) {
     case "feeding": {
-      const method = { breast: "직접 수유", pumped: "유축 모유", formula: "분유" }[data.method] || text(data.method, "수유 방식 미입력");
+      const method = { breast: "직접 모유수유", pumped: "유축 모유", formula: "분유" }[data.method] || text(data.method, "수유 방식 미입력");
       const amount = measuredFeedingAmount(event);
       const duration = numericValue(data.duration);
       return amount !== null ? `${method} · ${amount} ml` : duration !== null ? `${method} · ${duration}분` : `${method} · 양 미입력`;
