@@ -26,6 +26,474 @@
   font-synthesis: none;
 }
 
+/* Caregiver reputation, public directory, and review administration */
+.public-caregiver-section {
+  display: block;
+}
+
+.public-caregiver-section > .public-section-heading {
+  max-width: 760px;
+  margin: 0 auto 34px;
+  text-align: center;
+}
+
+.public-caregiver-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.public-caregiver-profile-card {
+  overflow: hidden;
+  border: 1px solid #dce7e1;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 16px 42px rgba(25, 71, 63, .08);
+}
+
+.public-caregiver-profile-card.featured {
+  border-color: #d7a288;
+  box-shadow: 0 18px 46px rgba(119, 75, 57, .12);
+}
+
+.caregiver-public-photo,
+.caregiver-public-detail-photo,
+.caregiver-public-photo-preview {
+  overflow: hidden;
+  background: linear-gradient(145deg, #edf5f0, #d4e7df);
+}
+
+.caregiver-public-photo {
+  aspect-ratio: 4 / 3;
+}
+
+.caregiver-public-photo img,
+.caregiver-public-detail-photo img,
+.caregiver-public-photo-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.caregiver-public-initials {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  place-items: center;
+  color: rgba(22, 78, 69, .78);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(44px, 6vw, 76px);
+  letter-spacing: -.06em;
+  background: radial-gradient(circle at 74% 28%, rgba(255,255,255,.76) 0 15%, transparent 16%), linear-gradient(145deg, #eff6f2, #c7dfd6);
+}
+
+.caregiver-public-card-copy {
+  display: grid;
+  gap: 13px;
+  padding: 22px;
+}
+
+.caregiver-public-name {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.caregiver-public-name small {
+  color: #b6765f;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .14em;
+}
+
+.caregiver-public-name h3 {
+  margin: 4px 0 0;
+  color: var(--green);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 25px;
+  font-weight: 500;
+}
+
+.caregiver-public-rating {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  color: #b57d24;
+}
+
+.caregiver-public-rating span {
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.caregiver-public-rating strong {
+  color: var(--green);
+  font-size: 15px;
+}
+
+.caregiver-public-rating small {
+  flex-basis: 100%;
+  color: var(--ink-soft);
+}
+
+.caregiver-public-rating.empty {
+  display: grid;
+  justify-items: end;
+  color: #c6b27d;
+  font-size: 10px;
+}
+
+.caregiver-public-rating.empty strong {
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.caregiver-public-headline {
+  min-height: 44px;
+  margin: 0;
+  color: var(--green);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.caregiver-public-bio {
+  display: -webkit-box;
+  overflow: hidden;
+  min-height: 58px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.65;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.caregiver-public-facts,
+.caregiver-public-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.caregiver-public-facts span,
+.caregiver-public-tags span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: #315f58;
+  background: #edf5f1;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.caregiver-public-detail-modal {
+  width: min(860px, 100%);
+  max-height: min(900px, 94vh);
+}
+
+.caregiver-public-detail-body {
+  display: grid;
+  gap: 22px;
+  overflow-y: auto;
+  padding: 22px 28px 30px;
+}
+
+.caregiver-public-detail-hero {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+}
+
+.caregiver-public-detail-photo {
+  aspect-ratio: 4 / 5;
+  border-radius: 20px;
+}
+
+.caregiver-public-detail-hero h4 {
+  margin: 0 0 8px;
+  color: var(--green);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 30px;
+  font-weight: 500;
+}
+
+.caregiver-public-detail-hero p {
+  color: var(--ink-soft);
+  line-height: 1.75;
+}
+
+.caregiver-public-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.caregiver-public-detail-grid > section {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.caregiver-public-detail-grid h4,
+.caregiver-public-reviews h4 {
+  margin: 0 0 10px;
+  color: var(--green);
+}
+
+.caregiver-credential-list {
+  margin: 0 0 16px;
+  padding-left: 20px;
+  color: var(--ink-soft);
+  line-height: 1.8;
+}
+
+.rating-distribution {
+  display: grid;
+  gap: 9px;
+}
+
+.rating-distribution-row {
+  display: grid;
+  grid-template-columns: 32px 1fr 24px;
+  gap: 9px;
+  align-items: center;
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+
+.rating-distribution-row i {
+  overflow: hidden;
+  height: 8px;
+  border-radius: 999px;
+  background: #edf0ed;
+}
+
+.rating-distribution-row b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #d49a49;
+}
+
+.caregiver-public-reviews {
+  display: grid;
+  gap: 12px;
+}
+
+.caregiver-public-reviews article {
+  display: grid;
+  gap: 9px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fffdf9;
+}
+
+.caregiver-public-reviews article > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.caregiver-public-reviews article p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.caregiver-public-reviews article small,
+.caregiver-public-reviews article span {
+  color: var(--ink-soft);
+  font-size: 9px;
+}
+
+.completed-review-center {
+  margin-top: 24px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, .72);
+}
+
+.completed-review-list {
+  display: grid;
+  gap: 12px;
+}
+
+.completed-review-list .service-review-card {
+  margin-top: 0;
+}
+
+.star-rating-options {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(48px, 1fr));
+}
+
+.star-rating-options label {
+  min-width: 0;
+}
+
+.star-rating-options span {
+  display: flex;
+  min-height: 64px;
+  flex-direction: column;
+  gap: 3px;
+  justify-content: center;
+  text-align: center;
+}
+
+.star-rating-options span b {
+  color: #ccb57a;
+  font-size: 25px;
+}
+
+.star-rating-options span em {
+  font-size: 10px;
+  font-style: normal;
+}
+
+.star-rating-options input:checked + span b {
+  color: #d99a35;
+  transform: scale(1.08);
+}
+
+.review-public-consent {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  padding: 14px;
+  border: 1px solid #cadfd6;
+  border-radius: 13px;
+  color: var(--green);
+  background: #f1f8f4;
+  cursor: pointer;
+}
+
+.review-public-consent input {
+  margin-top: 3px;
+}
+
+.review-public-consent span,
+.review-public-consent small {
+  display: block;
+}
+
+.review-public-consent small {
+  margin-top: 4px;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+.caregiver-public-admin-preview {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 15px;
+  background: #edf5f1;
+}
+
+.caregiver-public-photo-preview {
+  width: 86px;
+  aspect-ratio: 4 / 5;
+  flex: 0 0 auto;
+  border-radius: 12px;
+}
+
+.caregiver-public-photo-preview .caregiver-public-initials {
+  min-height: 100%;
+  font-size: 26px;
+}
+
+.caregiver-public-admin-preview > div:last-child {
+  display: grid;
+  gap: 4px;
+}
+
+.caregiver-public-admin-preview span,
+.caregiver-public-admin-preview small {
+  color: var(--ink-soft);
+}
+
+.public-profile-switches {
+  display: grid;
+  gap: 9px;
+  align-content: end;
+  padding-bottom: 4px;
+}
+
+.public-profile-switches label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.caregiver-review-admin-list {
+  display: grid;
+  gap: 10px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.caregiver-review-admin-row {
+  display: grid;
+  grid-template-columns: minmax(150px, .8fr) minmax(220px, 1.35fr) auto;
+  gap: 13px;
+  align-items: center;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: white;
+}
+
+.caregiver-review-admin-row > div:first-child,
+.caregiver-review-admin-actions {
+  display: grid;
+  gap: 4px;
+}
+
+.caregiver-review-admin-row p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.caregiver-review-admin-actions {
+  justify-items: end;
+}
+
+@media (max-width: 1060px) {
+  .public-caregiver-profile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .public-caregiver-profile-grid { grid-template-columns: 1fr; }
+  .caregiver-public-detail-hero,
+  .caregiver-public-detail-grid { grid-template-columns: 1fr; }
+  .caregiver-public-detail-photo { width: min(240px, 72vw); margin: 0 auto; }
+  .caregiver-public-detail-body { padding: 18px; }
+  .caregiver-public-name { align-items: center; }
+  .caregiver-review-admin-row { grid-template-columns: 1fr; }
+  .caregiver-review-admin-actions { justify-items: start; }
+}
+
+@media (max-width: 460px) {
+  .star-rating-options { grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  .star-rating-options span { min-height: 54px; padding: 6px 3px; }
+  .star-rating-options span b { font-size: 21px; }
+  .completed-review-center { padding: 15px; }
+}
+
 [hidden] { display: none !important; }
 
 * {
@@ -5623,4 +6091,8 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
     background: #f7faf7 !important;
     break-inside: avoid-page;
   }
+}
+
+#caregivers.public-caregiver-section {
+  display: block;
 }

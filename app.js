@@ -16,8 +16,10 @@ import {
   archiveMemberCloud,
   archiveServiceRequestCloud,
   cloudEnabled,
+  createHistoricalCaregiverReviewCloud,
   currentCloudSession,
   loadCloudState,
+  loadPublicCaregiverDirectoryCloud,
   publishCareReportCloud,
   reassignCaregiverCloud,
   recordApprovedRequestDepositEvidenceCloud,
@@ -35,16 +37,21 @@ import {
   setCareSessionStatusCloud,
   setMemberAccessRolesCloud,
   setMemberStatusCloud,
+  setCaregiverReviewPublicationCloud,
+  setHistoricalReviewPublicationCloud,
   signInCloud,
   signOutCloud,
   signUpCloud,
   submitServiceRequestCloud,
   submitServiceAdjustmentCloud,
   updateCaregiverManagementCloud,
+  updateCaregiverPublicProfileCloud,
   updateClientManagementCloud,
   updateMyClientProfileCloud,
   updateMyProfileCloud,
   updatePasswordCloud,
+  uploadCaregiverPublicPhotoCloud,
+  withdrawServiceReviewPublicConsentCloud,
 } from "./cloud-data.js";
 
 (function () {
@@ -222,7 +229,7 @@ import {
 
   function buildCloudShellState() {
     return {
-      version: 17,
+      version: 18,
       role: "client",
       adminSelectedClientId: null,
       adminSelectedAssignmentId: null,
@@ -267,6 +274,7 @@ import {
       reports: [],
       careSessions: [],
       reviews: [],
+      publicCaregivers: [],
       events: [],
       session: { id: null, assignmentId: null, clientId: null, babyId: null, serviceDate: null, serviceTimeZone: null, active: false, startedAt: null, endedAt: null, clientName: "", babyName: "", babyInitial: "", caregiverName: "", schedule: "", address: "" },
       retail: { selectedCategory: "ALL", posCategory: "ALL", cart: [], carts: {}, products: [], inventoryMovements: [], orders: [] },
@@ -276,7 +284,7 @@ import {
   function buildSeedState() {
     if (!import.meta.env.DEV) return buildCloudShellState();
     return {
-      version: 17,
+      version: 18,
       role: "caregiver",
       adminSelectedClientId: "client-sarah",
       selectedClientAssignmentId: null,
@@ -312,9 +320,9 @@ import {
       users: [
         { id: "user-admin", login: "admin-preview@localhost.invalid", email: "admin-preview@localhost.invalid", password: null, role: "admin", status: "approved", fullName: "운영 관리자", initials: "운", mustChangePassword: false, createdAt: dateOffset(-120) },
         { id: "user-retail", login: "retail-preview@localhost.invalid", email: "retail-preview@localhost.invalid", password: null, role: "retail", status: "approved", fullName: "리테일 담당자", initials: "리", mustChangePassword: false, createdAt: dateOffset(-90) },
-        { id: "user-caregiver-mina", login: "caregiver-one@localhost.invalid", email: "caregiver-one@localhost.invalid", password: null, role: "caregiver", status: "approved", fullName: "Mina Kim", initials: "MK", phone: "470-555-0142", certification: "Newborn Care Specialist · CPR", hireDate: dateOffset(-58), careerYears: 6, employmentStatus: "ACTIVE", specialties: "신생아 수면, 모유수유 지원", residentialArea: "Duluth, GA", serviceArea: "Duluth · Johns Creek · Suwanee", hrNotes: "야간 근무는 사전 협의 필요", createdAt: dateOffset(-60) },
-        { id: "user-caregiver-jane", login: "caregiver-two@localhost.invalid", email: "caregiver-two@localhost.invalid", password: null, role: "caregiver", status: "approved", fullName: "Jane Lee", initials: "JL", phone: "470-555-0188", certification: "Postpartum Doula · Infant CPR", hireDate: dateOffset(-42), careerYears: 4, employmentStatus: "ACTIVE", specialties: "산모 회복, 식사 지원", residentialArea: "Sandy Springs, GA", serviceArea: "Atlanta · Sandy Springs · Marietta", hrNotes: "주 4일 근무 선호", createdAt: dateOffset(-45) },
-        { id: "user-caregiver-soo", login: "caregiver-three@localhost.invalid", email: "caregiver-three@localhost.invalid", password: null, role: "caregiver", status: "approved", fullName: "Soo Choi", initials: "SC", phone: "470-555-0194", certification: "Infant Care · CPR", hireDate: dateOffset(-28), careerYears: 3, employmentStatus: "ACTIVE", specialties: "영아 놀이, 생활 루틴, 안전 돌봄", residentialArea: "Kennesaw, GA", serviceArea: "Kennesaw · Marietta · Acworth", hrNotes: "오후 베이비시팅 일정 선호", createdAt: dateOffset(-30) },
+        { id: "user-caregiver-mina", caregiverId: "caregiver-mina", login: "caregiver-one@localhost.invalid", email: "caregiver-one@localhost.invalid", password: null, role: "caregiver", status: "approved", fullName: "Mina Kim", initials: "MK", phone: "470-555-0142", certification: "Newborn Care Specialist · CPR", hireDate: dateOffset(-58), careerYears: 6, employmentStatus: "ACTIVE", specialties: "신생아 수면, 모유수유 지원", residentialArea: "Duluth, GA", serviceArea: "Duluth · Johns Creek · Suwanee", hrNotes: "야간 근무는 사전 협의 필요", createdAt: dateOffset(-60) },
+        { id: "user-caregiver-jane", caregiverId: "caregiver-jane", login: "caregiver-two@localhost.invalid", email: "caregiver-two@localhost.invalid", password: null, role: "caregiver", status: "approved", fullName: "Jane Lee", initials: "JL", phone: "470-555-0188", certification: "Postpartum Doula · Infant CPR", hireDate: dateOffset(-42), careerYears: 4, employmentStatus: "ACTIVE", specialties: "산모 회복, 식사 지원", residentialArea: "Sandy Springs, GA", serviceArea: "Atlanta · Sandy Springs · Marietta", hrNotes: "주 4일 근무 선호", createdAt: dateOffset(-45) },
+        { id: "user-caregiver-soo", caregiverId: "caregiver-soo", login: "caregiver-three@localhost.invalid", email: "caregiver-three@localhost.invalid", password: null, role: "caregiver", status: "approved", fullName: "Soo Choi", initials: "SC", phone: "470-555-0194", certification: "Infant Care · CPR", hireDate: dateOffset(-28), careerYears: 3, employmentStatus: "ACTIVE", specialties: "영아 놀이, 생활 루틴, 안전 돌봄", residentialArea: "Kennesaw, GA", serviceArea: "Kennesaw · Marietta · Acworth", hrNotes: "오후 베이비시팅 일정 선호", createdAt: dateOffset(-30) },
         { id: "user-client-sarah", login: "client-one@localhost.invalid", email: "client-one@localhost.invalid", password: null, role: "client", status: "approved", fullName: "Sarah Kim", initials: "SK", phone: "470-555-0109", createdAt: dateOffset(-30) },
         { id: "user-client-sophia", login: "client-two@localhost.invalid", email: "client-two@localhost.invalid", password: null, role: "client", status: "approved", fullName: "Sophia Park", initials: "SP", phone: "470-555-0166", createdAt: dateOffset(-18) },
       ],
@@ -338,7 +346,15 @@ import {
       serviceAdjustments: [],
       reports: [],
       careSessions: [],
-      reviews: [],
+      reviews: [
+        { id: "historical-review-mina", assignmentId: null, clientId: null, caregiverId: "caregiver-mina", caregiverUserId: "user-caregiver-mina", rating: 5, tags: ["세심한 케어"], comment: "아기의 수면과 수유 기록을 꼼꼼하게 공유해 주셔서 안심할 수 있었습니다.", serviceDate: dateInputValue(dateOffset(-120)), serviceType: "POSTPARTUM", reviewerAlias: "이전 서비스 고객", source: "ADMIN_LEGACY", publicationStatus: "PUBLISHED", archived: false, createdAt: dateOffset(-100) },
+        { id: "historical-review-jane", assignmentId: null, clientId: null, caregiverId: "caregiver-jane", caregiverUserId: "user-caregiver-jane", rating: 5, tags: ["친절한 소통"], comment: "매일 돌봄 내용을 차분하게 설명해 주시고 요청사항도 정확하게 반영해 주셨습니다.", serviceDate: dateInputValue(dateOffset(-90)), serviceType: "BABYSITTING", reviewerAlias: "이전 서비스 고객", source: "ADMIN_LEGACY", publicationStatus: "PUBLISHED", archived: false, createdAt: dateOffset(-80) },
+      ],
+      publicCaregivers: [
+        { caregiverId: "caregiver-mina", caregiverUserId: "user-caregiver-mina", displayName: "Mina Kim", headline: "신생아의 편안한 리듬과 산모의 회복을 함께 살핍니다.", biography: "신생아 수면과 수유 지원을 중심으로 가정마다 다른 생활 리듬을 세심하게 존중합니다.", photoPath: "", photoUrl: "", photoAlt: "Mina Kim 관리사", careerYears: 6, specialties: ["신생아 수면", "모유수유 지원"], credentials: ["Newborn Care Specialist", "CPR"], languages: ["한국어", "English"], serviceArea: "Duluth · Johns Creek · Suwanee", featured: true, sortOrder: 10, isPublished: true, averageRating: 4.9, reviewCount: 12, ratingDistribution: { 5: 11, 4: 1 }, reviews: [{ id: "public-review-mina", source: "ADMIN_LEGACY", rating: 5, tags: ["세심한 케어"], comment: "아기의 수면과 수유 기록을 꼼꼼하게 공유해 주셔서 안심할 수 있었습니다.", serviceType: "POSTPARTUM", serviceDate: dateInputValue(dateOffset(-120)), reviewerLabel: "이전 서비스 고객", createdAt: dateOffset(-100) }] },
+        { caregiverId: "caregiver-jane", caregiverUserId: "user-caregiver-jane", displayName: "Jane Lee", headline: "산모의 휴식과 아기의 안전한 일상을 차분하게 돕습니다.", biography: "산후 회복기 식사와 휴식 지원, 영아 돌봄 경험을 바탕으로 가족과 명확하게 소통합니다.", photoPath: "", photoUrl: "", photoAlt: "Jane Lee 관리사", careerYears: 4, specialties: ["산모 회복", "식사 지원"], credentials: ["Postpartum Doula", "Infant CPR"], languages: ["한국어", "English"], serviceArea: "Atlanta · Sandy Springs · Marietta", featured: true, sortOrder: 20, isPublished: true, averageRating: 4.8, reviewCount: 8, ratingDistribution: { 5: 6, 4: 2 }, reviews: [{ id: "public-review-jane", source: "ADMIN_LEGACY", rating: 5, tags: ["친절한 소통"], comment: "매일 돌봄 내용을 차분하게 설명해 주시고 요청사항도 정확하게 반영해 주셨습니다.", serviceType: "BABYSITTING", serviceDate: dateInputValue(dateOffset(-90)), reviewerLabel: "이전 서비스 고객", createdAt: dateOffset(-80) }] },
+        { caregiverId: "caregiver-soo", caregiverUserId: "user-caregiver-soo", displayName: "Soo Choi", headline: "놀이와 생활 루틴을 아이의 눈높이에 맞춰 기록합니다.", biography: "영아 놀이와 산책, 식사와 생활 이벤트를 보호자가 이해하기 쉽게 공유합니다.", photoPath: "", photoUrl: "", photoAlt: "Soo Choi 관리사", careerYears: 3, specialties: ["영아 놀이", "생활 루틴", "안전 돌봄"], credentials: ["Infant Care", "CPR"], languages: ["한국어"], serviceArea: "Kennesaw · Marietta · Acworth", featured: false, sortOrder: 30, isPublished: true, averageRating: null, reviewCount: 0, ratingDistribution: {}, reviews: [] },
+      ],
       session: {
         id: "session-emma-today",
         assignmentId: "assignment-emma",
@@ -457,7 +473,7 @@ import {
           return {
             ...seed,
             ...saved,
-            version: 17,
+            version: 18,
             users: mergeById(seed.users, saved.users),
             clients: mergeById(seed.clients, saved.clients),
             assignments: mergeById(seed.assignments, saved.assignments),
@@ -465,6 +481,7 @@ import {
             serviceAdjustments: mergeById(seed.serviceAdjustments, saved.serviceAdjustments || []),
             events: mergeById(seed.events, saved.events),
             reviews: mergeById(seed.reviews, saved.reviews || []),
+            publicCaregivers: Array.isArray(saved.publicCaregivers) && saved.publicCaregivers.length ? saved.publicCaregivers : seed.publicCaregivers,
             views: { ...seed.views, ...(saved.views || {}) },
             serviceTabs: {
               client: { ...seed.serviceTabs.client, ...(saved.serviceTabs?.client || {}) },
@@ -505,7 +522,7 @@ import {
         return {
           ...seed,
           ...saved,
-          version: 17,
+          version: 18,
           auth: seed.auth,
           users: seed.users,
           clients: seed.clients,
@@ -514,6 +531,7 @@ import {
           serviceAdjustments: saved.serviceAdjustments || [],
           reports: saved.reports || [],
           reviews: saved.reviews || [],
+          publicCaregivers: Array.isArray(saved.publicCaregivers) && saved.publicCaregivers.length ? saved.publicCaregivers : seed.publicCaregivers,
           events: upgradedEvents,
           views: { ...seed.views, ...(saved.views || {}) },
           serviceTabs: seed.serviceTabs,
@@ -542,7 +560,7 @@ import {
   [...state.assignments, ...state.serviceRequests].forEach((item) => {
     if (assignmentServiceType(item) === "POSTPARTUM" && item.dailyStart) item.dailyEnd = postpartumEndTime(item.dailyStart);
   });
-  state.version = 17;
+  state.version = 18;
   const app = document.getElementById("app");
   const modalRoot = document.getElementById("modal-root");
   const toastRoot = document.getElementById("toast-root");
@@ -599,7 +617,13 @@ import {
       const session = sessionOverride === undefined ? await currentCloudSession() : sessionOverride;
       if (!session) {
         const clean = loadState();
-        state = { ...clean, auth: { ...clean.auth, screen: "public", currentUserId: null } };
+        let publicCaregivers = [];
+        try {
+          publicCaregivers = await loadPublicCaregiverDirectoryCloud();
+        } catch (publicDirectoryError) {
+          console.warn("Public caregiver directory unavailable", publicDirectoryError);
+        }
+        state = { ...clean, publicCaregivers, auth: { ...clean.auth, screen: "public", currentUserId: null } };
         return;
       }
       const preferredWorkspace = state.role;
@@ -668,6 +692,9 @@ import {
     if (message.includes("caregiver open care session")) return "진행 중인 케어 세션을 종료한 뒤 관리사 권한을 제거해 주세요.";
     if (message.includes("only an owner")) return "소유자만 관리자 권한을 추가하거나 제거할 수 있습니다.";
     if (message.includes("duplicate") || message.includes("already exists")) return "이미 처리 중이거나 저장된 항목입니다.";
+    if (message.includes("recorded delivered-care history")) return "실제 케어 제공 기록이 확인된 서비스에만 후기를 작성할 수 있습니다.";
+    if (message.includes("service has ended")) return "서비스가 종료된 뒤 후기를 작성할 수 있습니다.";
+    if (message.includes("customer consent")) return "고객의 홈페이지 공개 동의가 없어 후기 원문을 공개할 수 없습니다.";
     if (message.includes("permission") || message.includes("row-level security") || message.includes("not authorized")) return "이 작업을 수행할 권한이 없습니다.";
     return fallback;
   }
@@ -1043,6 +1070,22 @@ import {
     if (isDateOnlyValue(value)) return value;
     const date = parseLocalDateValue(value);
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  }
+
+  function dateKeyInTimeZone(value, timeZone) {
+    const date = parseLocalDateValue(value);
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(date);
+    const part = (type) => parts.find((item) => item.type === type)?.value || "";
+    return `${part("year")}-${part("month")}-${part("day")}`;
+  }
+
+  function easternDateKey(value = new Date()) {
+    return dateKeyInTimeZone(value, "America/New_York");
   }
 
   function formatDate(value, options = undefined) {
@@ -1764,7 +1807,11 @@ import {
       ? ""
       : `<button class="${suspended ? "primary-button" : "text-button danger-text"} mini-button" data-member-status="${suspended ? "ACTIVE" : "SUSPENDED"}" data-member-user-id="${user.id}" data-member-name="${escapeHtml(user.fullName)}">${suspended ? "계정 활성화" : "계정 정지"}</button>`;
     const assignedBabyName = assignment && client ? babyNameFor(assignment, client) : "";
-    return `<div class="management-row caregiver-management-row"><div class="management-identity"><div class="mini-avatar">${escapeHtml(user.initials)}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email)} · ${escapeHtml(user.phone || "전화 미등록")}</span></div></div><div class="management-cell"><span>경력·입사년월</span><strong>${Number(user.careerYears || 0)}년 경력</strong><small>${user.hireDate ? `${formatDate(user.hireDate, { year: "numeric", month: "long" })} 입사` : "입사일 미등록"}</small></div><div class="management-cell"><span>거주지역·전문분야</span><strong>${escapeHtml(user.residentialArea || "거주지역 미등록")}</strong><small>${escapeHtml(user.specialties || user.certification || "전문분야 미등록")} · 담당 ${escapeHtml(user.serviceArea || "미등록")}</small></div><div class="management-cell memo-cell"><span>현재 배정·인사메모</span><strong>${client ? `${escapeHtml(client.motherName)} · ${escapeHtml(assignedBabyName || "아이")}` : "현재 배정 없음"}</strong><small>${escapeHtml(hrSetupRequired ? "인사정보를 저장하고 근무상태를 재직으로 설정해야 배정할 수 있습니다." : user.hrNotes || "인사 메모 없음")}</small></div><div class="management-actions"><span class="status-chip ${user.status === "pending" || user.employmentStatus === "INACTIVE" || hrSetupRequired || suspended || archived ? "coral" : ""}">${accountStatusLabel}</span><button class="secondary-button mini-button" data-manage-caregiver="${user.id}">${hrSetupRequired ? "인사정보 설정" : "프로필·수정"}</button>${accountAction}</div></div>`;
+    const publicProfile = user.publicProfile || (state.publicCaregivers || []).find((item) => item.caregiverUserId === user.id || item.caregiverId === user.caregiverId);
+    const validReviews = state.reviews.filter((review) => review.caregiverUserId === user.id && !review.archived && (!review.assignmentId || !state.assignments.find((item) => item.id === review.assignmentId)?.administrativelyRemovedAt));
+    const average = publicProfile?.averageRating != null ? Number(publicProfile.averageRating).toFixed(1) : validReviews.length ? (validReviews.reduce((sum, review) => sum + Number(review.rating), 0) / validReviews.length).toFixed(1) : null;
+    const reviewCount = publicProfile?.averageRating != null ? Number(publicProfile.reviewCount || 0) : validReviews.length;
+    return `<div class="management-row caregiver-management-row"><div class="management-identity"><div class="mini-avatar">${escapeHtml(user.initials)}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email)} · ${escapeHtml(user.phone || "전화 미등록")}</span></div></div><div class="management-cell"><span>경력·입사년월</span><strong>${Number(user.careerYears || 0)}년 경력</strong><small>${user.hireDate ? `${formatDate(user.hireDate, { year: "numeric", month: "long" })} 입사` : "입사일 미등록"}</small></div><div class="management-cell"><span>홈페이지·평점</span><strong>${average ? `★ ${average} · 후기 ${reviewCount}건` : "후기 없음"}</strong><small>${publicProfile?.isPublished !== false && publicProfile ? "홈페이지 공개 중" : "홈페이지 비공개"} · ${escapeHtml(publicProfile?.headline || user.specialties || "공개 소개 미등록")}</small></div><div class="management-cell memo-cell"><span>현재 배정·인사메모</span><strong>${client ? `${escapeHtml(client.motherName)} · ${escapeHtml(assignedBabyName || "아이")}` : "현재 배정 없음"}</strong><small>${escapeHtml(hrSetupRequired ? "인사정보를 저장하고 근무상태를 재직으로 설정해야 배정할 수 있습니다." : user.hrNotes || "인사 메모 없음")}</small></div><div class="management-actions"><span class="status-chip ${user.status === "pending" || user.employmentStatus === "INACTIVE" || hrSetupRequired || suspended || archived ? "coral" : ""}">${accountStatusLabel}</span><button class="secondary-button mini-button" data-manage-caregiver="${user.id}">${hrSetupRequired ? "인사정보 설정" : "프로필·후기 관리"}</button>${accountAction}</div></div>`;
   }
 
   const DATABASE_ROLE_BY_APP_ROLE = {
@@ -2553,8 +2600,10 @@ import {
     const currentBabyName = assignment && client ? babyNameFor(assignment, client) : "";
     const upcoming = state.assignments.filter((item) => item.caregiverUserId === user.id && item.status !== "CANCELLED" && new Date(item.startAt) > new Date()).sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
     const shownUpcoming = upcoming.slice(0, 5);
-    const caregiverReviews = state.reviews.filter((review) => review.caregiverUserId === user.id);
-    const reviewAverage = caregiverReviews.length ? (caregiverReviews.reduce((sum, review) => sum + Number(review.rating), 0) / caregiverReviews.length).toFixed(1) : null;
+    const caregiverReviews = state.reviews.filter((review) => review.caregiverUserId === user.id && !review.archived && (!review.assignmentId || !state.assignments.find((item) => item.id === review.assignmentId)?.administrativelyRemovedAt));
+    const publicProfile = user.publicProfile || (state.publicCaregivers || []).find((item) => item.caregiverUserId === user.id || item.caregiverId === user.caregiverId);
+    const reviewAverage = publicProfile?.averageRating != null ? Number(publicProfile.averageRating).toFixed(1) : caregiverReviews.length ? (caregiverReviews.reduce((sum, review) => sum + Number(review.rating), 0) / caregiverReviews.length).toFixed(1) : null;
+    const reviewCount = publicProfile?.averageRating != null ? Number(publicProfile.reviewCount || 0) : caregiverReviews.length;
     return `
       <section class="page">
         ${demoBanner()}
@@ -2566,7 +2615,7 @@ import {
             </div>
           </article>
           <article class="card card-pad"><div class="section-header"><div><h3>서비스 품질</h3><p>기록과 고객 피드백</p></div></div>
-            <div class="quality-metrics"><div><span>이번 주 리포트</span><strong>4/4</strong><small>모든 리포트 제출 완료</small></div><div><span>고객 후기</span><strong>${reviewAverage ? `${reviewAverage} / 5.0` : "후기 대기"}</strong><small>${caregiverReviews.length}건의 완료 서비스 후기</small></div></div>
+            <div class="quality-metrics"><div><span>이번 주 리포트</span><strong>4/4</strong><small>모든 리포트 제출 완료</small></div><div><span>고객 후기</span><strong>${reviewAverage ? `${reviewAverage} / 5.0` : "후기 대기"}</strong><small>${reviewCount}건의 완료 서비스 후기</small></div></div>
           </article>
         </div>
         <article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>예정된 배정</h3><p>고객 준비정보는 확정 배정의 시작 7일 전부터 확인할 수 있습니다.</p></div><span class="status-chip gold">${shownUpcoming.length} / ${upcoming.length} upcoming</span></div><div class="assignment-list">${shownUpcoming.length ? shownUpcoming.map(caregiverUpcomingAssignmentRowMarkup).join("") : `<div class="empty-state"><strong>예정된 배정이 없습니다.</strong></div>`}</div></article>
@@ -2600,13 +2649,23 @@ import {
     return `<article class="card summary-card"><div class="summary-icon">${escapeHtml(icon)}</div><h4>${escapeHtml(label)}</h4><strong>${escapeHtml(value)}</strong><p>${escapeHtml(foot)}</p></article>`;
   }
 
+  function assignmentHasDeliveredCare(assignment) {
+    if (!assignment || assignment.administrativelyRemovedAt) return false;
+    const sessionIds = new Set(state.careSessions.filter((session) => session.assignmentId === assignment.id).map((session) => session.id));
+    return state.careSessions.some((session) => session.assignmentId === assignment.id && (session.status === "COMPLETED" || session.startedAt))
+      || state.events.some((event) => event.assignmentId === assignment.id || sessionIds.has(event.careSessionId))
+      || state.reports.some((report) => report.assignmentId === assignment.id || sessionIds.has(report.careSessionId));
+  }
+
   function assignmentHasCompletedCare(assignment) {
-    return assignment.status === "COMPLETED" || new Date(assignment.endAt) < new Date();
+    if (!assignment || !assignmentHasDeliveredCare(assignment)) return false;
+    const ended = assignment.endAt && new Date(assignment.endAt) < new Date();
+    return assignment.status === "COMPLETED" || assignment.status === "CANCELLED" || ended;
   }
 
   function clientServiceReviewMarkup(client, serviceType = null, assignmentOverride = null) {
     if (!client) return "";
-    const assignments = state.assignments.filter((assignment) => assignment.clientId === client.id && assignment.status !== "CANCELLED" && new Date(assignment.startAt) <= new Date() && (!serviceType || assignmentServiceType(assignment) === serviceType) && (!assignmentOverride || assignment.id === assignmentOverride.id)).sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
+    const assignments = state.assignments.filter((assignment) => assignment.clientId === client.id && !assignment.administrativelyRemovedAt && new Date(assignment.startAt) <= new Date() && (!serviceType || assignmentServiceType(assignment) === serviceType) && (!assignmentOverride || assignment.id === assignmentOverride.id)).sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
     if (!assignments.length) return "";
     const assignmentIds = new Set(assignments.map((assignment) => assignment.id));
     const existingReviews = state.reviews.filter((review) => review.clientId === client.id && assignmentIds.has(review.assignmentId)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -2616,10 +2675,22 @@ import {
     const existing = state.reviews.find((review) => review.assignmentId === assignment.id) || existingReviews[0];
     if (existing) {
       const reviewedCaregiver = state.users.find((user) => user.id === existing.caregiverUserId);
-      return `<article class="card service-review-card completed"><div class="review-icon">✓</div><div><p class="eyebrow">SERVICE REVIEW COMPLETED</p><h3>${escapeHtml(reviewedCaregiver?.fullName || "담당 관리사")} 관리사 후기</h3><div class="review-stars" aria-label="별점 ${existing.rating}점">${"★".repeat(Number(existing.rating))}${"☆".repeat(5 - Number(existing.rating))}</div><p>${escapeHtml(existing.comment || "소중한 후기가 등록되었습니다.")}</p><small>${new Date(existing.createdAt).toLocaleDateString("ko-KR")} 작성 · 동일 배정에는 후기를 한 번만 작성할 수 있습니다.</small></div></article>`;
+      const consentControl = existing.publicConsent
+        ? `<button type="button" class="text-button" data-withdraw-review-consent="${existing.id}">홈페이지 공개 동의 철회</button>`
+        : `<small>홈페이지 후기 원문은 공개되지 않습니다.</small>`;
+      return `<article class="card service-review-card completed"><div class="review-icon">✓</div><div><p class="eyebrow">SERVICE REVIEW COMPLETED</p><h3>${escapeHtml(reviewedCaregiver?.fullName || "담당 관리사")} 관리사 후기</h3><div class="review-stars" aria-label="별점 ${existing.rating}점">${"★".repeat(Number(existing.rating))}${"☆".repeat(5 - Number(existing.rating))}</div><p>${escapeHtml(existing.comment || "소중한 후기가 등록되었습니다.")}</p><small>${new Date(existing.createdAt).toLocaleDateString("ko-KR")} 작성 · 동일 배정에는 후기를 한 번만 작성할 수 있습니다.</small>${consentControl}</div></article>`;
     }
     const available = assignmentHasCompletedCare(assignment);
-    return `<article class="card service-review-card ${available ? "ready" : "locked"}"><div class="review-icon">${available ? "♡" : "◷"}</div><div><p class="eyebrow">SERVICE REVIEW</p><h3>${escapeHtml(caregiver?.fullName || "담당 관리사")} 관리사 후기를 남겨주세요.</h3><p>${available ? "종료된 서비스 경험을 바탕으로 서비스 품질 향상에 도움이 되는 후기를 한 번 작성할 수 있습니다." : "서비스 계약·배정 기간이 종료되면 담당 관리사에 대한 후기 작성이 활성화됩니다."}</p></div>${available ? `<button type="button" class="primary-button" data-open-review="${assignment.id}">후기 작성</button>` : `<span class="status-chip gold">계약·배정 종료 후 가능</span>`}</article>`;
+    const waitingForDelivery = !assignmentHasDeliveredCare(assignment);
+    return `<article class="card service-review-card ${available ? "ready" : "locked"}"><div class="review-icon">${available ? "♡" : "◷"}</div><div><p class="eyebrow">SERVICE REVIEW</p><h3>${escapeHtml(caregiver?.fullName || "담당 관리사")} 관리사 후기를 남겨주세요.</h3><p>${available ? "실제 제공이 확인된 종료 서비스의 경험을 바탕으로 후기를 한 번 작성할 수 있습니다." : waitingForDelivery ? "실제 케어 기록이 확인되고 서비스가 종료된 뒤 후기 작성이 활성화됩니다." : "서비스 계약·배정 기간이 종료되면 담당 관리사에 대한 후기 작성이 활성화됩니다."}</p></div>${available ? `<button type="button" class="primary-button" data-open-review="${assignment.id}">후기 작성</button>` : `<span class="status-chip gold">서비스 완료 후 가능</span>`}</article>`;
+  }
+
+  function clientCompletedReviewCenterMarkup(client) {
+    const assignments = state.assignments
+      .filter((assignment) => assignment.clientId === client?.id && assignmentHasCompletedCare(assignment))
+      .sort((a, b) => new Date(b.endAt) - new Date(a.endAt));
+    if (!assignments.length) return "";
+    return `<section class="completed-review-center"><div class="section-header"><div><p class="eyebrow">COMPLETED SERVICE REVIEWS</p><h3>완료 서비스 후기</h3><p>서비스가 끝난 뒤에도 배치별 담당 관리사의 후기 작성 여부를 확인할 수 있습니다.</p></div><span class="status-chip">${assignments.length}건</span></div><div class="completed-review-list">${assignments.map((assignment) => clientServiceReviewMarkup(client, null, assignment)).join("")}</div></section>`;
   }
 
   function clientServiceGateMarkup(client, serviceType, workspaceNav = "") {
@@ -2670,7 +2741,7 @@ import {
     const babysittingCards = [...babysittingAssignments.map((assignment) => clientServiceOverviewCard(client, "BABYSITTING", assignment)), ...babysittingRequests.map((request) => clientServiceOverviewCard(client, "BABYSITTING", null, request))];
     const massage = state.serviceCatalog.MASSAGE;
     const profileSetup = clientProfileComplete(client) ? "" : `<article class="card client-profile-onboarding"><div><p class="eyebrow">PROFILE SETUP</p><h3>서비스 신청 전에 가족 프로필을 완성해 주세요.</h3><p>아기 이름·출생일 또는 예정일과 기본 서비스 주소를 한 번 저장하면 신청서에 자동으로 불러옵니다.</p></div><button class="primary-button" type="button" data-edit-profile>고객·아기 프로필 작성</button></article>`;
-    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY SERVICES", `${escapeHtml(client.motherName)}님의 서비스`, "아기별 이용 중인 돌봄과 신청·배정 상태를 한눈에 확인하세요.")}${profileSetup}<div class="grid stats">${statCard("Active service", activeCount, "현재 진행 중인 전체 배정", "✓")}${statCard("Current service", activeCount > 1 ? `${activeCount}건 이용 중` : currentService ? serviceMetaFor(currentService).label : "대기", "아기별 현재 돌봄", currentService === "BABYSITTING" ? "☆" : "♡")}${statCard("Pending requests", pendingCount ? `${pendingCount}건` : "없음", "승인·일정 배정 대기", "◷")}</div><div class="service-overview-grid" style="margin-top:18px">${postpartumCards.length ? postpartumCards.join("") : clientServiceOverviewCard(client, "POSTPARTUM")}${babysittingCards.length ? babysittingCards.join("") : clientServiceOverviewCard(client, "BABYSITTING")}</div><div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, null, true)}</div><article class="card premium-addon-card" style="margin-top:18px"><div class="premium-addon-icon">${massage.icon}</div><div><p class="eyebrow">PREMIUM ADD-ON · COMING SOON</p><h3>${massage.label}</h3><p>${massage.description}. 현재는 신청할 수 없으며, 라이선스·보험·전문인력 검증이 완료된 뒤 산후조리 계약의 추가 상품으로 열립니다.</p><div class="premium-addon-tags"><span>Georgia License 필수</span><span>산후조리 Add-on</span><span>현재 선택 불가</span></div></div><button class="secondary-button" disabled>준비 중</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>동일 아기의 겹치는 서비스만 자동으로 차단합니다.</strong><p>베이비시팅은 산후조리 이용 이력 없이도 독립적으로 신청할 수 있습니다. 다만 동일 아기가 산후조리를 현재 이용 중일 때는 베이비시팅 신규 신청이 제한되며, 두 서비스 기간은 서로 겹칠 수 없습니다.</p></article></section>`;
+    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY SERVICES", `${escapeHtml(client.motherName)}님의 서비스`, "아기별 이용 중인 돌봄과 신청·배정 상태를 한눈에 확인하세요.")}${profileSetup}<div class="grid stats">${statCard("Active service", activeCount, "현재 진행 중인 전체 배정", "✓")}${statCard("Current service", activeCount > 1 ? `${activeCount}건 이용 중` : currentService ? serviceMetaFor(currentService).label : "대기", "아기별 현재 돌봄", currentService === "BABYSITTING" ? "☆" : "♡")}${statCard("Pending requests", pendingCount ? `${pendingCount}건` : "없음", "승인·일정 배정 대기", "◷")}</div><div class="service-overview-grid" style="margin-top:18px">${postpartumCards.length ? postpartumCards.join("") : clientServiceOverviewCard(client, "POSTPARTUM")}${babysittingCards.length ? babysittingCards.join("") : clientServiceOverviewCard(client, "BABYSITTING")}</div>${clientCompletedReviewCenterMarkup(client)}<div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, null, true)}</div><article class="card premium-addon-card" style="margin-top:18px"><div class="premium-addon-icon">${massage.icon}</div><div><p class="eyebrow">PREMIUM ADD-ON · COMING SOON</p><h3>${massage.label}</h3><p>${massage.description}. 현재는 신청할 수 없으며, 라이선스·보험·전문인력 검증이 완료된 뒤 산후조리 계약의 추가 상품으로 열립니다.</p><div class="premium-addon-tags"><span>Georgia License 필수</span><span>산후조리 Add-on</span><span>현재 선택 불가</span></div></div><button class="secondary-button" disabled>준비 중</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>동일 아기의 겹치는 서비스만 자동으로 차단합니다.</strong><p>베이비시팅은 산후조리 이용 이력 없이도 독립적으로 신청할 수 있습니다. 다만 동일 아기가 산후조리를 현재 이용 중일 때는 베이비시팅 신규 신청이 제한되며, 두 서비스 기간은 서로 겹칠 수 없습니다.</p></article></section>`;
   }
 
   function clientBabysittingSummary(client, assignment, workspaceNav = "") {
@@ -3547,6 +3618,30 @@ import {
     return '<button class="public-text-button" data-auth-screen="signup">회원가입</button><button class="primary-button" data-auth-screen="login">로그인</button>';
   }
 
+  function caregiverPublicRatingMarkup(profile, compact = false) {
+    if (!profile.reviewCount || profile.averageRating == null) {
+      return `<div class="caregiver-public-rating empty"><span aria-hidden="true">☆☆☆☆☆</span><strong>첫 후기를 기다리고 있어요</strong></div>`;
+    }
+    const rounded = Math.max(1, Math.min(5, Math.round(Number(profile.averageRating))));
+    return `<div class="caregiver-public-rating" aria-label="평균 별점 ${Number(profile.averageRating).toFixed(1)}점, 후기 ${profile.reviewCount}건"><span aria-hidden="true">${"★".repeat(rounded)}${"☆".repeat(5 - rounded)}</span><strong>${Number(profile.averageRating).toFixed(1)}</strong>${compact ? "" : `<small>후기 ${Number(profile.reviewCount)}건</small>`}</div>`;
+  }
+
+  function caregiverPublicPortraitMarkup(profile, detail = false) {
+    if (profile.photoUrl) return `<img src="${escapeHtml(profile.photoUrl)}" alt="${escapeHtml(profile.photoAlt || `${profile.displayName} 관리사`)}" loading="lazy" decoding="async"/>`;
+    return `<div class="caregiver-public-initials" aria-label="${escapeHtml(profile.displayName)} 관리사 사진 미등록">${escapeHtml(initialsFor(profile.displayName) || "PM")}</div>`;
+  }
+
+  function publicCaregiverCardMarkup(profile) {
+    const specialties = (profile.specialties || []).slice(0, 3);
+    return `<article class="public-caregiver-profile-card ${profile.featured ? "featured" : ""}"><div class="caregiver-public-photo">${caregiverPublicPortraitMarkup(profile)}</div><div class="caregiver-public-card-copy"><div class="caregiver-public-name"><div><small>${profile.featured ? "FEATURED CARE PROFESSIONAL" : "CARE PROFESSIONAL"}</small><h3>${escapeHtml(profile.displayName)}</h3></div>${caregiverPublicRatingMarkup(profile, true)}</div><p class="caregiver-public-headline">${escapeHtml(profile.headline)}</p><div class="caregiver-public-facts"><span>경력 ${Number(profile.careerYears || 0).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}년</span>${profile.serviceArea ? `<span>${escapeHtml(profile.serviceArea)}</span>` : ""}</div>${specialties.length ? `<div class="caregiver-public-tags">${specialties.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}<p class="caregiver-public-bio">${escapeHtml(profile.biography || "가족의 돌봄 필요를 세심하게 살피는 ProMoms 관리사입니다.")}</p><button type="button" class="secondary-button" data-public-caregiver-detail="${profile.caregiverId}">프로필·후기 보기</button></div></article>`;
+  }
+
+  function publicCaregiverDirectoryMarkup() {
+    const caregivers = (state.publicCaregivers || []).filter((profile) => profile.isPublished !== false);
+    if (caregivers.length) return `<div class="public-caregiver-profile-grid">${caregivers.map(publicCaregiverCardMarkup).join("")}</div>`;
+    return `<div class="public-caregiver-grid trust-fallback"><article><div class="public-person-art mint">✓</div><h3>신원·경력 확인</h3><span>IDENTITY & EXPERIENCE</span><p>지원 서류와 경력 정보를 확인하고 승인된 계정만 배정 후보에 포함합니다.</p></article><article><div class="public-person-art blush">CPR</div><h3>자격·안전 기준</h3><span>CREDENTIALS & SAFETY</span><p>서비스에 필요한 교육과 자격, 만료일을 확인한 뒤 업무 범위를 구분합니다.</p></article><article><div class="public-person-art mint">↔</div><h3>일정·가정 맞춤 배정</h3><span>SCHEDULE & FAMILY FIT</span><p>서비스 유형, 지역, 요일과 시간의 실제 가용성을 확인해 중복 없이 배정합니다.</p></article></div>`;
+  }
+
   function publicSiteMarkup() {
     const user = authUser();
     const clientUser = userHasAccessRole(user, "CLIENT");
@@ -3561,13 +3656,26 @@ import {
         <div class="public-content">${publicServiceStatusMarkup(user)}
           <section class="public-section public-about" id="about"><div class="public-section-heading"><p class="eyebrow">ABOUT ProMoms</p><h2>가족에게 필요한 케어를<br/>더 투명하고 책임 있게.</h2></div><div class="about-story"><p>ProMoms는 조지아 애틀랜타 메트로 지역의 가족을 중심으로 산모의 회복, 아이의 안전한 돌봄, 생활에 필요한 제품까지 연결하는 패밀리 웰니스 서비스입니다. W-2 직접 고용과 회사 차원의 책임보상보험·근로자재해보험 운영을 원칙으로 삼아 고객에게 고용 및 업무상 재해 리스크를 전가하지 않는 체계를 지향합니다.</p><div class="about-metrics"><div><strong>W-2</strong><span>직접 고용 운영 원칙</span></div><div><strong>Company</strong><span>보험 책임 회사 관리</span></div><div><strong>Atlanta</strong><span>메트로 지역 방문 케어</span></div></div></div></section>
           <section class="public-section" id="services"><div class="public-section-heading centered"><p class="eyebrow">OUR SERVICES</p><h2>가족에게 필요한 돌봄을 선택하세요.</h2><p>산후조리와 베이비시팅은 각각 독립적으로 신청할 수 있으며, 동일 아기의 서비스 기간만 겹치지 않도록 운영합니다.</p></div><div class="public-service-grid"><article class="public-service-card featured"><span class="service-number">01</span><div class="service-symbol">♡</div><p class="eyebrow">POSTPARTUM CARE</p><h3>산후조리 서비스</h3><p>산모 회복 지원과 신생아 수유·수면·체온·목욕·체중 기록을 세심하게 관리합니다.</p><ul><li>2·3·4주 맞춤 일정</li><li>산모 식사·휴식·회복 지원</li><li>신생아 케어 기록과 주간 차트</li><li>보험 적용·W-2 정식 직원 운영 원칙</li></ul><div class="service-price"><span>2주 기본 패키지</span><strong>$3,600<small> · 주 $1,800</small></strong></div><button class="primary-button" data-service-apply="POSTPARTUM">산후조리 신청</button></article><article class="public-service-card"><span class="service-number">02</span><div class="service-symbol">☆</div><p class="eyebrow">BABYSITTING</p><h3>베이비시팅 서비스</h3><p>아이의 식사와 한국형 이유식·유아식, 놀이·산책과 생활 이벤트를 보호자에게 정확하게 공유합니다.</p><ul><li>보험 적용·W-2 정식 직원 운영 원칙</li><li>고용 및 사고 Risk 고객 전가 없음</li><li>이유식 및 유아식 한국형 준비</li><li>놀이·산책·특이 이벤트 메모</li></ul><div class="service-price"><span>4시간분 예약금 $128 · 최소 2주</span><strong>$32<small>부터</small></strong></div><button class="primary-button" data-service-apply="BABYSITTING">베이비시팅 신청</button></article><article class="public-service-card premium-coming-soon"><span class="service-number">03</span><div class="service-symbol">✦</div><p class="eyebrow">PREMIUM ADD-ON · COMING SOON</p><h3>산모 마사지</h3><p>산후조리 고객을 위한 프리미엄 추가 상품으로 준비하고 있습니다.</p><ul><li>Georgia Massage Therapist License 필수</li><li>라이선스 확인된 전문가만 제공</li><li>마사지 업무 보험 범위 확인</li><li>산후조리 계약 Add-on 형태</li></ul><div class="service-price"><span>출시 준비 중</span><strong>미정</strong></div><button class="secondary-button" disabled>현재 선택 불가</button></article></div><section class="insured-staffing-panel"><div><p class="eyebrow">WHY INSURED STAFFING MATTERS</p><h3>보험·고용 책임을 회사가 관리합니다.</h3><p>ProMoms는 W-2 직접 고용과 책임보상보험·근로자재해보험 운영을 회사의 원칙으로 두고 있습니다.</p></div><ul><li><span>◈</span><strong>책임보상보험</strong><small>서비스 수행 중 대인·대물 리스크 관리</small></li><li><span>✓</span><strong>근로자재해보험</strong><small>업무상 재해 책임을 고객에게 전가하지 않음</small></li><li><span>W-2</span><strong>정식 직원</strong><small>독립계약자 편법 운영 없이 회사가 고용 의무 처리</small></li></ul></section><div class="public-rules" id="rules"><div><strong>이용 규칙</strong><span>① 산후조리 예약금 $500 · 시작 30일 전까지 취소 시 환불</span><span>② 시작 30일 이내 산후조리 예약금 환불 불가</span><span>③ 베이비시팅 예약금 $128 · 4시간분</span><span>④ 시작 72시간 이전 취소 시 베이비시팅 예약금 환불</span><span>⑤ 시작 72시간 이내 취소·노쇼 시 예약금 환불 불가</span><span>⑥ 동일 아기의 산후조리·베이비시팅 기간 중복 불가</span><span>⑦ 의료행위·무면허 마사지는 제공하지 않음</span></div></div></section>
-          <section class="public-section public-caregiver-section" id="caregivers"><div class="public-section-heading"><p class="eyebrow">TRUSTED CARE TEAM</p><h2>확인된 기준으로 관리사를 배정합니다.</h2><p>실제 등록된 관리사의 자격·경력·활동 지역과 일정을 관리자가 확인한 뒤 고객에게 배정합니다.</p></div><div class="public-caregiver-grid"><article><div class="public-person-art mint">✓</div><h3>신원·경력 확인</h3><span>IDENTITY & EXPERIENCE</span><p>지원 서류와 경력 정보를 확인하고 승인된 계정만 배정 후보에 포함합니다.</p></article><article><div class="public-person-art blush">CPR</div><h3>자격·안전 기준</h3><span>CREDENTIALS & SAFETY</span><p>서비스에 필요한 교육과 자격, 만료일을 확인한 뒤 업무 범위를 구분합니다.</p></article><article><div class="public-person-art mint">↔</div><h3>일정·가정 맞춤 배정</h3><span>SCHEDULE & FAMILY FIT</span><p>서비스 유형, 지역, 요일과 시간의 실제 가용성을 확인해 중복 없이 배정합니다.</p></article></div></section>
+          <section class="public-section public-caregiver-section" id="caregivers"><div class="public-section-heading"><p class="eyebrow">MEET OUR CARE PROFESSIONALS</p><h2>경력과 고객 경험으로<br/>확인하는 ProMoms 관리사.</h2><p>등록된 관리사의 공개 약력과 전문분야, 실제 서비스 별점 평균을 투명하게 확인하세요. 배정은 서비스 지역과 실제 일정까지 확인해 진행합니다.</p></div>${publicCaregiverDirectoryMarkup()}</section>
           <section class="public-section" id="shop-preview"><div class="public-section-heading public-shop-heading"><div><p class="eyebrow">ProMoms SELECT · COMING SOON</p><h2>Beauty & Baby Store</h2><p>상품·결제·재고 운영 체계가 준비된 뒤 별도 스토어로 선보일 예정입니다.</p></div><button class="secondary-button" disabled>출시 준비 중</button></div><div class="store-readiness-note"><strong>지금은 돌봄 서비스 신청과 기록 기능만 운영합니다.</strong><span>샘플 상품이나 재고를 실제 판매 상품처럼 표시하지 않습니다.</span></div></section>
           <section class="public-section public-location" id="location"><div class="location-card"><p class="eyebrow">SERVICE AREA</p><h2>Atlanta Metro 방문 케어</h2><p>고객의 서비스 주소와 일정, 관리사 이동 가능 범위를 확인한 뒤 방문 가능 여부를 안내합니다.</p><dl><div><dt>기본 지역</dt><dd>Atlanta Metro, Georgia</dd></div><div><dt>상담 방식</dt><dd>전화 상담 후 일정·주소 확인</dd></div><div><dt>방문 안내</dt><dd>신청 승인 전 최종 서비스 가능 지역을 확인합니다.</dd></div></dl><a class="primary-button public-link-button" href="tel:+14704049467">전화로 가능 지역 문의</a></div><div class="location-map" role="img" aria-label="Atlanta Metro 방문 서비스 지역 안내"><div class="map-road road-one"></div><div class="map-road road-two"></div><div class="map-pin"><span class="promoms-mark">${brandLogoMarkup()}</span><strong>ProMoms</strong></div><small>Atlanta Metro · Georgia</small></div></section>
           <section class="public-section public-contact" id="contact"><div><p class="eyebrow">CONTACT US</p><h2>돌봄이 필요한 순간,<br/>편하게 이야기해 주세요.</h2></div><div class="contact-methods"><a href="tel:+14704049467"><span>☎</span><div><small>전화 상담</small><strong>470-404-9467</strong></div></a><button data-notice="이메일 문의 채널은 운영 주소 확정 후 안내합니다. 현재는 전화로 문의해 주세요."><span>✉</span><div><small>이메일 문의</small><strong>채널 준비 중</strong></div></button><button data-notice="Atlanta Metro 내 상세 방문 가능 여부는 서비스 주소와 일정을 확인한 뒤 안내합니다."><span>GA</span><div><small>서비스 지역</small><strong>Atlanta Metro</strong></div></button></div></section>
         </div>
       </main><footer class="public-footer"><div class="public-brand inverse"><span class="promoms-mark">${brandLogoMarkup()}</span><div><strong>ProMoms</strong><small>엄마 곁의 전문가</small></div></div><p>© 2026 ProMoms. All rights reserved.</p><div><button data-public-anchor="rules">이용약관</button><button data-auth-screen="login">직원 로그인</button></div></footer>
     </div>`;
+  }
+
+  function openPublicCaregiverDetail(caregiverId) {
+    const profile = (state.publicCaregivers || []).find((item) => item.caregiverId === caregiverId && item.isPublished !== false);
+    if (!profile) return showToast("공개된 관리사 프로필을 찾을 수 없습니다.", "error");
+    const distribution = [5, 4, 3, 2, 1].map((rating) => {
+      const count = Number(profile.ratingDistribution?.[rating] || profile.ratingDistribution?.[String(rating)] || 0);
+      const width = profile.reviewCount ? Math.round((count / profile.reviewCount) * 100) : 0;
+      return `<div class="rating-distribution-row"><span>${rating}점</span><i><b style="width:${width}%"></b></i><small>${count}</small></div>`;
+    }).join("");
+    const reviews = (profile.reviews || []).slice(0, 8);
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal caregiver-public-detail-modal" role="dialog" aria-modal="true" aria-labelledby="caregiver-public-detail-title"><header class="modal-header"><div><p class="eyebrow">CARE PROFESSIONAL</p><h3 id="caregiver-public-detail-title">${escapeHtml(profile.displayName)} 관리사</h3><p>${escapeHtml(profile.headline)}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><div class="caregiver-public-detail-body"><div class="caregiver-public-detail-hero"><div class="caregiver-public-detail-photo">${caregiverPublicPortraitMarkup(profile, true)}</div><div><h4>${escapeHtml(profile.displayName)}</h4>${caregiverPublicRatingMarkup(profile)}<p>${escapeHtml(profile.biography || "가족의 돌봄 필요를 세심하게 살피는 ProMoms 관리사입니다.")}</p><div class="caregiver-public-facts"><span>경력 ${Number(profile.careerYears || 0).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}년</span>${profile.serviceArea ? `<span>${escapeHtml(profile.serviceArea)}</span>` : ""}</div></div></div><div class="caregiver-public-detail-grid"><section><h4>전문분야</h4><div class="caregiver-public-tags">${(profile.specialties || []).length ? profile.specialties.map((item) => `<span>${escapeHtml(item)}</span>`).join("") : "<span>등록 준비 중</span>"}</div><h4>자격·교육</h4><ul class="caregiver-credential-list">${(profile.credentials || []).length ? profile.credentials.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : "<li>등록 준비 중</li>"}</ul><h4>사용 언어</h4><p>${escapeHtml((profile.languages || []).join(" · ") || "등록 준비 중")}</p></section><section><h4>별점 분포</h4><div class="rating-distribution">${distribution}</div></section></div><section class="caregiver-public-reviews"><div class="section-header"><div><h4>공개 후기</h4><p>고객이 공개에 동의하고 관리자가 확인한 후기 또는 출처가 표시된 이전 후기입니다.</p></div></div>${reviews.length ? reviews.map((review) => `<article><div><div class="review-stars" aria-label="별점 ${review.rating}점">${"★".repeat(review.rating)}${"☆".repeat(5 - review.rating)}</div><span>${escapeHtml(review.reviewerLabel || "서비스 이용 고객")} · ${review.source === "ADMIN_LEGACY" ? "이전 서비스 후기 · 관리자 등록" : "ProMoms 이용 후기"}</span></div><p>${escapeHtml(review.comment)}</p>${review.tags?.length ? `<div class="caregiver-public-tags">${review.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>` : ""}<small>${review.serviceType ? serviceMetaFor(review.serviceType).label : "돌봄 서비스"}${review.serviceDate ? ` · ${formatDate(review.serviceDate)}` : ""}</small></article>`).join("") : `<div class="empty-state"><strong>아직 공개된 후기 내용이 없습니다.</strong><span>별점은 개인정보 없이 평균에 반영됩니다.</span></div>`}</section></div><div class="modal-footer"><button type="button" class="primary-button" data-close-modal>확인</button></div></section></div>`;
+    bindModalFrame();
   }
 
   function bindPublicEvents() {
@@ -3590,6 +3698,7 @@ import {
     document.querySelectorAll("[data-service-apply]").forEach((button) => button.addEventListener("click", () => { const user = authUser(); if (!user) { state.auth.screen = "signup"; saveState(); render(); return; } if (!userHasAccessRole(user, "CLIENT")) return showToast("서비스 신청은 고객 권한이 있는 계정에서 이용할 수 있습니다."); openServiceApplicationModal(button.dataset.serviceApply || null); }));
     document.querySelectorAll("[data-my-service]").forEach((button) => button.addEventListener("click", enterClientPortal));
     document.querySelectorAll("[data-enter-portal]").forEach((button) => button.addEventListener("click", () => { state.auth.screen = "portal"; saveState(); render(); }));
+    document.querySelectorAll("[data-public-caregiver-detail]").forEach((button) => button.addEventListener("click", () => openPublicCaregiverDetail(button.dataset.publicCaregiverDetail)));
     document.querySelectorAll("[data-open-client-shop]").forEach((button) => button.addEventListener("click", () => { state.views.client = "shop"; state.auth.screen = "portal"; saveState(); render(); }));
     document.querySelectorAll("[data-notice], [data-demo-action]").forEach((button) => button.addEventListener("click", () => showToast(button.dataset.notice || button.dataset.demoAction, "info")));
   }
@@ -4156,6 +4265,7 @@ import {
     document.querySelectorAll("[data-caregiver-assignment-detail]").forEach((button) => button.addEventListener("click", () => openCaregiverAssignmentDetailModal(button.dataset.caregiverAssignmentDetail)));
     document.querySelectorAll("[data-open-retrospective-report]").forEach((button) => button.addEventListener("click", () => openRetrospectiveCareReportModal(button.dataset.assignmentId || null)));
     document.querySelectorAll("[data-open-review]").forEach((button) => button.addEventListener("click", () => openServiceReviewModal(button.dataset.openReview)));
+    document.querySelectorAll("[data-withdraw-review-consent]").forEach((button) => button.addEventListener("click", () => withdrawServiceReviewPublicConsent(button.dataset.withdrawReviewConsent, button)));
 
     document.querySelectorAll("[data-start-care]").forEach((button) => {
       button.addEventListener("click", async () => {
@@ -4643,11 +4753,11 @@ import {
   function openServiceReviewModal(assignmentId) {
     const user = authUser();
     const client = state.role === "client" ? clientForUser(user?.id) : null;
-    const assignment = state.assignments.find((item) => item.id === assignmentId && item.clientId === client?.id && item.status !== "CANCELLED");
-    if (!assignment || !assignmentHasCompletedCare(assignment)) return showToast("서비스 계약·배정 기간이 종료된 후에 후기를 작성할 수 있습니다.");
+    const assignment = state.assignments.find((item) => item.id === assignmentId && item.clientId === client?.id && !item.administrativelyRemovedAt);
+    if (!assignment || !assignmentHasCompletedCare(assignment)) return showToast("실제 케어 제공 기록이 확인된 종료 서비스에만 후기를 작성할 수 있습니다.");
     if (state.reviews.some((review) => review.assignmentId === assignment.id)) return showToast("이 배정에는 이미 후기를 작성했습니다.");
     const caregiver = state.users.find((item) => item.id === assignment.caregiverUserId);
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal review-modal" role="dialog" aria-modal="true" aria-labelledby="service-review-title"><header class="modal-header"><div><p class="eyebrow">SERVICE REVIEW</p><h3 id="service-review-title">${escapeHtml(caregiver?.fullName || "담당 관리사")} 관리사 후기</h3><p>서비스 계약·배정 기간이 종료된 배정당 한 번만 작성할 수 있습니다.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-service-review-form data-assignment-id="${assignment.id}"><div class="field"><span class="field-label">서비스 만족도</span><div class="rating-options">${[5, 4, 3, 2, 1].map((rating) => `<label><input type="radio" name="rating" value="${rating}" ${rating === 5 ? "checked" : ""} required/><span>${rating}점 <b>${"★".repeat(rating)}</b></span></label>`).join("")}</div></div><div class="field"><span class="field-label">좋았던 점</span><div class="review-tag-options">${["세심한 케어", "정확한 기록", "친절한 소통", "시간 준수", "전문적인 지원"].map((tag) => `<label><input type="checkbox" name="tags" value="${tag}"/><span>${tag}</span></label>`).join("")}</div></div><div class="field"><label for="review-comment">후기</label><textarea id="review-comment" name="comment" maxlength="500" placeholder="서비스에서 좋았던 점이나 개선 의견을 남겨주세요." required></textarea><small>관리사와 운영 관리자에게 서비스 개선 목적으로 공유됩니다.</small></div><div class="privacy-boundary-note"><strong>한 번만 제출 가능</strong><span>공정한 후기 관리를 위해 제출 후에는 추가 작성이나 수정이 불가능합니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">후기 제출</button></div></form></section></div>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal review-modal" role="dialog" aria-modal="true" aria-labelledby="service-review-title"><header class="modal-header"><div><p class="eyebrow">SERVICE REVIEW</p><h3 id="service-review-title">${escapeHtml(caregiver?.fullName || "담당 관리사")} 관리사 후기</h3><p>실제 제공이 확인된 종료 서비스 배치마다 한 번 작성할 수 있습니다.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-service-review-form data-assignment-id="${assignment.id}"><div class="field"><span class="field-label">서비스 만족도 <small>별을 선택해 주세요.</small></span><div class="rating-options star-rating-options" role="radiogroup" aria-label="서비스 만족도">${[1, 2, 3, 4, 5].map((rating) => `<label title="${rating}점"><input type="radio" name="rating" value="${rating}" required/><span><b aria-hidden="true">★</b><em>${rating}점</em></span></label>`).join("")}</div></div><div class="field"><span class="field-label">좋았던 점</span><div class="review-tag-options">${["세심한 케어", "정확한 기록", "친절한 소통", "시간 준수", "전문적인 지원"].map((tag) => `<label><input type="checkbox" name="tags" value="${tag}"/><span>${tag}</span></label>`).join("")}</div></div><div class="field"><label for="review-comment">후기</label><textarea id="review-comment" name="comment" maxlength="500" placeholder="서비스에서 좋았던 점이나 개선 의견을 남겨주세요." required></textarea><small>제출한 원문은 관리사와 운영 관리자에게 서비스 개선 목적으로 공유됩니다.</small></div><label class="review-public-consent"><input type="checkbox" name="publicConsent"/><span><strong>홈페이지 익명 후기 공개에 동의합니다.</strong><small>고객 이름은 표시하지 않으며, 관리자가 개인정보를 확인한 뒤 공개합니다. 선택하지 않아도 별점은 익명 평균에 반영됩니다.</small></span></label><div class="privacy-boundary-note"><strong>한 번만 제출 가능</strong><span>공정한 후기 관리를 위해 제출 후에는 추가 작성이나 수정이 불가능합니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">후기 제출</button></div></form></section></div>`;
     bindModalFrame();
     modalRoot.querySelector("[data-service-review-form]").addEventListener("submit", saveServiceReview);
   }
@@ -4657,21 +4767,22 @@ import {
     const form = event.currentTarget;
     const user = authUser();
     const client = state.role === "client" ? clientForUser(user?.id) : null;
-    const assignment = state.assignments.find((item) => item.id === form.dataset.assignmentId && item.clientId === client?.id && item.status !== "CANCELLED");
-    if (!assignment || !assignmentHasCompletedCare(assignment)) return showToast("서비스 계약·배정 기간이 종료된 후에 후기를 작성할 수 있습니다.", "error");
+    const assignment = state.assignments.find((item) => item.id === form.dataset.assignmentId && item.clientId === client?.id && !item.administrativelyRemovedAt);
+    if (!assignment || !assignmentHasCompletedCare(assignment)) return showToast("실제 케어 제공 기록이 확인된 종료 서비스에만 후기를 작성할 수 있습니다.", "error");
     if (state.reviews.some((review) => review.assignmentId === assignment.id)) return showToast("이 배정에는 이미 후기를 작성했습니다.", "info");
     const formData = new FormData(form);
     const rating = Number(formData.get("rating"));
     const comment = String(formData.get("comment") || "").trim();
     if (!Number.isInteger(rating) || rating < 1 || rating > 5 || !comment) return showToast("별점과 후기를 모두 입력해 주세요.", "error");
     const tags = formData.getAll("tags");
+    const publicConsent = formData.get("publicConsent") === "on";
     if (usingCloudData()) {
       const submitButton = form.querySelector('button[type="submit"]');
       if (!assignment.caregiverId) return showToast("담당 관리사 정보를 확인할 수 없습니다.", "error");
       submitButton.disabled = true;
       submitButton.textContent = "후기 저장 중…";
       try {
-        await saveServiceReviewCloud({ assignmentId: assignment.id, clientId: client.id, caregiverId: assignment.caregiverId, rating, tags, comment });
+        await saveServiceReviewCloud({ assignmentId: assignment.id, rating, tags, comment, publicConsent });
         closeModal();
         await refreshCloudState();
         showToast("관리사 후기가 등록되었습니다. 소중한 의견 감사합니다.");
@@ -4682,11 +4793,35 @@ import {
       }
       return;
     }
-    state.reviews.push({ id: `review-${Date.now()}`, assignmentId: assignment.id, clientId: client.id, caregiverUserId: assignment.caregiverUserId, rating, tags, comment, createdAt: new Date().toISOString(), createdBy: user.id });
+    state.reviews.push({ id: `review-${Date.now()}`, assignmentId: assignment.id, clientId: client.id, caregiverUserId: assignment.caregiverUserId, rating, tags, comment, createdAt: new Date().toISOString(), createdBy: user.id, source: "CLIENT", publicConsent, publicationStatus: publicConsent ? "PENDING" : "PRIVATE" });
     saveState();
     closeModal();
     render();
     showToast("관리사 후기가 등록되었습니다. 소중한 의견 감사합니다.");
+  }
+
+  async function withdrawServiceReviewPublicConsent(reviewId, button) {
+    const user = authUser();
+    const client = state.role === "client" ? clientForUser(user?.id) : null;
+    const review = state.reviews.find((item) => item.id === reviewId && item.clientId === client?.id && item.source === "CLIENT");
+    if (!review || !review.publicConsent) return showToast("철회할 홈페이지 공개 동의를 찾을 수 없습니다.", "error");
+    if (!window.confirm("홈페이지에서 이 후기 원문을 즉시 내릴까요? 별점과 원문은 서비스 기록으로 안전하게 보존됩니다.")) return;
+    if (button) button.disabled = true;
+    try {
+      if (usingCloudData()) {
+        await withdrawServiceReviewPublicConsentCloud(review.id);
+        await refreshCloudState();
+      } else {
+        review.publicConsent = false;
+        review.publicationStatus = "PRIVATE";
+        saveState();
+        render();
+      }
+      showToast("홈페이지 공개 동의를 철회했습니다. 후기 원문이 더 이상 공개되지 않습니다.");
+    } catch (error) {
+      showToast(friendlyErrorMessage(error, "후기 공개 동의를 철회하지 못했습니다."), "error");
+      if (button) button.disabled = false;
+    }
   }
 
   function openClientManagementModal(clientId, babyId = null) {
@@ -4775,30 +4910,72 @@ import {
     const employmentOptions = [["APPLICANT", "지원자·승인 대기"], ["ACTIVE", "재직"], ["ON_LEAVE", "휴직"], ["INACTIVE", "퇴사·비활성"]];
     const hrSetupRequired = user.status === "approved" && user.hasHrProfile === false;
     const employmentValue = user.status === "pending" ? "APPLICANT" : user.employmentStatus || (usingCloudData() ? "INACTIVE" : "ACTIVE");
+    const publicProfile = user.publicProfile || (state.publicCaregivers || []).find((item) => item.caregiverUserId === user.id || item.caregiverId === user.caregiverId) || {};
+    const caregiverReviews = state.reviews.filter((review) => review.caregiverUserId === user.id).sort((a, b) => new Date(b.serviceDate || b.createdAt) - new Date(a.serviceDate || a.createdAt));
+    const activeReviews = caregiverReviews.filter((review) => !review.archived);
+    const reviewAverage = publicProfile.averageRating != null ? Number(publicProfile.averageRating).toFixed(1) : activeReviews.length ? (activeReviews.reduce((sum, review) => sum + Number(review.rating), 0) / activeReviews.length).toFixed(1) : null;
+    const reviewCount = publicProfile.averageRating != null ? Number(publicProfile.reviewCount || 0) : activeReviews.length;
+    const reviewManagementMarkup = caregiverReviews.length ? caregiverReviews.map((review) => {
+      const isLegacy = review.source === "ADMIN_LEGACY";
+      const status = review.archived ? "ARCHIVED" : review.publicationStatus || "PRIVATE";
+      const statusLabel = status === "PUBLISHED" ? "홈페이지 공개" : status === "PENDING" ? "공개 검토 대기" : status === "ARCHIVED" ? "보관됨" : "비공개";
+      const action = isLegacy
+        ? `<button type="button" class="text-button" data-toggle-historical-review="${review.id}" data-next-published="${status !== "PUBLISHED"}">${status === "PUBLISHED" ? "숨기기" : "공개"}</button>${review.archived ? "" : `<button type="button" class="text-button danger-text" data-archive-historical-review="${review.id}">보관</button>`}`
+        : review.publicConsent
+          ? `<button type="button" class="text-button" data-client-review-publication="${review.id}" data-next-status="${status === "PUBLISHED" ? "HIDDEN" : "PUBLISHED"}">${status === "PUBLISHED" ? "숨기기" : "공개 승인"}</button>`
+          : `<small>고객 공개 동의 없음</small>`;
+      return `<article class="caregiver-review-admin-row"><div><span class="review-stars" aria-label="${review.rating}점">${"★".repeat(Number(review.rating))}${"☆".repeat(5 - Number(review.rating))}</span><strong>${isLegacy ? escapeHtml(review.reviewerAlias || "이전 서비스 고객") : "ProMoms 서비스 이용 고객"}</strong><small>${isLegacy ? "이전 후기 · 관리자 등록" : "실제 서비스 후기"} · ${review.serviceDate ? formatDate(review.serviceDate) : new Date(review.createdAt).toLocaleDateString("ko-KR")}</small></div><p>${escapeHtml(review.comment)}</p><div class="caregiver-review-admin-actions"><span class="status-chip ${status === "PUBLISHED" ? "" : "gold"}">${statusLabel}</span>${action}</div></article>`;
+    }).join("") : `<div class="empty-state"><strong>등록된 후기가 없습니다.</strong><span>실제 서비스 완료 후기 또는 이전 후기 자료를 추가할 수 있습니다.</span></div>`;
     modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal profile-modal" role="dialog" aria-modal="true" aria-labelledby="caregiver-management-title"><header class="modal-header"><div><p class="eyebrow">CAREGIVER HR</p><h3 id="caregiver-management-title">관리사 프로필·인사관리</h3><p>관리자 전용 인사 및 배정 기준 정보</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-caregiver-management-form>
       <div class="profile-summary"><div class="profile-summary-person"><div class="profile-avatar">${escapeHtml(user.initials)}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email)} · ${escapeHtml(user.phone || "전화 미등록")}</span></div></div><div class="profile-summary-tags"><span>${user.status === "approved" ? "계정 승인" : "승인 대기"}</span><span>${currentClient ? `현재 ${escapeHtml(currentClient.motherName)} 담당` : "현재 배정 없음"}</span><span>총 ${assignments.length}건 배정</span></div></div>${hrSetupRequired ? '<div class="status-banner warning"><strong>인사정보 설정이 필요합니다.</strong><span>계정 승인만으로는 일정에 배정되지 않습니다. 아래 정보를 저장하고 근무상태를 ‘재직’으로 설정하세요.</span></div>' : ""}
       <section class="profile-form-section"><div class="profile-section-title"><strong>계정·재직 정보</strong><span>근무상태와 입사 이력</span></div><div class="form-grid two"><div class="field"><label for="caregiver-full-name">이름</label><input id="caregiver-full-name" name="fullName" value="${escapeHtml(user.fullName)}" required /></div><div class="field"><label for="managed-caregiver-phone">전화번호</label><input id="managed-caregiver-phone" name="phone" value="${escapeHtml(user.phone || "")}" /></div></div><div class="form-grid two"><div class="field"><label for="managed-caregiver-email">로그인 이메일</label><input id="managed-caregiver-email" value="${escapeHtml(user.email)}" readonly /></div><div class="field"><label for="employment-status">근무상태</label><select id="employment-status" name="employmentStatus">${employmentOptions.map(([value, label]) => `<option value="${value}" ${value === employmentValue ? "selected" : ""}>${label}</option>`).join("")}</select></div></div><div class="form-grid two"><div class="field"><label for="caregiver-hire-date">입사일자</label><input id="caregiver-hire-date" name="hireDate" type="date" value="${user.hireDate ? dateInputValue(user.hireDate) : ""}" /></div><div class="field"><label for="career-years">총 경력연수</label><input id="career-years" name="careerYears" type="number" min="0" max="60" step="0.5" value="${Number(user.careerYears || 0)}" /></div></div></section>
       <section class="profile-form-section"><div class="profile-section-title"><strong>경력·배정 역량</strong><span>배정 시 참고하는 전문 정보</span></div><div class="field"><label for="managed-certification">자격·경력 요약</label><textarea id="managed-certification" name="certification" placeholder="보유 자격, 근무기관, 주요 경력을 입력하세요.">${escapeHtml(user.certification || "")}</textarea></div><div class="form-grid two"><div class="field"><label for="caregiver-residential-area">거주지역</label><input id="caregiver-residential-area" name="residentialArea" value="${escapeHtml(user.residentialArea || "")}" placeholder="Duluth, GA" /></div><div class="field"><label for="caregiver-service-area">담당 가능지역</label><input id="caregiver-service-area" name="serviceArea" value="${escapeHtml(user.serviceArea || "")}" placeholder="Atlanta · Duluth · Marietta" /></div></div><div class="field"><label for="caregiver-specialties">전문분야</label><input id="caregiver-specialties" name="specialties" value="${escapeHtml(user.specialties || "")}" placeholder="신생아 수면, 모유수유 지원" /></div></section>
+      <section class="profile-form-section caregiver-public-profile-admin"><div class="profile-section-title"><strong>홈페이지 공개 프로필</strong><span>고객에게 공개되는 홍보 정보 · 내부 인사정보와 분리</span></div><div class="caregiver-public-admin-preview"><div class="caregiver-public-photo-preview" data-caregiver-photo-preview>${caregiverPublicPortraitMarkup({ ...publicProfile, displayName: publicProfile.displayName || user.fullName })}</div><div><strong>${escapeHtml(publicProfile.displayName || user.fullName)}</strong><span>${escapeHtml(publicProfile.headline || "한 줄 소개를 입력해 주세요.")}</span><small>${reviewAverage ? `★ ${reviewAverage} · 후기 ${reviewCount}건` : "첫 후기를 기다리고 있어요"}</small></div></div><input type="hidden" name="existingPhotoPath" value="${escapeHtml(publicProfile.photoPath || "")}"/><div class="field"><label for="caregiver-public-photo">프로필 사진</label><input id="caregiver-public-photo" name="publicPhoto" type="file" accept="image/jpeg,image/png,image/webp" ${user.caregiverId ? "" : "disabled"}/><small>JPG·PNG·WebP, 최대 5MB. 홈페이지에 공개되는 사진입니다.</small></div><div class="form-grid two"><div class="field"><label for="public-display-name">공개 표시명</label><input id="public-display-name" name="publicDisplayName" value="${escapeHtml(publicProfile.displayName || user.fullName)}" maxlength="80" required /></div><div class="field"><label for="public-headline">한 줄 소개</label><input id="public-headline" name="publicHeadline" value="${escapeHtml(publicProfile.headline || "")}" maxlength="120" placeholder="전문성과 돌봄 철학을 한 문장으로 소개하세요." /></div></div><div class="field"><label for="public-biography">공개 약력</label><textarea id="public-biography" name="publicBiography" maxlength="1500" placeholder="고객이 이해하기 쉬운 경력, 케어 철학과 강점을 입력하세요.">${escapeHtml(publicProfile.biography || user.certification || "")}</textarea></div><div class="form-grid two"><div class="field"><label for="public-career-years">공개 경력연수</label><input id="public-career-years" name="publicCareerYears" type="number" min="0" max="60" step="0.5" value="${Number(publicProfile.careerYears ?? user.careerYears ?? 0)}" /></div><div class="field"><label for="public-service-area">공개 활동지역</label><input id="public-service-area" name="publicServiceArea" value="${escapeHtml(publicProfile.serviceArea || user.serviceArea || "")}" placeholder="Atlanta · Duluth · Marietta" /></div></div><div class="form-grid two"><div class="field"><label for="public-specialties">전문분야</label><input id="public-specialties" name="publicSpecialties" value="${escapeHtml((publicProfile.specialties || []).join(", ") || user.specialties || "")}" placeholder="신생아 수면, 산모 회복" /></div><div class="field"><label for="public-credentials">자격·교육</label><input id="public-credentials" name="publicCredentials" value="${escapeHtml((publicProfile.credentials || []).join(", ") || user.certification || "")}" placeholder="Postpartum Doula, Infant CPR" /></div></div><div class="form-grid two"><div class="field"><label for="public-languages">사용 언어</label><input id="public-languages" name="publicLanguages" value="${escapeHtml((publicProfile.languages || []).join(", ") || user.preferredLanguage || "")}" placeholder="한국어, English" /></div><div class="field"><label for="public-photo-alt">사진 대체 설명</label><input id="public-photo-alt" name="publicPhotoAlt" value="${escapeHtml(publicProfile.photoAlt || `${publicProfile.displayName || user.fullName} 관리사 프로필 사진`)}" maxlength="160" /></div></div><div class="form-grid two"><div class="field"><label for="public-sort-order">홈페이지 표시 순서</label><input id="public-sort-order" name="publicSortOrder" type="number" min="0" max="9999" value="${Number(publicProfile.sortOrder || 0)}" /></div><div class="public-profile-switches"><label><input type="checkbox" name="publicFeatured" ${publicProfile.featured ? "checked" : ""}/><span>추천 관리사 강조</span></label><label><input type="checkbox" name="publicPublished" ${publicProfile.isPublished === true ? "checked" : ""}/><span>홈페이지 공개</span></label></div></div><small>신규 관리사는 기본 비공개입니다. 소개 정보를 검토한 뒤 ‘홈페이지 공개’를 선택하세요.</small></section>
+      <section class="profile-form-section caregiver-review-management"><div class="profile-section-title"><strong>평점·후기 관리</strong><span>${reviewAverage ? `평균 ${reviewAverage}점 · ${reviewCount}건` : "후기 없음"}</span></div><div class="privacy-boundary-note"><strong>출처와 공개 동의를 보호합니다.</strong><span>실제 고객 후기 원문과 별점은 수정하지 않습니다. 고객이 공개에 동의한 후기만 검토 후 공개할 수 있으며, 관리자 입력 이전 후기는 출처가 표시됩니다.</span></div><div class="caregiver-review-admin-list">${reviewManagementMarkup}</div><button type="button" class="secondary-button" data-add-historical-review="${user.id}" ${user.caregiverId ? "" : "disabled"}>이전 후기·별점 추가</button></section>
       <section class="profile-form-section internal-note-section"><div class="profile-section-title"><strong>인사 특이사항</strong><span>관리사 본인에게는 표시되지 않습니다.</span></div><div class="field"><label for="caregiver-hr-notes">근무조건·상담·평가 메모</label><textarea id="caregiver-hr-notes" name="hrNotes" placeholder="근무 가능시간, 휴직, 면담, 평가 등 관리자 메모를 입력하세요.">${escapeHtml(user.hrNotes || "")}</textarea></div><div class="record-meta-grid"><small>가입일 ${user.createdAt ? new Date(user.createdAt).toLocaleDateString("ko-KR") : "미등록"}</small><small>승인일 ${user.approvedAt ? new Date(user.approvedAt).toLocaleDateString("ko-KR") : "승인 전"}</small><small>마지막 수정 ${user.hrUpdatedAt ? new Date(user.hrUpdatedAt).toLocaleString("ko-KR") : "기록 전"}</small></div></section>
       <div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">인사정보 저장</button></div>
     </form></section></div>`;
     bindModalFrame();
     modalRoot.querySelector("[data-caregiver-management-form]").addEventListener("submit", (event) => saveCaregiverManagement(event, user.id));
+    modalRoot.querySelector('[name="publicPhoto"]')?.addEventListener("change", (event) => {
+      const [file] = event.target.files || [];
+      if (!file) return;
+      if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size > 5 * 1024 * 1024) {
+        event.target.value = "";
+        return showToast("JPG·PNG·WebP 형식의 5MB 이하 사진을 선택해 주세요.", "error");
+      }
+      const preview = modalRoot.querySelector("[data-caregiver-photo-preview]");
+      const reader = new FileReader();
+      reader.addEventListener("load", () => { if (preview) preview.innerHTML = `<img src="${reader.result}" alt="선택한 관리사 프로필 사진 미리보기"/>`; });
+      reader.readAsDataURL(file);
+    });
+    modalRoot.querySelector("[data-add-historical-review]")?.addEventListener("click", () => openHistoricalCaregiverReviewModal(user.id));
+    modalRoot.querySelectorAll("[data-client-review-publication]").forEach((button) => button.addEventListener("click", () => updateClientReviewPublication(button.dataset.clientReviewPublication, button.dataset.nextStatus, user.id, button)));
+    modalRoot.querySelectorAll("[data-toggle-historical-review]").forEach((button) => button.addEventListener("click", () => updateHistoricalReviewPublication(button.dataset.toggleHistoricalReview, button.dataset.nextPublished === "true", false, user.id, button)));
+    modalRoot.querySelectorAll("[data-archive-historical-review]").forEach((button) => button.addEventListener("click", () => updateHistoricalReviewPublication(button.dataset.archiveHistoricalReview, false, true, user.id, button)));
   }
 
   async function saveCaregiverManagement(event, userId) {
     event.preventDefault();
     if (state.role !== "admin" || !canManageCaregiverHr()) return showToast("소유자 또는 관리자 권한이 필요합니다.");
-    const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const formData = new FormData(event.currentTarget);
+    const values = Object.fromEntries(formData.entries());
+    const publicPhoto = formData.get("publicPhoto") instanceof File && formData.get("publicPhoto").size ? formData.get("publicPhoto") : null;
     const user = state.users.find((item) => item.id === userId && (usingCloudData() ? item.databaseRoles?.includes("CAREGIVER") : item.role === "caregiver"));
+    if (!user) return showToast("관리사 정보를 찾을 수 없습니다.", "error");
+    if (values.publicPublished === "on" && (!String(values.publicHeadline || "").trim() || !String(values.publicBiography || "").trim())) {
+      return showToast("홈페이지에 공개하려면 한 줄 소개와 공개 약력을 입력해 주세요.", "error");
+    }
     if (usingCloudData()) {
       const submitButton = event.currentTarget.querySelector('button[type="submit"]');
       submitButton.disabled = true;
       try {
         await updateCaregiverManagementCloud(user, values);
+        const uploadedPhoto = publicPhoto ? await uploadCaregiverPublicPhotoCloud(user.caregiverId, publicPhoto) : null;
+        await updateCaregiverPublicProfileCloud(user.caregiverId, values, uploadedPhoto?.path || null);
         closeModal();
         await refreshCloudState();
-        showToast(`${values.fullName.trim()} 관리사의 인사정보를 저장했습니다.`);
+        showToast(`${values.fullName.trim()} 관리사의 인사정보와 홈페이지 프로필을 저장했습니다.`);
       } catch (error) {
         showToast(friendlyErrorMessage(error, "관리사 인사정보를 저장하지 못했습니다."), "error");
         submitButton.disabled = false;
@@ -4820,10 +4997,117 @@ import {
       hrUpdatedAt: new Date().toISOString(),
       hrUpdatedBy: authUser().id,
     });
+    const list = (value) => String(value || "").split(/[,·\n]/).map((item) => item.trim()).filter(Boolean);
+    const existingPublicProfile = (state.publicCaregivers || []).find((item) => item.caregiverUserId === user.id);
+    const publicProfile = {
+      ...(existingPublicProfile || {}),
+      caregiverId: existingPublicProfile?.caregiverId || user.caregiverId || `caregiver-${user.id}`,
+      caregiverUserId: user.id,
+      displayName: values.publicDisplayName.trim(),
+      headline: values.publicHeadline.trim(),
+      biography: values.publicBiography.trim(),
+      photoAlt: values.publicPhotoAlt.trim(),
+      careerYears: Number(values.publicCareerYears || 0),
+      specialties: list(values.publicSpecialties),
+      credentials: list(values.publicCredentials),
+      languages: list(values.publicLanguages),
+      serviceArea: values.publicServiceArea.trim(),
+      featured: values.publicFeatured === "on",
+      sortOrder: Number(values.publicSortOrder || 0),
+      isPublished: values.publicPublished === "on",
+      averageRating: existingPublicProfile?.averageRating ?? null,
+      reviewCount: existingPublicProfile?.reviewCount || 0,
+      ratingDistribution: existingPublicProfile?.ratingDistribution || {},
+      reviews: existingPublicProfile?.reviews || [],
+    };
+    state.publicCaregivers ||= [];
+    if (existingPublicProfile) Object.assign(existingPublicProfile, publicProfile);
+    else state.publicCaregivers.push(publicProfile);
+    user.publicProfile = publicProfile;
     saveState();
     closeModal();
     render();
     showToast(`${user.fullName} 관리사의 인사정보를 저장했습니다.`);
+  }
+
+  function openHistoricalCaregiverReviewModal(userId) {
+    if (state.role !== "admin" || !canManageCaregiverHr()) return showToast("관리자 권한이 필요합니다.", "error");
+    const user = state.users.find((item) => item.id === userId && item.caregiverId);
+    if (!user) return showToast("승인된 관리사 정보를 찾을 수 없습니다.", "error");
+    const easternToday = easternDateKey();
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal review-modal" role="dialog" aria-modal="true" aria-labelledby="historical-review-title"><header class="modal-header"><div><p class="eyebrow">ADMIN IMPORTED REVIEW</p><h3 id="historical-review-title">${escapeHtml(user.fullName)} 관리사 이전 후기</h3><p>초기 셋업을 위한 이전 서비스 후기입니다. 홈페이지에는 ‘이전 서비스 후기 · 관리자 등록’으로 출처가 표시됩니다.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-historical-review-form data-user-id="${user.id}"><div class="field"><span class="field-label">별점</span><div class="rating-options star-rating-options" role="radiogroup" aria-label="이전 후기 별점">${[1, 2, 3, 4, 5].map((rating) => `<label title="${rating}점"><input type="radio" name="rating" value="${rating}" required/><span><b aria-hidden="true">★</b><em>${rating}점</em></span></label>`).join("")}</div></div><div class="form-grid two"><div class="field"><label for="historical-service-type">서비스 종류</label><select id="historical-service-type" name="serviceType"><option value="POSTPARTUM">산후조리</option><option value="BABYSITTING">베이비시팅</option></select></div><div class="field"><label for="historical-service-date">서비스 날짜</label><input id="historical-service-date" name="serviceDate" type="date" max="${easternToday}" value="${easternToday}" required /><small>미국 동부시간 기준 오늘 또는 이전 날짜를 선택하세요.</small></div></div><div class="field"><label for="historical-reviewer-alias">후기 표시명</label><input id="historical-reviewer-alias" name="reviewerAlias" value="이전 서비스 고객" maxlength="80" required/><small>실제 고객 이름이나 연락처는 입력하지 마세요.</small></div><div class="field"><label for="historical-review-tags">태그</label><input id="historical-review-tags" name="tags" maxlength="300" placeholder="세심한 케어, 친절한 소통" /></div><div class="field"><label for="historical-review-comment">후기 원문</label><textarea id="historical-review-comment" name="comment" minlength="1" maxlength="500" required placeholder="보유한 이전 후기 내용을 개인정보 없이 입력하세요."></textarea></div><label class="review-public-consent admin"><input type="checkbox" name="isPublished" checked/><span><strong>홈페이지에 공개</strong><small>공개 전 고객 식별정보가 포함되지 않았는지 확인하세요.</small></span></label><div class="privacy-boundary-note"><strong>감사 기록 보존</strong><span>등록 관리자와 시각이 기록되며, 실서비스 고객 후기와 구분해 표시됩니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">이전 후기 저장</button></div></form></section></div>`;
+    bindModalFrame();
+    modalRoot.querySelector("[data-historical-review-form]").addEventListener("submit", saveHistoricalCaregiverReview);
+  }
+
+  async function saveHistoricalCaregiverReview(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const user = state.users.find((item) => item.id === form.dataset.userId && item.caregiverId);
+    if (!user) return showToast("관리사 정보를 다시 확인해 주세요.", "error");
+    const values = Object.fromEntries(new FormData(form).entries());
+    const rating = Number(values.rating);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5 || !String(values.comment || "").trim()) return showToast("1~5점 별점과 후기 내용을 입력해 주세요.", "error");
+    if (!values.serviceDate || values.serviceDate > easternDateKey()) return showToast("이전 후기 날짜는 미국 동부시간 기준 오늘 또는 과거만 선택할 수 있습니다.", "error");
+    const submitButton = form.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+    try {
+      if (usingCloudData()) {
+        await createHistoricalCaregiverReviewCloud(user.caregiverId, values);
+        closeModal();
+        await refreshCloudState();
+      } else {
+        state.reviews.push({ id: `historical-review-${Date.now()}`, assignmentId: null, clientId: null, caregiverId: user.caregiverId, caregiverUserId: user.id, rating, tags: String(values.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean), comment: values.comment.trim(), serviceDate: values.serviceDate, serviceType: values.serviceType, reviewerAlias: values.reviewerAlias.trim(), source: "ADMIN_LEGACY", publicationStatus: values.isPublished === "on" ? "PUBLISHED" : "HIDDEN", archived: false, createdAt: new Date().toISOString() });
+        saveState();
+        closeModal();
+        render();
+      }
+      showToast("이전 후기와 별점을 출처 표시와 함께 저장했습니다.");
+    } catch (error) {
+      showToast(friendlyErrorMessage(error, "이전 후기를 저장하지 못했습니다."), "error");
+      submitButton.disabled = false;
+    }
+  }
+
+  async function updateClientReviewPublication(reviewId, status, userId, button) {
+    if (button) button.disabled = true;
+    try {
+      if (usingCloudData()) {
+        await setCaregiverReviewPublicationCloud(reviewId, status);
+        await refreshCloudState();
+      } else {
+        const review = state.reviews.find((item) => item.id === reviewId);
+        if (review) review.publicationStatus = status;
+        saveState();
+        render();
+      }
+      showToast(status === "PUBLISHED" ? "고객 후기를 홈페이지 공개로 승인했습니다." : "고객 후기를 홈페이지에서 숨겼습니다.");
+      if (state.auth.screen === "portal") openCaregiverManagementModal(userId);
+    } catch (error) {
+      showToast(friendlyErrorMessage(error, "후기 공개 상태를 변경하지 못했습니다."), "error");
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function updateHistoricalReviewPublication(reviewId, isPublished, archived, userId, button) {
+    if (archived && !window.confirm("이 이전 후기를 보관 처리할까요? 홈페이지와 평점 집계에서 제외되며 감사 기록은 유지됩니다.")) return;
+    if (button) button.disabled = true;
+    try {
+      if (usingCloudData()) {
+        await setHistoricalReviewPublicationCloud(reviewId, { isPublished, archived, reason: archived ? "관리자 보관 처리" : "" });
+        await refreshCloudState();
+      } else {
+        const review = state.reviews.find((item) => item.id === reviewId);
+        if (review) Object.assign(review, { publicationStatus: isPublished ? "PUBLISHED" : "HIDDEN", archived });
+        saveState();
+        render();
+      }
+      showToast(archived ? "이전 후기를 보관하고 평점 집계에서 제외했습니다." : isPublished ? "이전 후기를 홈페이지에 공개했습니다." : "이전 후기를 홈페이지에서 숨겼습니다.");
+      if (state.auth.screen === "portal") openCaregiverManagementModal(userId);
+    } catch (error) {
+      showToast(friendlyErrorMessage(error, "이전 후기 상태를 변경하지 못했습니다."), "error");
+      if (button) button.disabled = false;
+    }
   }
 
   function openProfileModal() {

@@ -84,6 +84,8 @@ const TABLE_ORDER_COLUMNS = Object.freeze({
   client_members: ["client_id", "user_id"],
   client_management_profiles: ["client_id"],
   caregiver_hr_profiles: ["caregiver_id"],
+  caregiver_public_profiles: ["caregiver_id"],
+  caregiver_review_publications: ["review_id"],
 });
 
 async function table(name, columns = "*") {
@@ -110,6 +112,57 @@ async function table(name, columns = "*") {
   }
 
   throw new Error(`${name} 조회가 안전 한도 ${TABLE_PAGE_SIZE * TABLE_MAX_PAGES}행을 초과했습니다.`);
+}
+
+function publicCaregiverPhotoUrl(photoPath) {
+  if (!photoPath || !supabase) return "";
+  const { data } = supabase.storage.from("caregiver-public-photos").getPublicUrl(photoPath);
+  return data?.publicUrl || "";
+}
+
+function normalizePublicCaregiver(row) {
+  const reviews = Array.isArray(row?.reviews) ? row.reviews : [];
+  const distribution = row?.rating_distribution && typeof row.rating_distribution === "object"
+    ? row.rating_distribution
+    : {};
+  return {
+    caregiverId: row.caregiver_id,
+    caregiverUserId: row.user_id || null,
+    displayName: row.display_name || "ProMoms 관리사",
+    headline: row.headline || "가족의 일상을 세심하게 돌봅니다.",
+    biography: row.biography || "",
+    photoPath: row.photo_path || "",
+    photoUrl: publicCaregiverPhotoUrl(row.photo_path),
+    photoAlt: row.photo_alt || `${row.display_name || "ProMoms 관리사"} 프로필 사진`,
+    careerYears: Number(row.career_years || 0),
+    specialties: Array.isArray(row.specialties) ? row.specialties : [],
+    credentials: Array.isArray(row.credentials) ? row.credentials : [],
+    languages: Array.isArray(row.languages) ? row.languages : [],
+    serviceArea: row.service_area || "",
+    featured: Boolean(row.featured),
+    sortOrder: Number(row.sort_order || 0),
+    isPublished: row.is_published !== false,
+    averageRating: row.average_rating == null ? null : Number(row.average_rating),
+    reviewCount: Number(row.review_count || 0),
+    ratingDistribution: distribution,
+    reviews: reviews.map((review) => ({
+      id: review.id,
+      source: review.source || "CLIENT",
+      rating: Number(review.rating || 0),
+      tags: Array.isArray(review.tags) ? review.tags : [],
+      comment: review.comment || "",
+      serviceType: review.service_type || null,
+      serviceDate: review.service_date || null,
+      reviewerLabel: review.reviewer_label || "서비스 이용 고객",
+      createdAt: review.created_at || null,
+    })),
+  };
+}
+
+export async function loadPublicCaregiverDirectoryCloud() {
+  if (!cloudEnabled) return [];
+  const rows = throwIfError(await supabase.rpc("public_caregiver_directory"), "관리사 공개 프로필 조회");
+  return (Array.isArray(rows) ? rows : []).map(normalizePublicCaregiver);
 }
 
 export async function currentCloudSession() {
@@ -207,6 +260,7 @@ async function loadCloudStateOnce(session) {
     caregivers,
     clientManagement,
     caregiverHr,
+    caregiverPublicProfiles,
     serviceRequests,
     contracts,
     assignments,
@@ -214,6 +268,9 @@ async function loadCloudStateOnce(session) {
     careEvents,
     serviceAdjustments,
     reviews,
+    reviewPublications,
+    historicalReviews,
+    publicCaregivers,
     reports,
     deposits,
     balanceTransactions,
@@ -230,6 +287,7 @@ async function loadCloudStateOnce(session) {
     table("caregivers"),
     table("client_management_profiles"),
     table("caregiver_hr_profiles"),
+    table("caregiver_public_profiles"),
     table("client_service_requests"),
     table("care_contracts"),
     table("care_assignments"),
@@ -237,6 +295,9 @@ async function loadCloudStateOnce(session) {
     table("care_events"),
     table("service_adjustment_requests"),
     table("caregiver_reviews"),
+    table("caregiver_review_publications"),
+    table("caregiver_historical_reviews"),
+    loadPublicCaregiverDirectoryCloud(),
     table("care_reports"),
     table("deposit_transactions"),
     table("service_balance_transactions"),
@@ -289,6 +350,19 @@ async function loadCloudStateOnce(session) {
   const todaySessionForAssignment = (assignmentId) => (sessionsByAssignment.get(assignmentId) || []).find((item) => item.service_date === todayKey) || null;
   const latestCompletedSessionForAssignment = (assignmentId) => (sessionsByAssignment.get(assignmentId) || []).find((item) => item.status === "COMPLETED") || null;
   const profileById = new Map(profiles.map((item) => [item.id, item]));
+  const directoryProfileByCaregiver = new Map(publicCaregivers.map((item) => [item.caregiverId, item]));
+  const publicProfileByCaregiver = new Map(publicCaregivers.map((item) => [item.caregiverId, item]));
+  caregiverPublicProfiles.forEach((row) => {
+    const directoryProfile = directoryProfileByCaregiver.get(row.caregiver_id);
+    publicProfileByCaregiver.set(row.caregiver_id, normalizePublicCaregiver({
+      ...row,
+      average_rating: directoryProfile?.averageRating ?? null,
+      review_count: directoryProfile?.reviewCount || 0,
+      rating_distribution: directoryProfile?.ratingDistribution || {},
+      reviews: directoryProfile?.reviews || [],
+    }));
+  });
+  const reviewPublicationById = new Map(reviewPublications.map((item) => [item.review_id, item]));
   const briefByAssignment = new Map(assignmentBriefs.map((item) => [item.assignment_id, item]));
   const briefByClient = new Map(assignmentBriefs.map((item) => [item.client_id, item]));
 
@@ -301,6 +375,7 @@ async function loadCloudStateOnce(session) {
     const hasCaregiverRole = databaseRoles.includes("CAREGIVER");
     const caregiverApproved = hasCaregiverRole && Boolean(caregiver);
     const accountUnavailable = ["SUSPENDED", "REJECTED"].includes(profile.account_status);
+    const publicProfile = caregiver ? publicProfileByCaregiver.get(caregiver.id) : null;
     return {
       id: profile.id,
       login: profile.email || "",
@@ -326,6 +401,7 @@ async function loadCloudStateOnce(session) {
       hrNotes: hr?.hr_notes || "",
       hrUpdatedAt: hr?.updated_at || null,
       caregiverId: caregiver?.id || null,
+      publicProfile: publicProfile || null,
       applicationId: caregiverApplication?.id || null,
       applicationStatus: caregiverApplication?.status || null,
       createdAt: profile.created_at,
@@ -649,7 +725,27 @@ async function loadCloudStateOnce(session) {
       tags: item.tags,
       comment: item.comment,
       createdAt: item.created_at,
-    })),
+      source: "CLIENT",
+      publicConsent: Boolean(reviewPublicationById.get(item.id)?.customer_public_consent),
+      publicationStatus: reviewPublicationById.get(item.id)?.status || "PRIVATE",
+    })).concat(historicalReviews.map((item) => ({
+      id: item.id,
+      assignmentId: null,
+      clientId: null,
+      caregiverId: item.caregiver_id,
+      caregiverUserId: caregiverById.get(item.caregiver_id)?.user_id || null,
+      rating: item.rating,
+      tags: item.tags || [],
+      comment: item.comment,
+      createdAt: item.created_at,
+      serviceDate: item.service_date,
+      serviceType: item.service_type,
+      reviewerAlias: item.reviewer_alias || "이전 서비스 고객",
+      source: "ADMIN_LEGACY",
+      publicationStatus: item.is_published ? "PUBLISHED" : "HIDDEN",
+      archived: Boolean(item.archived_at),
+    }))),
+    publicCaregivers,
     reports: reports.map((item) => {
       const assignment = assignmentBySession.get(item.care_session_id);
       return {
@@ -996,17 +1092,92 @@ export async function updateMyClientProfileCloud(values) {
   return result;
 }
 
-export async function saveServiceReviewCloud({ assignmentId, clientId, caregiverId, rating, tags, comment }) {
-  const userId = await authenticatedUserId();
-  return throwIfError(await supabase.from("caregiver_reviews").insert({
-    assignment_id: assignmentId,
-    client_id: clientId,
-    caregiver_id: caregiverId,
-    rating,
-    tags,
-    comment,
-    created_by: userId,
+export async function saveServiceReviewCloud({ assignmentId, rating, tags, comment, publicConsent }) {
+  await authenticatedUserId();
+  return throwIfError(await supabase.rpc("submit_caregiver_review", {
+    p_assignment_id: assignmentId,
+    p_rating: Number(rating),
+    p_tags: Array.isArray(tags) ? tags : [],
+    p_comment: String(comment || "").trim(),
+    p_public_consent: Boolean(publicConsent),
   }), "서비스 후기 저장");
+}
+
+export async function withdrawServiceReviewPublicConsentCloud(reviewId) {
+  await authenticatedUserId();
+  return throwIfError(await supabase.rpc("withdraw_caregiver_review_public_consent", {
+    p_review_id: reviewId,
+  }), "후기 공개 동의 철회");
+}
+
+export async function uploadCaregiverPublicPhotoCloud(caregiverId, file) {
+  await authenticatedUserId();
+  if (!file) return null;
+  if (file.size > 5 * 1024 * 1024) throw new Error("관리사 프로필 사진은 5MB 이하만 등록할 수 있습니다.");
+  const mimeExtensions = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+  const extension = mimeExtensions[file.type];
+  if (!extension) throw new Error("JPG, PNG, WebP 형식의 사진만 등록할 수 있습니다.");
+  const photoPath = `${caregiverId}/profile`;
+  throwIfError(await supabase.storage.from("caregiver-public-photos").upload(photoPath, file, {
+    cacheControl: "60",
+    contentType: file.type,
+    upsert: true,
+  }), "관리사 프로필 사진 업로드");
+  return { path: photoPath, url: publicCaregiverPhotoUrl(photoPath) };
+}
+
+export async function updateCaregiverPublicProfileCloud(caregiverId, values, photoPath = null) {
+  await authenticatedUserId();
+  const list = (value) => String(value || "").split(/[,·\n]/).map((item) => item.trim()).filter(Boolean);
+  return throwIfError(await supabase.rpc("admin_upsert_caregiver_public_profile", {
+    p_caregiver_id: caregiverId,
+    p_display_name: String(values.publicDisplayName || "").trim(),
+    p_headline: String(values.publicHeadline || "").trim(),
+    p_biography: String(values.publicBiography || "").trim(),
+    p_photo_path: photoPath || String(values.existingPhotoPath || "").trim() || null,
+    p_photo_alt: String(values.publicPhotoAlt || "").trim() || null,
+    p_career_years: Number(values.publicCareerYears || 0),
+    p_specialties: list(values.publicSpecialties),
+    p_credentials: list(values.publicCredentials),
+    p_languages: list(values.publicLanguages),
+    p_service_area: String(values.publicServiceArea || "").trim() || null,
+    p_featured: values.publicFeatured === "on",
+    p_sort_order: Number(values.publicSortOrder || 0),
+    p_is_published: values.publicPublished === "on",
+  }), "홈페이지 관리사 프로필 저장");
+}
+
+export async function createHistoricalCaregiverReviewCloud(caregiverId, values) {
+  await authenticatedUserId();
+  const tags = String(values.tags || "").split(/[,·\n]/).map((item) => item.trim()).filter(Boolean);
+  return throwIfError(await supabase.rpc("admin_create_historical_caregiver_review", {
+    p_caregiver_id: caregiverId,
+    p_rating: Number(values.rating),
+    p_tags: tags,
+    p_comment: String(values.comment || "").trim(),
+    p_service_type: values.serviceType || null,
+    p_service_date: values.serviceDate || null,
+    p_reviewer_alias: String(values.reviewerAlias || "이전 서비스 고객").trim(),
+    p_is_published: values.isPublished === "on",
+  }), "이전 관리사 후기 저장");
+}
+
+export async function setCaregiverReviewPublicationCloud(reviewId, status) {
+  await authenticatedUserId();
+  return throwIfError(await supabase.rpc("admin_set_caregiver_review_publication", {
+    p_review_id: reviewId,
+    p_status: status,
+  }), "고객 후기 공개 상태 변경");
+}
+
+export async function setHistoricalReviewPublicationCloud(reviewId, { isPublished, archived, reason }) {
+  await authenticatedUserId();
+  return throwIfError(await supabase.rpc("admin_set_historical_review_publication", {
+    p_review_id: reviewId,
+    p_is_published: Boolean(isPublished),
+    p_archived: Boolean(archived),
+    p_reason: String(reason || "").trim() || null,
+  }), "이전 후기 상태 변경");
 }
 
 export async function publishCareReportCloud({ careSessionId, title }) {
