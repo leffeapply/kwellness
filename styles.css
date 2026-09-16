@@ -468,6 +468,33 @@
   line-height: 1.55;
 }
 
+.caregiver-review-admin-row.invalidated {
+  border-color: rgba(177, 80, 67, .28);
+  background: #fff8f5;
+}
+
+.review-moderation-reason {
+  display: block;
+  max-width: 34rem;
+  padding-top: 4px;
+  color: #984b40;
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.review-moderation-reason strong {
+  color: #79382f;
+}
+
+.review-policy-warning {
+  border-color: #efcec5;
+  background: #fff4ee;
+}
+
+.review-policy-warning strong {
+  color: #8f4135;
+}
+
 .caregiver-review-admin-actions {
   justify-items: end;
 }

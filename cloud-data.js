@@ -715,20 +715,27 @@ async function loadCloudStateOnce(session) {
     })),
     shiftChecklists,
     events: appEvents,
-    reviews: reviews.map((item) => ({
-      id: item.id,
-      assignmentId: item.assignment_id,
-      clientId: item.client_id,
-      caregiverId: item.caregiver_id,
-      caregiverUserId: caregiverById.get(item.caregiver_id)?.user_id || null,
-      rating: item.rating,
-      tags: item.tags,
-      comment: item.comment,
-      createdAt: item.created_at,
-      source: "CLIENT",
-      publicConsent: Boolean(reviewPublicationById.get(item.id)?.customer_public_consent),
-      publicationStatus: reviewPublicationById.get(item.id)?.status || "PRIVATE",
-    })).concat(historicalReviews.map((item) => ({
+    reviews: reviews.map((item) => {
+      const publication = reviewPublicationById.get(item.id);
+      return {
+        id: item.id,
+        assignmentId: item.assignment_id,
+        clientId: item.client_id,
+        caregiverId: item.caregiver_id,
+        caregiverUserId: caregiverById.get(item.caregiver_id)?.user_id || null,
+        rating: item.rating,
+        tags: item.tags,
+        comment: item.comment,
+        createdAt: item.created_at,
+        source: "CLIENT",
+        publicConsent: Boolean(publication?.customer_public_consent),
+        publicationStatus: publication?.status || "PRIVATE",
+        validityStatus: publication?.validity_status || "VALID",
+        invalidReasonCode: publication?.validity_reason_code || null,
+        invalidReasonNote: publication?.validity_reason_note || "",
+        invalidatedAt: publication?.validity_moderated_at || null,
+      };
+    }).concat(historicalReviews.map((item) => ({
       id: item.id,
       assignmentId: null,
       clientId: null,
@@ -1103,13 +1110,6 @@ export async function saveServiceReviewCloud({ assignmentId, rating, tags, comme
   }), "서비스 후기 저장");
 }
 
-export async function withdrawServiceReviewPublicConsentCloud(reviewId) {
-  await authenticatedUserId();
-  return throwIfError(await supabase.rpc("withdraw_caregiver_review_public_consent", {
-    p_review_id: reviewId,
-  }), "후기 공개 동의 철회");
-}
-
 export async function uploadCaregiverPublicPhotoCloud(caregiverId, file) {
   await authenticatedUserId();
   if (!file) return null;
@@ -1168,6 +1168,16 @@ export async function setCaregiverReviewPublicationCloud(reviewId, status) {
     p_review_id: reviewId,
     p_status: status,
   }), "고객 후기 공개 상태 변경");
+}
+
+export async function setCaregiverReviewValidityCloud(reviewId, { isValid, reasonCode, reasonNote }) {
+  await authenticatedUserId();
+  return throwIfError(await supabase.rpc("admin_set_caregiver_review_validity", {
+    p_review_id: reviewId,
+    p_is_valid: Boolean(isValid),
+    p_reason_code: reasonCode || null,
+    p_reason_note: String(reasonNote || "").trim() || null,
+  }), "고객 후기 유효성 상태 변경");
 }
 
 export async function setHistoricalReviewPublicationCloud(reviewId, { isPublished, archived, reason }) {
