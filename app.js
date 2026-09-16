@@ -889,6 +889,28 @@ import {
       .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0] || null;
   }
 
+  const CAREGIVER_CLIENT_BRIEF_DAYS = 7;
+
+  function caregiverClientBriefOpensAt(assignment) {
+    if (!assignment?.startAt) return null;
+    const opensAt = startOfLocalDay(assignment.startAt);
+    if (Number.isNaN(opensAt.getTime())) return null;
+    opensAt.setDate(opensAt.getDate() - CAREGIVER_CLIENT_BRIEF_DAYS);
+    return opensAt;
+  }
+
+  function caregiverCanViewClientBrief(assignment, referenceDate = new Date()) {
+    const opensAt = caregiverClientBriefOpensAt(assignment);
+    return Boolean(opensAt && startOfLocalDay(referenceDate).getTime() >= opensAt.getTime());
+  }
+
+  function caregiverClientBriefAccessText(assignment) {
+    const opensAt = caregiverClientBriefOpensAt(assignment);
+    return opensAt
+      ? `고객 정보는 ${formatDate(opensAt)}부터 확인할 수 있습니다.`
+      : "고객 정보 공개일을 확인할 수 없습니다.";
+  }
+
   function selectedServiceTypeForRole(role = state.role) {
     const view = state.views[role];
     if (view === "postpartum") return "POSTPARTUM";
@@ -2198,6 +2220,7 @@ import {
     const meta = serviceMetaFor(serviceType);
     const primary = current || next;
     if (!primary) return `<article class="card service-overview-card empty ${meta.tone}"><div class="service-overview-icon">${meta.icon}</div><div>${serviceBadgeMarkup(serviceType)}<h3>현재 담당 중인 ${meta.label} 케어기빙이 없습니다.</h3><p>관리자가 승인된 고객 신청을 배정하면 이 영역에 표시됩니다.</p></div><button class="secondary-button" data-enter-caregiver-service="${serviceType}">작업공간 확인</button></article>`;
+    if (!caregiverCanViewClientBrief(primary)) return `<article class="card service-overview-card empty ${meta.tone}"><div class="service-overview-icon">${meta.icon}</div><div>${serviceBadgeMarkup(serviceType)}<h3>다음 배정이 예정되어 있습니다.</h3><p>${formatDate(primary.startAt)} 시작 · ${caregiverClientBriefAccessText(primary)}</p></div><button class="secondary-button" type="button" disabled>고객 정보 공개 대기</button></article>`;
     const client = clientById(primary.clientId);
     if (!client) return `<article class="card service-overview-card empty ${meta.tone}"><div class="service-overview-icon">!</div><div>${serviceBadgeMarkup(serviceType)}<h3>배정 고객 정보를 확인할 수 없습니다.</h3><p>개인정보 보호 또는 데이터 연결 상태를 관리자가 확인해야 합니다.</p></div></article>`;
     const babyName = babyNameFor(primary, client) || "아이";
@@ -2233,6 +2256,7 @@ import {
 
   function caregiverAssignmentPeekMarkup(assignment, label) {
     if (!assignment) return `<div class="assignment-peek-card empty"><span class="peek-label">${label}</span><strong>배정된 일정이 없습니다.</strong><small>관리자가 일정을 확정하면 표시됩니다.</small></div>`;
+    if (!caregiverCanViewClientBrief(assignment)) return `<div class="assignment-peek-card empty"><span class="peek-label">${label}</span>${serviceBadgeMarkup(assignment.serviceType)}<strong>${formatDate(assignment.startAt)} 시작 예정</strong><small>${caregiverClientBriefAccessText(assignment)}</small></div>`;
     const client = clientById(assignment.clientId);
     if (!client) return `<div class="assignment-peek-card empty"><span class="peek-label">${label}</span><strong>고객 정보 확인 필요</strong><small>관리자에게 배정 데이터 연결 상태를 문의해 주세요.</small></div>`;
     const babyName = babyNameFor(assignment, client) || "아이";
@@ -2408,6 +2432,16 @@ import {
       </section>`;
   }
 
+  function caregiverUpcomingAssignmentRowMarkup(item, index) {
+    if (!caregiverCanViewClientBrief(item)) {
+      return `<div class="assignment-row"><div>${serviceBadgeMarkup(item.serviceType)}<strong>${formatDate(item.startAt)} 시작 예정</strong><span>${new Date(item.startAt).toLocaleDateString("ko-KR")}–${new Date(item.endAt).toLocaleDateString("ko-KR")} · ${item.weeks}주</span></div><div><strong>${item.dailyStart}–${item.dailyEnd}</strong><span>방문 시간</span></div><div><strong>고객 정보 공개 대기</strong><span>${caregiverClientBriefAccessText(item)}</span></div><span class="status-chip gold">${assignmentCountdown(item)}</span></div>`;
+    }
+    const upcomingClient = clientById(item.clientId);
+    if (!upcomingClient) return `<div class="assignment-row"><div><strong>고객 정보 연결 확인 필요</strong><span>${formatDate(item.startAt)} 시작 예정</span></div><span class="status-chip coral">관리자 확인</span></div>`;
+    const upcomingBabyName = babyNameFor(item, upcomingClient);
+    return `<button type="button" class="assignment-row caregiver-upcoming-row assignment-detail-button" data-caregiver-assignment-detail="${item.id}"><span>${serviceBadgeMarkup(item.serviceType)}<strong>${escapeHtml(upcomingClient.motherName)} · ${escapeHtml(upcomingBabyName || "아이")}</strong><span>${new Date(item.startAt).toLocaleDateString("ko-KR")}–${new Date(item.endAt).toLocaleDateString("ko-KR")} · ${item.weeks}주</span></span><span><strong>${item.dailyStart}–${item.dailyEnd}</strong><span>방문 시간</span></span><span><strong>${escapeHtml(item.address)}</strong><span>${index === 0 ? "가장 가까운 다음 일정" : "클릭하여 고객 준비정보 확인"}</span></span><span class="status-chip gold">${assignmentCountdown(item)}</span></button>`;
+  }
+
   function caregiverProfile() {
     const user = authUser();
     const assignment = currentAssignmentFor(user.id);
@@ -2431,7 +2465,7 @@ import {
             <div class="quality-metrics"><div><span>이번 주 리포트</span><strong>4/4</strong><small>모든 리포트 제출 완료</small></div><div><span>고객 후기</span><strong>${reviewAverage ? `${reviewAverage} / 5.0` : "후기 대기"}</strong><small>${caregiverReviews.length}건의 완료 서비스 후기</small></div></div>
           </article>
         </div>
-        <article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>예정된 배정</h3><p>서비스 종류를 구분해 최대 5개의 다음 일정과 고객 준비정보를 확인합니다.</p></div><span class="status-chip gold">${shownUpcoming.length} / ${upcoming.length} upcoming</span></div><div class="assignment-list">${shownUpcoming.length ? shownUpcoming.map((item, index) => { const upcomingClient = clientById(item.clientId); const upcomingBabyName = upcomingClient ? babyNameFor(item, upcomingClient) : ""; return upcomingClient ? `<button type="button" class="assignment-row caregiver-upcoming-row assignment-detail-button" data-caregiver-assignment-detail="${item.id}"><span>${serviceBadgeMarkup(item.serviceType)}<strong>${escapeHtml(upcomingClient.motherName)} · ${escapeHtml(upcomingBabyName || "아이")}</strong><span>${new Date(item.startAt).toLocaleDateString("ko-KR")}–${new Date(item.endAt).toLocaleDateString("ko-KR")} · ${item.weeks}주</span></span><span><strong>${item.dailyStart}–${item.dailyEnd}</strong><span>방문 시간</span></span><span><strong>${escapeHtml(item.address)}</strong><span>${index === 0 ? "가장 가까운 다음 일정" : "클릭하여 고객 준비정보 확인"}</span></span><span class="status-chip gold">${assignmentCountdown(item)}</span></button>` : `<div class="assignment-row"><div><strong>고객 정보 연결 확인 필요</strong><span>${formatDate(item.startAt)} 시작 예정</span></div><span class="status-chip coral">관리자 확인</span></div>`; }).join("") : `<div class="empty-state"><strong>예정된 배정이 없습니다.</strong></div>`}</div></article>
+        <article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>예정된 배정</h3><p>고객 준비정보는 확정 배정의 시작 7일 전부터 확인할 수 있습니다.</p></div><span class="status-chip gold">${shownUpcoming.length} / ${upcoming.length} upcoming</span></div><div class="assignment-list">${shownUpcoming.length ? shownUpcoming.map(caregiverUpcomingAssignmentRowMarkup).join("") : `<div class="empty-state"><strong>예정된 배정이 없습니다.</strong></div>`}</div></article>
       </section>`;
   }
 
@@ -4084,13 +4118,14 @@ import {
     const user = authUser();
     const assignment = state.assignments.find((item) => item.id === assignmentId && item.status !== "CANCELLED");
     if (!assignment || user?.role !== "caregiver" || assignment.caregiverUserId !== user.id) return showToast("본인에게 배정된 일정 정보만 확인할 수 있습니다.");
+    if (!caregiverCanViewClientBrief(assignment)) return showToast(caregiverClientBriefAccessText(assignment));
     const client = clientById(assignment.clientId);
     if (!client) return showToast("배정된 고객 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.", "error");
     const babysitting = assignmentServiceType(assignment) === "BABYSITTING";
     const babyName = babyNameFor(assignment, client) || "아이";
     const baby = findClientBaby(client, babyName, assignment.babyId);
     const babyBirthDate = baby?.birthDate || client.babyBirthDate;
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal assignment-detail-modal" role="dialog" aria-modal="true" aria-labelledby="caregiver-assignment-detail-title"><header class="modal-header"><div>${serviceBadgeMarkup(assignment.serviceType)}<p class="eyebrow">ASSIGNED CLIENT BRIEF</p><h3 id="caregiver-assignment-detail-title">배정 고객 준비정보</h3><p>${assignmentCountdown(assignment)} · ${formatDate(assignment.startAt)} 시작</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><div class="modal-form"><div class="profile-summary"><div class="profile-summary-person"><div class="profile-avatar">${escapeHtml((babyName || "B")[0])}</div><div><strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyName)}</strong><span>${assignment.dailyStart}–${assignment.dailyEnd} · ${assignment.weeks}주 ${serviceMetaFor(assignment.serviceType).label}</span></div></div><div class="profile-summary-tags"><span>${assignmentCountdown(assignment)}</span><span>${new Date(assignment.startAt) > new Date() ? "예정된 배정" : "현재 배정"}</span></div></div><div class="request-review-grid"><div><span>${babysitting ? "아이 출생일" : "출산일·예정일"}</span><strong>${babyBirthDate ? formatDate(babyBirthDate) : "미등록"}</strong></div>${babysitting ? `<div><span>생활 루틴</span><strong>${escapeHtml(assignment.routineNotes || "별도 지침 없음")}</strong></div>` : `<div><span>산모 상태</span><strong>${escapeHtml(client.maternalStatus || "기록 전")}</strong></div>`}<div class="wide"><span>방문 주소</span><strong>${escapeHtml(assignment.address || client.address || "미등록")}</strong></div><div><span>알러지·주의사항</span><strong>${escapeHtml(assignment.allergies || client.allergies || "없음")}</strong></div><div><span>가정 내 추가인원</span><strong>${Number(assignment.extraHouseholdMembers || 0)}명</strong></div><div><span>선호 언어</span><strong>${escapeHtml(client.preferredLanguage || "미등록")}</strong></div><div><span>방문 시간</span><strong>${assignment.dailyStart}–${assignment.dailyEnd}</strong></div>${babysitting ? `<div class="wide"><span>식사·간식 지침</span><strong>${escapeHtml(assignment.mealInstructions || "별도 지침 없음")}</strong></div><div class="wide"><span>인계·출입 지침</span><strong>${escapeHtml(assignment.pickupNotes || "별도 지침 없음")}</strong></div>` : ""}<div class="wide"><span>고객 요청 메모</span><strong>${escapeHtml(assignment.requestNote || client.requestNote || "별도 요청사항 없음")}</strong></div></div><div class="privacy-boundary-note"><strong>접근 범위 안내</strong><span>배정 준비에 필요한 고객 정보만 표시됩니다. 기록 입력은 실제 배정 기간에만 활성화됩니다.</span></div><div class="form-actions"><button type="button" class="primary-button" data-close-modal>확인 완료</button></div></div></section></div>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal assignment-detail-modal" role="dialog" aria-modal="true" aria-labelledby="caregiver-assignment-detail-title"><header class="modal-header"><div>${serviceBadgeMarkup(assignment.serviceType)}<p class="eyebrow">ASSIGNED CLIENT BRIEF</p><h3 id="caregiver-assignment-detail-title">배정 고객 준비정보</h3><p>${assignmentCountdown(assignment)} · ${formatDate(assignment.startAt)} 시작</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><div class="modal-form"><div class="profile-summary"><div class="profile-summary-person"><div class="profile-avatar">${escapeHtml((babyName || "B")[0])}</div><div><strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyName)}</strong><span>${assignment.dailyStart}–${assignment.dailyEnd} · ${assignment.weeks}주 ${serviceMetaFor(assignment.serviceType).label}</span></div></div><div class="profile-summary-tags"><span>${assignmentCountdown(assignment)}</span><span>${new Date(assignment.startAt) > new Date() ? "예정된 배정" : "현재 배정"}</span></div></div><div class="request-review-grid"><div><span>${babysitting ? "아이 출생일" : "출산일·예정일"}</span><strong>${babyBirthDate ? formatDate(babyBirthDate) : "미등록"}</strong></div>${babysitting ? `<div><span>생활 루틴</span><strong>${escapeHtml(assignment.routineNotes || "별도 지침 없음")}</strong></div>` : `<div><span>산모 상태</span><strong>${escapeHtml(client.maternalStatus || "기록 전")}</strong></div>`}<div class="wide"><span>방문 주소</span><strong>${escapeHtml(assignment.address || client.address || "미등록")}</strong></div><div><span>알러지·주의사항</span><strong>${escapeHtml(assignment.allergies || client.allergies || "없음")}</strong></div><div><span>가정 내 추가인원</span><strong>${Number(assignment.extraHouseholdMembers || 0)}명</strong></div><div><span>선호 언어</span><strong>${escapeHtml(client.preferredLanguage || "미등록")}</strong></div><div><span>방문 시간</span><strong>${assignment.dailyStart}–${assignment.dailyEnd}</strong></div>${babysitting ? `<div class="wide"><span>식사·간식 지침</span><strong>${escapeHtml(assignment.mealInstructions || "별도 지침 없음")}</strong></div><div class="wide"><span>인계·출입 지침</span><strong>${escapeHtml(assignment.pickupNotes || "별도 지침 없음")}</strong></div>` : ""}<div class="wide"><span>고객 요청 메모</span><strong>${escapeHtml(assignment.requestNote || client.requestNote || "별도 요청사항 없음")}</strong></div></div><div class="privacy-boundary-note"><strong>접근 범위 안내</strong><span>확정 배정의 시작 7일 전부터 준비에 필요한 고객 정보만 표시됩니다. 기록 입력은 실제 배정 기간에만 활성화됩니다.</span></div><div class="form-actions"><button type="button" class="primary-button" data-close-modal>확인 완료</button></div></div></section></div>`;
     bindModalFrame();
   }
 
