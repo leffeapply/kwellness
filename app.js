@@ -1,6 +1,16 @@
 import { backendStatus, supabase } from "./supabase-client.js";
 import proMomsLogoUrl from "./assets/promoms-logo.png";
 import {
+  buildObjectiveReportModel,
+  OBJECTIVE_REPORT_RANGES,
+  OBJECTIVE_REPORT_TIME_ZONE,
+  objectiveDateKey,
+  objectiveDateLabel,
+  objectiveDistributionLabel,
+  objectiveEventValue,
+  objectiveTimeLabel,
+} from "./objective-report.js";
+import {
   approveCaregiverCloud,
   archiveMemberCloud,
   archiveServiceRequestCloud,
@@ -102,12 +112,14 @@ import {
       { id: "caregiving", label: "케어기빙 현황", icon: "⌂" },
       { id: "postpartum", label: "나의 산후조리 케어기빙", icon: "♡" },
       { id: "babysitting", label: "나의 베이비시팅 케어기빙", icon: "☆" },
+      { id: "reports", label: "케어 리포트", icon: "▤" },
       { id: "profile", label: "내 정보", icon: "♙" },
     ],
     client: [
       { id: "services", label: "나의 서비스", icon: "⌂" },
       { id: "postpartum", label: "나의 산후조리", icon: "♡" },
       { id: "babysitting", label: "나의 베이비시팅", icon: "☆" },
+      { id: "reports", label: "케어 리포트", icon: "▤" },
       { id: "shop", label: "ProMoms 스토어", icon: "◇" },
       { id: "purchases", label: "구매 내역", icon: "▤" },
     ],
@@ -233,6 +245,11 @@ import {
         caregiverPageSize: 5,
       },
       chartRangeByRole: { admin: "week", caregiver: "week", client: "week" },
+      objectiveReportByRole: {
+        admin: { range: "week", anchorDate: "", granularity: "both", assignmentId: null },
+        caregiver: { range: "week", anchorDate: "", granularity: "both", assignmentId: null },
+        client: { range: "week", anchorDate: "", granularity: "both", assignmentId: null },
+      },
       adminSelectedReportSessionId: null,
       shiftChecklists: {},
       serviceCatalog: { MASSAGE: { ...PREMIUM_ADD_ONS.MASSAGE } },
@@ -281,6 +298,11 @@ import {
         caregiverPageSize: 5,
       },
       chartRangeByRole: { admin: "week", caregiver: "week", client: "week" },
+      objectiveReportByRole: {
+        admin: { range: "week", anchorDate: "", granularity: "both", assignmentId: null },
+        caregiver: { range: "week", anchorDate: "", granularity: "both", assignmentId: null },
+        client: { range: "week", anchorDate: "", granularity: "both", assignmentId: null },
+      },
       adminSelectedReportSessionId: null,
       shiftChecklists: {},
       serviceCatalog: { MASSAGE: { ...PREMIUM_ADD_ONS.MASSAGE } },
@@ -411,6 +433,11 @@ import {
         adminSelectedClientId: preferences.adminSelectedClientId || null,
         financeFilters: { ...seed.financeFilters, ...(preferences.financeFilters || {}) },
         serviceHistoryFilters: { ...seed.serviceHistoryFilters, ...(preferences.serviceHistoryFilters || {}) },
+        objectiveReportByRole: {
+          admin: { ...seed.objectiveReportByRole.admin, ...(preferences.objectiveReportByRole?.admin || {}) },
+          caregiver: { ...seed.objectiveReportByRole.caregiver, ...(preferences.objectiveReportByRole?.caregiver || {}) },
+          client: { ...seed.objectiveReportByRole.client, ...(preferences.objectiveReportByRole?.client || {}) },
+        },
         views: { ...seed.views, ...(preferences.views || {}) },
         auth: { ...seed.auth, currentUserId: null, screen: preferences.screen || "public" },
       };
@@ -446,6 +473,11 @@ import {
             financeFilters: { ...seed.financeFilters, ...(saved.financeFilters || {}) },
             serviceHistoryFilters: { ...seed.serviceHistoryFilters, ...(saved.serviceHistoryFilters || {}) },
             chartRangeByRole: { ...seed.chartRangeByRole, ...(saved.chartRangeByRole || {}) },
+            objectiveReportByRole: {
+              admin: { ...seed.objectiveReportByRole.admin, ...(saved.objectiveReportByRole?.admin || {}) },
+              caregiver: { ...seed.objectiveReportByRole.caregiver, ...(saved.objectiveReportByRole?.caregiver || {}) },
+              client: { ...seed.objectiveReportByRole.client, ...(saved.objectiveReportByRole?.client || {}) },
+            },
             shiftChecklists: { ...seed.shiftChecklists, ...(saved.shiftChecklists || {}) },
             serviceCatalog: { ...seed.serviceCatalog, ...(saved.serviceCatalog || {}) },
             auth: { ...seed.auth, ...(saved.auth || {}), screen: saved.version >= 8 ? (saved.auth?.screen || "public") : "public" },
@@ -488,6 +520,11 @@ import {
           financeFilters: { ...seed.financeFilters, ...(saved.financeFilters || {}) },
           serviceHistoryFilters: { ...seed.serviceHistoryFilters, ...(saved.serviceHistoryFilters || {}) },
           chartRangeByRole: { ...seed.chartRangeByRole, ...(saved.chartRangeByRole || {}) },
+          objectiveReportByRole: {
+            admin: { ...seed.objectiveReportByRole.admin, ...(saved.objectiveReportByRole?.admin || {}) },
+            caregiver: { ...seed.objectiveReportByRole.caregiver, ...(saved.objectiveReportByRole?.caregiver || {}) },
+            client: { ...seed.objectiveReportByRole.client, ...(saved.objectiveReportByRole?.client || {}) },
+          },
           retail: upgradedRetail,
         };
       }
@@ -509,6 +546,16 @@ import {
   const modalRoot = document.getElementById("modal-root");
   const toastRoot = document.getElementById("toast-root");
   const initialUrl = new URL(window.location.href);
+  if (import.meta.env.DEV) {
+    const previewRole = initialUrl.searchParams.get("preview-role");
+    const previewUserByRole = { admin: "user-admin", caregiver: "user-caregiver-mina", client: "user-client-sarah", retail: "user-retail" };
+    if (previewUserByRole[previewRole]) {
+      state.role = previewRole;
+      state.auth.currentUserId = previewUserByRole[previewRole];
+      state.auth.screen = "portal";
+      if (initialUrl.searchParams.get("preview-view")) state.views[previewRole] = initialUrl.searchParams.get("preview-view");
+    }
+  }
   const initialHashParams = new URLSearchParams(initialUrl.hash.replace(/^#/, ""));
   let passwordRecoveryRequested = (initialHashParams.get("type") === "recovery" && Boolean(initialHashParams.get("access_token")))
     || (initialUrl.searchParams.get("password-recovery") === "1" && Boolean(initialUrl.searchParams.get("code")));
@@ -533,6 +580,7 @@ import {
         adminSelectedClientId: state.adminSelectedClientId || null,
         financeFilters: state.financeFilters,
         serviceHistoryFilters: state.serviceHistoryFilters,
+        objectiveReportByRole: state.objectiveReportByRole,
         screen: state.auth.screen,
         views: state.views,
       }));
@@ -1266,8 +1314,12 @@ import {
     if (state.role === "admin") return state.clients.map((client) => client.id);
     if (state.role === "client") return state.clients.filter((client) => client.userId === user.id || client.memberUserIds?.includes(user.id)).map((client) => client.id);
     if (state.role === "caregiver") {
+      const latestVisible = startOfLocalDay();
+      latestVisible.setDate(latestVisible.getDate() + CAREGIVER_CLIENT_BRIEF_DAYS);
       return state.assignments
-        .filter((assignment) => assignment.caregiverUserId === user.id && isAssignmentCurrent(assignment))
+        .filter((assignment) => assignment.caregiverUserId === user.id
+          && assignment.status !== "CANCELLED"
+          && new Date(assignment.startAt) <= latestVisible)
         .map((assignment) => assignment.clientId);
     }
     return [];
@@ -1325,8 +1377,8 @@ import {
     if (usingCloudData()) {
       const liveViews = {
         admin: new Set(["overview", "schedule", "requests", "finance", "history", "people", "reports"]),
-        caregiver: new Set(["caregiving", "postpartum", "babysitting", "profile"]),
-        client: new Set(["services", "postpartum", "babysitting"]),
+        caregiver: new Set(["caregiving", "postpartum", "babysitting", "reports", "profile"]),
+        client: new Set(["services", "postpartum", "babysitting", "reports"]),
         retail: new Set(["pos"]),
       };
       items = items.filter((item) => liveViews[role]?.has(item.id));
@@ -1365,8 +1417,8 @@ import {
     const serviceType = selectedServiceTypeForRole();
     const roleTitles = {
       admin: ["Operations", "오늘의 운영 흐름을 한눈에 확인하세요."],
-      caregiver: [view === "caregiving" ? "My Caregiving" : serviceType === "BABYSITTING" ? "Babysitting Caregiving" : "Postpartum Caregiving", view === "caregiving" ? "두 서비스의 현재·다음 배정을 한눈에 확인하세요." : serviceType === "BABYSITTING" ? "식사와 생활 이벤트를 간결하게 기록하세요." : "산모와 신생아의 케어 기록에 집중하세요."],
-      client: [view === "services" ? "My Services" : serviceType === "BABYSITTING" ? "My Babysitting" : "My Postpartum Care", view === "services" ? "이용 중인 서비스와 신청·배정 상태를 한눈에 확인하세요." : "선택한 서비스의 일정과 돌봄 기록만 안전하게 표시됩니다."],
+      caregiver: [view === "caregiving" ? "My Caregiving" : view === "reports" ? "Care Reports" : serviceType === "BABYSITTING" ? "Babysitting Caregiving" : "Postpartum Caregiving", view === "caregiving" ? "두 서비스의 현재·다음 배정을 한눈에 확인하세요." : view === "reports" ? "배정된 서비스의 객관 기록을 기간별로 확인하세요." : serviceType === "BABYSITTING" ? "식사와 생활 이벤트를 간결하게 기록하세요." : "산모와 신생아의 케어 기록에 집중하세요."],
+      client: [view === "services" ? "My Services" : view === "reports" ? "Care Reports" : serviceType === "BABYSITTING" ? "My Babysitting" : "My Postpartum Care", view === "services" ? "이용 중인 서비스와 신청·배정 상태를 한눈에 확인하세요." : view === "reports" ? "나와 아이의 객관 기록을 기간별로 확인하세요." : "선택한 서비스의 일정과 돌봄 기록만 안전하게 표시됩니다."],
       retail: ["Retail Workspace", "판매·재고·고객 관계를 하나의 흐름으로 관리하세요."],
     };
     return roleTitles[state.role];
@@ -2209,8 +2261,8 @@ import {
 
   function serviceWorkspaceTabsMarkup(role, serviceType, activeTab) {
     const tabs = role === "client"
-      ? (serviceType === "BABYSITTING" ? [["summary", "오늘의 시팅"], ["timeline", "시팅 타임라인"]] : [["summary", "오늘의 요약"], ["timeline", "케어 타임라인"], ["charts", "관리 차트"]])
-      : (serviceType === "BABYSITTING" ? [["today", "오늘의 시팅"], ["timeline", "시팅 기록"]] : [["today", "오늘의 케어"], ["timeline", "케어 기록"], ["charts", "관리 차트"]]);
+      ? (serviceType === "BABYSITTING" ? [["summary", "오늘의 시팅"], ["timeline", "시팅 타임라인"], ["report", "객관 리포트"]] : [["summary", "오늘의 요약"], ["timeline", "케어 타임라인"], ["charts", "관리 차트"], ["report", "객관 리포트"]])
+      : (serviceType === "BABYSITTING" ? [["today", "오늘의 시팅"], ["timeline", "시팅 기록"], ["report", "객관 리포트"]] : [["today", "오늘의 케어"], ["timeline", "케어 기록"], ["charts", "관리 차트"], ["report", "객관 리포트"]]);
     return `<div class="service-workspace-nav ${serviceMetaFor(serviceType).tone}"><div>${serviceBadgeMarkup(serviceType)}<strong>${role === "client" ? "나의 서비스 상세" : "나의 케어기빙 상세"}</strong></div><div role="tablist" aria-label="${serviceMetaFor(serviceType).label} 상세 메뉴">${tabs.map(([id, label]) => `<button type="button" role="tab" aria-selected="${activeTab === id}" class="${activeTab === id ? "active" : ""}" data-service-tab="${id}" data-service-type="${serviceType}">${label}</button>`).join("")}</div></div>`;
   }
 
@@ -2376,7 +2428,7 @@ import {
       case "sleep":
         return `${data.duration || 0}분 수면`;
       case "temperature":
-        return `${Number(data.value).toFixed(1)}℃ · ${Number(data.value) >= 37.5 ? "확인 필요" : "정상 범위"}`;
+        return `${Number(data.value).toFixed(1)}℃`;
       case "bath":
         return `${data.bathType || "목욕"}${data.waterTemperature ? ` · 물 온도 ${Number(data.waterTemperature).toFixed(1)}℃` : ""}${data.note ? ` · ${data.note}` : ""}`;
       case "weight":
@@ -2575,7 +2627,7 @@ import {
     const events = visibleCareEvents(assignment).filter((event) => ["meal", "sitter_note"].includes(event.type));
     const meals = events.filter((event) => event.type === "meal");
     const notes = events.filter((event) => event.type === "sitter_note");
-    return `<section class="page babysitting-client-page">${demoBanner()}${workspaceNav}<article class="card client-hero babysitting-client-hero"><div class="client-hero-copy">${serviceBadgeMarkup("BABYSITTING")}<p class="eyebrow">${escapeHtml(babyName).toUpperCase()}'S SITTING · ${todayLabel()}</p><h3>${escapeHtml(babyName)}의 오늘이 편안하게 이어지고 있어요. ☆</h3><p>담당 관리사가 공유한 식사와 놀이·산책·생활 이벤트를 간결하게 확인하세요.</p></div><div class="client-hero-art"><div class="baby-monogram">${escapeHtml(babyName[0] || "B")}</div></div></article><div class="grid three sitter-summary-grid" style="margin-top:18px">${summaryCard("🍽️", "식사·간식", `${meals.length}회`, meals.at(-1) ? eventDescription(meals.at(-1)) : "기록 전")}${summaryCard("☆", "생활 이벤트", `${notes.length}건`, notes.at(-1) ? eventDescription(notes.at(-1)) : "기록 전")}${summaryCard("♙", "담당 관리사", caregiver?.fullName || "배정 완료", `${assignment.dailyStart}–${assignment.dailyEnd}`)}</div>${clientServiceReviewMarkup(client, "BABYSITTING", assignment)}<article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>오늘의 시팅 기록</h3><p>식사와 주요 활동이 시간순으로 표시됩니다.</p></div><button class="text-button" data-service-tab="timeline" data-service-type="BABYSITTING">전체 보기 →</button></div>${timelineMarkup(undefined, assignment)}</article><div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, "BABYSITTING")}</div></section>`;
+    return `<section class="page babysitting-client-page">${demoBanner()}${workspaceNav}<article class="card client-hero babysitting-client-hero"><div class="client-hero-copy">${serviceBadgeMarkup("BABYSITTING")}<p class="eyebrow">${escapeHtml(babyName).toUpperCase()}'S SITTING · ${todayLabel()}</p><h3>${escapeHtml(babyName)}의 오늘 시팅 기록이 업데이트되었습니다. ☆</h3><p>담당 관리사가 공유한 식사와 놀이·산책·생활 이벤트를 간결하게 확인하세요.</p></div><div class="client-hero-art"><div class="baby-monogram">${escapeHtml(babyName[0] || "B")}</div></div></article><div class="grid three sitter-summary-grid" style="margin-top:18px">${summaryCard("🍽️", "식사·간식", `${meals.length}회`, meals.at(-1) ? eventDescription(meals.at(-1)) : "기록 전")}${summaryCard("☆", "생활 이벤트", `${notes.length}건`, notes.at(-1) ? eventDescription(notes.at(-1)) : "기록 전")}${summaryCard("♙", "담당 관리사", caregiver?.fullName || "배정 완료", `${assignment.dailyStart}–${assignment.dailyEnd}`)}</div>${clientServiceReviewMarkup(client, "BABYSITTING", assignment)}<article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>오늘의 시팅 기록</h3><p>식사와 주요 활동이 시간순으로 표시됩니다.</p></div><button class="text-button" data-service-tab="timeline" data-service-type="BABYSITTING">전체 보기 →</button></div>${timelineMarkup(undefined, assignment)}</article><div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, "BABYSITTING")}</div></section>`;
   }
 
   function clientSummary(serviceType = "POSTPARTUM", workspaceNav = "") {
@@ -2585,7 +2637,6 @@ import {
     if (serviceType === "BABYSITTING") return clientBabysittingSummary(client, assignment, workspaceNav);
     const babyName = babyNameFor(assignment, client) || "아기";
     const stats = summaryStats(assignment);
-    const needsAttention = stats.latestTemp !== null && Number(stats.latestTemp) >= 37.5;
     return `
       <section class="page">
         ${demoBanner()}
@@ -2593,7 +2644,7 @@ import {
         <article class="card client-hero">
           <div class="client-hero-copy">
             <p class="eyebrow">${escapeHtml(babyName).toUpperCase()}'S DAY · ${todayLabel()}</p>
-            <h3>${needsAttention ? "확인이 필요한 기록이 있어요." : `${escapeHtml(babyName)}는 오늘도 편안하게 지내고 있어요.`} ♡</h3>
+            <h3>${escapeHtml(babyName)}의 오늘 케어 기록이 업데이트되었습니다. ♡</h3>
             <p>관리사가 기록한 케어 활동을 이해하기 쉬운 요약으로 보여드립니다. 모든 수치는 오늘의 기록을 기준으로 자동 계산됩니다.</p>
           </div>
           <div class="client-hero-art"><div class="baby-monogram">${escapeHtml(babyName[0] || "B")}</div></div>
@@ -2603,7 +2654,7 @@ import {
           ${summaryCard("🍼", "수유", `${stats.feedCount}회`, `총 ${stats.feedAmount} ml`)}
           ${summaryCard("☾", "수면", durationLabel(stats.sleepMinutes), "기록된 수면 시간")}
           ${summaryCard("🚼", "기저귀", `${stats.urineCount}회`, `대변 ${stats.stoolCount}회`)}
-          ${summaryCard("🌡️", "체온", stats.latestTemp === null ? "기록 전" : `${Number(stats.latestTemp).toFixed(1)}℃`, needsAttention ? "관리자 확인 필요" : "정상 범위")}
+          ${summaryCard("🌡️", "체온", stats.latestTemp === null ? "기록 전" : `${Number(stats.latestTemp).toFixed(1)}℃`, "최근 측정 기록")}
         </div>
 
         ${clientServiceReviewMarkup(client, "POSTPARTUM", assignment)}
@@ -2939,7 +2990,7 @@ import {
     const latestWeight = periodEvents.filter((event) => event.type === "weight").at(-1);
     return `<div class="care-chart-suite"><section class="card chart-suite-header"><div><p class="eyebrow">CARE DATA OVERVIEW</p><h3>${escapeHtml(client.motherName)} · ${escapeHtml(chartBabyName)}</h3><p>같은 기간 기준으로 수유, 체온, 수면, 체중과 산모 케어 기록을 비교합니다.</p></div><div class="chart-range-tabs" role="group" aria-label="차트 조회 기간"><button type="button" class="${range === "week" ? "active" : ""}" data-chart-range="week">최근 1주일</button><button type="button" class="${range === "month" ? "active" : ""}" data-chart-range="month">최근 1개월</button></div></section>${careChartSummaryMarkup(periodEvents)}<div class="care-chart-grid">
       <article class="card chart-card wide"><div class="section-header"><div><h3>수유량</h3><p>일별 모유·유축과 분유 섭취량 · ml</p></div><span class="status-chip">${periodEvents.filter((event) => event.type === "feeding").length}회</span></div>${feedingTrendMarkup(buckets)}</article>
-      <article class="card chart-card wide"><div class="section-header"><div><h3>체온 추이</h3><p>일별 평균 관찰 기록 · ℃</p></div><span class="status-chip ${temperatureEvents.some((event) => Number(event.data.value) >= 37.5) ? "coral" : ""}">${temperatureEvents.length ? `${Number(temperatureEvents.at(-1).data.value).toFixed(1)}℃` : "기록 전"}</span></div>${chartLineSvg(buckets, temperaturesByDay, { min: 35.5, max: 38, warning: 37.5, unit: "℃", decimals: 1, ariaLabel: `${chartBabyName} 체온 추이`, empty: "체온 기록이 아직 없습니다." })}</article>
+      <article class="card chart-card wide"><div class="section-header"><div><h3>체온 추이</h3><p>일별 평균 관찰 기록 · ℃ · 상태 판정 없음</p></div><span class="status-chip">${temperatureEvents.length ? `${Number(temperatureEvents.at(-1).data.value).toFixed(1)}℃` : "기록 전"}</span></div>${chartLineSvg(buckets, temperaturesByDay, { min: 35.5, max: 38, unit: "℃", decimals: 1, ariaLabel: `${chartBabyName} 체온 추이`, empty: "체온 기록이 아직 없습니다." })}</article>
       <article class="card chart-card wide"><div class="section-header"><div><h3>하루 수면 시간</h3><p>날짜별 기록된 총 수면 시간</p></div><span class="status-chip">${durationLabel(periodEvents.filter((event) => event.type === "sleep").reduce((sum, event) => sum + (Number(event.data.duration) || 0), 0))}</span></div>${sleepTrendMarkup(buckets)}</article>
       <article class="card chart-card wide"><div class="section-header"><div><h3>몸무게</h3><p>성장 추이 · kg</p></div><span class="status-chip">${latestWeight ? `${Number(latestWeight.data.value).toFixed(2)} kg` : "기록 전"}</span></div>${chartLineSvg(buckets, weightsByDay, { unit: "kg", decimals: 2, ariaLabel: `${chartBabyName} 몸무게 추이`, empty: "체중 기록이 아직 없습니다." })}</article>
       <article class="card chart-card wide mother-care-chart"><div class="section-header"><div><h3>산모 케어</h3><p>${escapeHtml(client.motherName)} · ${escapeHtml(client.maternalStatus)} · 선택 기간 최근 기록</p></div><span class="status-chip">${motherCare.length}건</span></div><div class="mother-chart-list">${motherCare.length ? motherCare.slice(0, 6).map((event) => `<div><span>${new Date(event.at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}<br/>${timeLabel(event.at)}</span><strong>${escapeHtml(event.data.care || "산모 케어")}</strong><small>${escapeHtml(event.data.note || "기록 완료")}</small></div>`).join("") : `<div class="chart-empty">산모 케어 기록이 아직 없습니다.</div>`}</div></article>
@@ -2993,22 +3044,24 @@ import {
   }
 
   function clientServiceWorkspace(serviceType) {
-    const allowedTabs = serviceType === "BABYSITTING" ? ["summary", "timeline"] : ["summary", "timeline", "charts"];
+    const allowedTabs = serviceType === "BABYSITTING" ? ["summary", "timeline", "report"] : ["summary", "timeline", "charts", "report"];
     const requested = state.serviceTabs.client[serviceType] || "summary";
     const activeTab = allowedTabs.includes(requested) ? requested : "summary";
     const workspaceNav = serviceWorkspaceTabsMarkup("client", serviceType, activeTab);
     if (activeTab === "timeline") return clientTimeline(serviceType, workspaceNav);
     if (activeTab === "charts") return clientCharts(serviceType, workspaceNav);
+    if (activeTab === "report") return objectiveReportPage("client", serviceType, workspaceNav);
     return clientSummary(serviceType, workspaceNav);
   }
 
   function caregiverServiceWorkspace(serviceType) {
-    const allowedTabs = serviceType === "BABYSITTING" ? ["today", "timeline"] : ["today", "timeline", "charts"];
+    const allowedTabs = serviceType === "BABYSITTING" ? ["today", "timeline", "report"] : ["today", "timeline", "charts", "report"];
     const requested = state.serviceTabs.caregiver[serviceType] || "today";
     const activeTab = allowedTabs.includes(requested) ? requested : "today";
     const workspaceNav = serviceWorkspaceTabsMarkup("caregiver", serviceType, activeTab);
     if (activeTab === "timeline") return caregiverTimeline(serviceType, workspaceNav);
     if (activeTab === "charts") return caregiverCharts(serviceType, workspaceNav);
+    if (activeTab === "report") return objectiveReportPage("caregiver", serviceType, workspaceNav);
     return caregiverToday(serviceType, workspaceNav);
   }
 
@@ -3017,6 +3070,247 @@ import {
     const mealCount = events.filter((event) => event.type === "meal").length;
     const noteCount = events.filter((event) => event.type === "sitter_note").length;
     return `<div class="babysitting-report">${serviceBadgeMarkup("BABYSITTING")}<div class="grid stats sitter-report-stats">${statCard("Meal records", mealCount, "식사·간식 기록", "🍽️")}${statCard("Activity notes", noteCount, "놀이·산책·생활", "☆")}${statCard("Recent records", events.slice(0, 7).length, "최근 7일 요약", "◷")}${statCard("Safety notes", events.filter((event) => event.data?.category === "안전 확인").length, "안전 확인 이벤트", "✓")}</div><article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>베이비시팅 식사·이벤트 리포트</h3><p>체온·몸무게·수면 차트 대신 보호자에게 필요한 생활 기록만 제공합니다.</p></div><span class="status-chip">${events.length} records</span></div>${events.length ? `<div class="timeline">${events.slice(0, 12).map((event) => { const meta = EVENT_META[event.type]; return `<div class="timeline-item"><div class="timeline-time">${new Date(event.at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}<br/>${timeLabel(event.at)}</div><div class="timeline-icon">${meta.icon}</div><div class="timeline-copy"><strong>${meta.label}</strong><span>${escapeHtml(eventDescription(event))}</span></div><div class="timeline-author">${escapeHtml(event.author)}</div></div>`; }).join("")}</div>` : `<div class="empty-state"><strong>베이비시팅 기록이 아직 없습니다.</strong></div>`}</article></div>`;
+  }
+
+  function objectiveReportPreferences(role = state.role) {
+    state.objectiveReportByRole ||= {};
+    state.objectiveReportByRole[role] ||= { range: "week", anchorDate: "", granularity: "both", assignmentId: null };
+    return state.objectiveReportByRole[role];
+  }
+
+  function assignmentHasReportHistory(assignment) {
+    if (!assignment?.id) return false;
+    return assignmentHasCareHistory(assignment)
+      || state.events.some((event) => event.assignmentId === assignment.id)
+      || state.reports.some((report) => report.assignmentId === assignment.id);
+  }
+
+  function objectiveReportAssignments(role, serviceType = null) {
+    const user = authUser();
+    if (!user) return [];
+    return state.assignments
+      .filter((assignment) => {
+        if (!clientById(assignment.clientId)) return false;
+        if (assignment.status === "CANCELLED" && !assignmentHasReportHistory(assignment)) return false;
+        if (serviceType && assignmentServiceType(assignment) !== serviceType) return false;
+        if (role === "admin") return true;
+        if (role === "caregiver") {
+          return assignment.status !== "CANCELLED"
+            && assignment.caregiverUserId === user.id
+            && caregiverCanViewClientBrief(assignment);
+        }
+        if (role === "client") {
+          const client = clientForUser(user.id);
+          return Boolean(client && assignment.clientId === client.id);
+        }
+        return false;
+      })
+      .sort((first, second) => new Date(second.startAt) - new Date(first.startAt));
+  }
+
+  function objectiveReportAssignment(role, serviceType = null) {
+    const assignments = objectiveReportAssignments(role, serviceType);
+    const preferences = objectiveReportPreferences(role);
+    const preferredId = role === "admin" ? (preferences.assignmentId || state.adminSelectedAssignmentId) : preferences.assignmentId;
+    if (preferredId) {
+      const selected = assignments.find((assignment) => assignment.id === preferredId);
+      if (selected) return selected;
+    }
+    if (role === "client") {
+      const client = clientForUser(authUser().id);
+      const selected = client ? selectedClientAssignment(client.id, serviceType) : null;
+      if (selected && assignments.some((assignment) => assignment.id === selected.id)) return selected;
+    }
+    if (role === "caregiver") {
+      const current = currentAssignmentFor(authUser().id, serviceType);
+      if (current && assignments.some((assignment) => assignment.id === current.id)) return current;
+    }
+    return assignments[0] || null;
+  }
+
+  function reportDurationValue(minutes) {
+    if (minutes === null || minutes === undefined) return "기록 없음";
+    return durationLabel(Math.round(minutes));
+  }
+
+  function reportNumber(value, unit = "", digits = 0) {
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) return "기록 없음";
+    return `${Number(value).toLocaleString("ko-KR", { minimumFractionDigits: digits, maximumFractionDigits: digits })}${unit}`;
+  }
+
+  function objectiveBarChartSvg(daily, valueAccessor, options) {
+    const values = daily.map((day) => {
+      const value = valueAccessor(day);
+      if (value === null || value === undefined || value === "") return null;
+      return Number.isFinite(Number(value)) ? Number(value) : null;
+    });
+    const finiteValues = values.filter((value) => value !== null);
+    if (!finiteValues.length) return `<div class="objective-report-empty">${escapeHtml(options.empty)}</div>`;
+    const width = 680;
+    const height = 220;
+    const left = 48;
+    const right = 18;
+    const top = 25;
+    const bottom = 48;
+    const innerWidth = width - left - right;
+    const innerHeight = height - top - bottom;
+    const max = Math.max(...finiteValues, Number(options.minimumMax || 0), 1);
+    const slot = innerWidth / daily.length;
+    const barWidth = Math.max(5, Math.min(32, slot * 0.58));
+    const labelStep = daily.length > 14 ? 5 : daily.length > 7 ? 2 : 1;
+    const grid = [0, max / 2, max];
+    return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(options.ariaLabel)}">
+      ${grid.map((value) => { const y = top + innerHeight - (value / max) * innerHeight; return `<line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" stroke="#dbe7e0" stroke-width="1"/><text x="${left - 7}" y="${y + 4}" text-anchor="end" fill="#60776d" font-size="10">${escapeHtml(options.axisFormat ? options.axisFormat(value) : String(Math.round(value)))}</text>`; }).join("")}
+      ${daily.map((day, index) => {
+        const value = values[index];
+        const x = left + slot * index + (slot - barWidth) / 2;
+        const barHeight = value === null ? 0 : Math.max(2, (value / max) * innerHeight);
+        const y = top + innerHeight - barHeight;
+        const shortDate = `${Number(day.dateKey.slice(5, 7))}/${Number(day.dateKey.slice(8, 10))}`;
+        return `${value === null ? `<rect x="${x}" y="${top + innerHeight - 2}" width="${barWidth}" height="2" rx="1" fill="none" stroke="#aebfb6" stroke-dasharray="3 2"><title>${escapeHtml(day.dateLabel)} · 기록 없음</title></rect>` : `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="4" fill="${options.color || "#2b6c63"}"><title>${escapeHtml(day.dateLabel)} · ${escapeHtml(options.valueFormat(value))}</title></rect>`}${index % labelStep === 0 || index === daily.length - 1 ? `<text x="${x + barWidth / 2}" y="${height - 18}" text-anchor="middle" fill="#60776d" font-size="10">${shortDate}</text>` : ""}`;
+      }).join("")}
+    </svg>`;
+  }
+
+  function objectiveLineChartSvg(daily, valueAccessor, options) {
+    const values = daily.map((day) => {
+      const value = valueAccessor(day);
+      if (value === null || value === undefined || value === "") return null;
+      return Number.isFinite(Number(value)) ? Number(value) : null;
+    });
+    const finiteValues = values.filter((value) => value !== null);
+    if (!finiteValues.length) return `<div class="objective-report-empty">${escapeHtml(options.empty)}</div>`;
+    const width = 680;
+    const height = 220;
+    const left = 58;
+    const right = 20;
+    const top = 25;
+    const bottom = 48;
+    const innerWidth = width - left - right;
+    const innerHeight = height - top - bottom;
+    const observedMin = Math.min(...finiteValues);
+    const observedMax = Math.max(...finiteValues);
+    const padding = Math.max((observedMax - observedMin) * 0.2, Number(options.minimumPadding || 0.1));
+    const min = observedMin - padding;
+    const max = observedMax + padding;
+    const span = max - min;
+    const slot = daily.length === 1 ? innerWidth : innerWidth / (daily.length - 1);
+    const points = values.map((value, index) => value === null ? null : {
+      x: left + slot * index,
+      y: top + innerHeight - ((value - min) / span) * innerHeight,
+      value,
+    });
+    const labelStep = daily.length > 14 ? 5 : daily.length > 7 ? 2 : 1;
+    const segments = points.slice(0, -1).map((point, index) => point && points[index + 1]
+      ? `<line x1="${point.x}" y1="${point.y}" x2="${points[index + 1].x}" y2="${points[index + 1].y}" stroke="${options.color || "#2b6c63"}" stroke-width="3" stroke-linecap="round"/>`
+      : "").join("");
+    return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(options.ariaLabel)}">
+      ${[min, (min + max) / 2, max].map((value) => { const y = top + innerHeight - ((value - min) / span) * innerHeight; return `<line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" stroke="#dbe7e0" stroke-width="1"/><text x="${left - 8}" y="${y + 4}" text-anchor="end" fill="#60776d" font-size="10">${escapeHtml(options.axisFormat(value))}</text>`; }).join("")}
+      ${segments}
+      ${points.map((point, index) => point ? `<circle cx="${point.x}" cy="${point.y}" r="5" fill="#fffefa" stroke="${options.color || "#2b6c63"}" stroke-width="3"><title>${escapeHtml(daily[index].dateLabel)} · ${escapeHtml(options.valueFormat(point.value))}</title></circle>` : `<line x1="${left + slot * index - 6}" y1="${top + innerHeight}" x2="${left + slot * index + 6}" y2="${top + innerHeight}" stroke="#aebfb6" stroke-width="2" stroke-dasharray="3 2"><title>${escapeHtml(daily[index].dateLabel)} · 기록 없음</title></line>`).join("")}
+      ${daily.map((day, index) => index % labelStep === 0 || index === daily.length - 1 ? `<text x="${left + slot * index}" y="${height - 18}" text-anchor="middle" fill="#60776d" font-size="10">${Number(day.dateKey.slice(5, 7))}/${Number(day.dateKey.slice(8, 10))}</text>` : "").join("")}
+    </svg>`;
+  }
+
+  function objectiveReportKpisMarkup(model) {
+    const totals = model.totals;
+    const common = [
+      ["기록 커버리지", `${totals.recordedDays}/${model.dateKeys.length}일`, "이벤트가 1건 이상인 날짜"],
+      ["구조화 기록", `${totals.eventCount}건`, "선택 배정·기간의 기록"],
+      ["실제 케어시간", reportDurationValue(totals.careMinutes), totals.sessionDays ? `완료 방문 ${totals.sessionDays}일 기준` : "시작·종료 시각 기록 없음"],
+    ];
+    const serviceKpis = model.serviceType === "BABYSITTING"
+      ? [["식사·간식", `${totals.mealCount}건`, "관리사 입력 기록"], ["생활 이벤트", `${totals.activityCount}건`, "놀이·산책·안전 등"]]
+      : [["측정 수유량", reportNumber(totals.feedingMl, " ml"), `양 입력 ${totals.feedingMeasuredCount}건 · 미입력 ${totals.feedingUnmeasuredCount}건`], ["기록된 수면", reportDurationValue(totals.sleepMinutes), `${totals.sleepCount}건 합계`]];
+    return `<div class="objective-report-kpis">${[...common, ...serviceKpis].map(([label, value, note]) => `<div class="objective-report-kpi"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(note)}</small></div>`).join("")}</div>`;
+  }
+
+  function objectiveReportDailyTableMarkup(model) {
+    const babysitting = model.serviceType === "BABYSITTING";
+    const table = (header, rows, ariaLabel) => `<div class="objective-report-table-wrap"><table class="objective-report-table" aria-label="${escapeHtml(ariaLabel)}"><thead><tr>${header.map((label) => `<th scope="col">${escapeHtml(label)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((value, index) => `<td${index === 0 ? ' data-label="날짜"' : ""}>${escapeHtml(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    if (babysitting) {
+      const header = ["날짜", "케어시간", "식사", "섭취 라벨", "생활 이벤트", "이벤트 분류", "안전 확인", "전체 기록"];
+      const rows = model.daily.map((day) => [day.dateLabel, reportDurationValue(day.careMinutes), `${day.mealCount}건`, objectiveDistributionLabel(day.appetiteDistribution), `${day.activityCount}건`, objectiveDistributionLabel(day.activityDistribution), `${day.safetyCount}건`, `${day.eventCount}건`]);
+      return table(header, rows, "베이비시팅 일자별 객관 기록");
+    }
+    const activityRows = model.daily.map((day) => [
+      day.dateLabel,
+      reportDurationValue(day.careMinutes),
+      `${day.feedingCount}건`,
+      day.feedingMl === null ? "기록 없음" : `${day.feedingMl} ml`,
+      `${day.feedingUnmeasuredCount}건`,
+      `${day.diaperCount}건 (${day.urineCount}/${day.stoolCount})`,
+      day.sleepMinutes === null ? "기록 없음" : `${day.sleepCount}건 · ${day.sleepMinutes}분`,
+    ]);
+    const measurementRows = model.daily.map((day) => [
+      day.dateLabel,
+      day.temperatureCount ? `${day.temperatureMin.toFixed(1)}/${day.temperatureAverage.toFixed(1)}/${day.temperatureMax.toFixed(1)}℃ (n=${day.temperatureCount})` : "기록 없음",
+      day.lastWeight === null ? "기록 없음" : `${day.lastWeight.toFixed(2)} kg`,
+      `${day.bathCount}건`,
+      `${day.motherCareCount}건`,
+      `${day.eventCount}건`,
+    ]);
+    return `<div class="objective-report-table-group"><h3>케어 활동</h3>${table(["날짜", "케어시간", "수유", "측정량", "양 미입력", "기저귀(소변/대변)", "수면"], activityRows, "산후조리 일자별 케어 활동")}<h3>측정·지원 기록</h3>${table(["날짜", "체온 min/avg/max", "최근 체중", "목욕", "산모 케어", "전체 기록"], measurementRows, "산후조리 일자별 측정 및 지원 기록")}</div>`;
+  }
+
+  function objectiveReportHourlyTableMarkup(model) {
+    if (!model.events.length) return '<div class="objective-report-empty">선택 기간에 표시할 시간별 기록이 없습니다.</div>';
+    const rows = model.events.map((event) => {
+      const meta = EVENT_META[event.type] || EVENT_META.note;
+      return [objectiveDateLabel(objectiveDateKey(event.at)), objectiveTimeLabel(event.at), meta.label, objectiveEventValue(event), event.author || "입력자 미등록"];
+    });
+    return `<div class="objective-report-table-wrap"><table class="objective-report-table"><thead><tr><th scope="col">날짜</th><th scope="col">시간</th><th scope="col">기록 유형</th><th scope="col">입력값·원문</th><th scope="col">입력자</th></tr></thead><tbody>${rows.map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  }
+
+  function objectiveReportChartsMarkup(model) {
+    const babysitting = model.serviceType === "BABYSITTING";
+    const charts = babysitting
+      ? [
+          { title: "일별 식사·간식 기록", subtitle: "기록 횟수 · 자유문장에서 양을 추정하지 않음", accessor: (day) => day.mealCount, formatter: (value) => `${value}건`, color: "#2b6c63", empty: "식사·간식 기록이 없습니다.", type: "bar" },
+          { title: "일별 생활 이벤트", subtitle: "놀이·산책·안전 등 입력 분류의 합계", accessor: (day) => day.activityCount, formatter: (value) => `${value}건`, color: "#d88f73", empty: "생활 이벤트 기록이 없습니다.", type: "bar" },
+        ]
+      : [
+          { title: "일별 측정 수유량", subtitle: "양이 숫자로 입력된 수유 기록만 합산 · ml", accessor: (day) => day.feedingMl, formatter: (value) => `${Math.round(value)} ml`, color: "#2b6c63", empty: "측정 수유량 기록이 없습니다.", type: "bar" },
+          { title: "일별 기록 수면시간", subtitle: "입력된 수면 에피소드 합계 · 분", accessor: (day) => day.sleepMinutes, formatter: (value) => `${Math.round(value)}분`, color: "#6d9188", empty: "수면시간 기록이 없습니다.", type: "bar" },
+          { title: "일별 평균 체온", subtitle: "각 날짜에 입력된 측정값의 단순 평균 · ℃", accessor: (day) => day.temperatureAverage, formatter: (value) => `${value.toFixed(1)}℃`, axisFormat: (value) => value.toFixed(1), minimumPadding: 0.1, color: "#d88f73", empty: "체온 측정 기록이 없습니다.", type: "line" },
+          { title: "일별 마지막 체중", subtitle: "각 날짜의 마지막 측정값 · kg", accessor: (day) => day.lastWeight, formatter: (value) => `${value.toFixed(2)}kg`, axisFormat: (value) => value.toFixed(2), minimumPadding: 0.02, color: "#9a765d", empty: "체중 측정 기록이 없습니다.", type: "line" },
+        ];
+    return `<div class="objective-report-charts">${charts.map((chart) => `<article class="objective-report-chart"><h3>${escapeHtml(chart.title)}</h3><p class="objective-report-legend">${escapeHtml(chart.subtitle)} · 표시 없음은 기록 없음</p>${chart.type === "line" ? objectiveLineChartSvg(model.daily, chart.accessor, { ariaLabel: chart.title, valueFormat: chart.formatter, axisFormat: chart.axisFormat, minimumPadding: chart.minimumPadding, color: chart.color, empty: chart.empty }) : objectiveBarChartSvg(model.daily, chart.accessor, { ariaLabel: chart.title, valueFormat: chart.formatter, color: chart.color, empty: chart.empty })}</article>`).join("")}</div>`;
+  }
+
+  function objectiveReportBuilderMarkup(role, serviceType, assignment, assignments, model) {
+    const preferences = objectiveReportPreferences(role);
+    const assignmentOptions = assignments.map((item) => {
+      const itemClient = clientById(item.clientId);
+      const itemBaby = babyNameFor(item, itemClient) || "아이";
+      return `<option value="${item.id}" ${item.id === assignment.id ? "selected" : ""}>${escapeHtml(serviceMetaFor(item.serviceType).label)} · ${escapeHtml(itemClient?.motherName || "고객")} / ${escapeHtml(itemBaby)} · ${formatDate(item.startAt)}</option>`;
+    }).join("");
+    return `<section class="objective-report-builder report-screen-only" aria-label="객관 리포트 생성 설정"><div class="section-header"><div><p class="eyebrow">OBJECTIVE REPORT BUILDER</p><h3>기간 분석 리포트 만들기</h3><p>구조화 기록만 집계하며 자유메모에서 수치나 원인을 추정하지 않습니다.</p></div><span class="status-chip">${escapeHtml(serviceMetaFor(serviceType).label)}</span></div><div class="report-builder-fields"><div class="field"><label for="objective-report-assignment">서비스 배정</label><select id="objective-report-assignment" data-objective-report-assignment>${assignmentOptions}</select></div><div class="field"><label for="objective-report-anchor">기준일</label><input id="objective-report-anchor" type="date" value="${escapeHtml(model.anchorDate)}" data-objective-report-anchor/></div><div class="field"><label>조회 기간</label><div class="report-range-tabs" role="group" aria-label="조회 기간">${Object.entries(OBJECTIVE_REPORT_RANGES).map(([id, info]) => `<button type="button" data-objective-report-range="${id}" class="${model.range === id ? "active" : ""}" aria-pressed="${model.range === id}">${escapeHtml(info.label)}</button>`).join("")}</div></div></div><div class="report-builder-fields"><div class="field"><label>표 구성</label><div class="report-density-tabs" role="group" aria-label="표 구성">${[["daily", "일자별"], ["hourly", "시간별"], ["both", "모두"]].map(([id, label]) => `<button type="button" data-objective-report-granularity="${id}" class="${preferences.granularity === id ? "active" : ""}" aria-pressed="${preferences.granularity === id}">${label}</button>`).join("")}</div></div><div class="field"><label>집계 시간대</label><div class="status-chip">${escapeHtml(OBJECTIVE_REPORT_TIME_ZONE)}</div></div><div class="report-builder-actions"><button type="button" class="primary-button" data-print-objective-report>PDF로 저장·인쇄</button></div></div></section>`;
+  }
+
+  function objectiveReportMarkup(assignment, client, model, role = state.role) {
+    const preferences = objectiveReportPreferences(role);
+    const babyName = babyNameFor(assignment, client) || "아이";
+    const generatedAtDate = new Date();
+    const reportId = `LIVE-${String(assignment.id).slice(0, 8).toUpperCase()}-${model.fromDate.replaceAll("-", "")}-${model.toDate.replaceAll("-", "")}-${generatedAtDate.getTime().toString(36).toUpperCase()}`;
+    const generatedAt = generatedAtDate.toLocaleString("ko-KR", { timeZone: OBJECTIVE_REPORT_TIME_ZONE });
+    const showDaily = preferences.granularity === "daily" || preferences.granularity === "both";
+    const showHourly = preferences.granularity === "hourly" || preferences.granularity === "both";
+    return `<article class="objective-report" aria-labelledby="objective-report-title"><header class="objective-report-banner"><div class="report-print-only">${brandLogoMarkup(true)}</div><p class="eyebrow">PROMOMS OBJECTIVE CARE REPORT</p><h1 id="objective-report-title">${escapeHtml(serviceMetaFor(model.serviceType).label)} 기간 분석 리포트</h1><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyName)} · ${escapeHtml(objectiveDateLabel(model.fromDate))}–${escapeHtml(objectiveDateLabel(model.toDate))}</p><small>Report ID ${escapeHtml(reportId)} · ${escapeHtml(OBJECTIVE_REPORT_TIME_ZONE)} · 생성 ${escapeHtml(generatedAt)}</small></header><div class="objective-report-banner"><strong>데이터 범위</strong><p>${model.dateKeys.length}일 중 기록일 ${model.totals.recordedDays}일 · 구조화 이벤트 ${model.totals.eventCount}건 · 완료 방문시간 ${model.totals.careMinutes === null ? "기록 없음" : reportDurationValue(model.totals.careMinutes)}</p><small>기록 없음은 실제 값 0과 구분합니다. 자유메모 포함 ${model.dataQuality.freeTextExcludedFromMetrics}건은 원문 표에만 표시하고 수치 집계에서 제외했습니다. 숫자 형식 오류 ${model.dataQuality.invalidMetricCount}건.</small></div>${objectiveReportKpisMarkup(model)}<section class="objective-report-section"><h2>객관적 자동 요약</h2><div class="objective-report-facts">${model.facts.map((fact) => `<p class="objective-report-fact">${escapeHtml(fact)}</p>`).join("")}</div></section><section class="objective-report-section"><h2>변화 추이</h2><p class="objective-report-legend">선택 기간의 일별 기록값을 그대로 표시합니다. 정상·위험·호전·악화 판정은 하지 않습니다.</p>${objectiveReportChartsMarkup(model)}</section>${showDaily ? `<section class="objective-report-section"><h2>일자별 표</h2><p class="objective-report-legend">단위와 표본 수를 함께 표시하며, 측정값이 없는 항목은 ‘기록 없음’으로 표시합니다.</p>${objectiveReportDailyTableMarkup(model)}</section>` : ""}${showHourly ? `<section class="objective-report-section"><h2>시간별 상세 기록</h2><p class="objective-report-legend">관리사가 입력한 구조화 값과 자유메모 원문을 시간순으로 표시합니다.</p>${objectiveReportHourlyTableMarkup(model)}</section>` : ""}<p class="objective-report-disclaimer"><strong>중요:</strong> 이 문서는 관리사가 입력한 관찰 기록의 객관적 집계이며 의료 진단, 성장 판정, 건강 상태 평가 또는 원인 추정을 제공하지 않습니다. 판단이 필요한 경우 해당 분야의 자격을 갖춘 전문가에게 문의하세요.</p><footer class="objective-report-footer"><p>ProMoms · 엄마 곁의 전문가</p><p>${escapeHtml(reportId)} · ${escapeHtml(model.version)} · ${escapeHtml(model.fromDate)}–${escapeHtml(model.toDate)}</p></footer></article>`;
+  }
+
+  function objectiveReportPage(role, serviceType, workspaceNav = "") {
+    const assignments = objectiveReportAssignments(role, serviceType);
+    const assignment = objectiveReportAssignment(role, serviceType);
+    if (!assignment) {
+      const client = role === "client" ? clientForUser(authUser()?.id) : null;
+      return `<section class="page">${demoBanner()}${workspaceNav}${pageHeading("OBJECTIVE CARE REPORT", "기간 분석 리포트", "접근 가능한 서비스의 구조화 기록을 일자별·시간별로 정리합니다.")}<article class="card card-pad"><div class="empty-state"><strong>리포트를 만들 수 있는 서비스 배정이 없습니다.</strong><span>서비스가 배정되고 기록이 저장되면 이곳에서 확인할 수 있습니다.</span></div></article>${client ? clientPublishedReportsMarkup(client.id, serviceType) : ""}</section>`;
+    }
+    const client = clientById(assignment.clientId);
+    if (!client || !objectiveReportAssignments(role, serviceType).some((item) => item.id === assignment.id)) return `<section class="page">${demoBanner()}${workspaceNav}<div class="access-denied"><strong>접근 권한이 없습니다.</strong><span>본인 또는 권한이 확인된 배정의 기록만 볼 수 있습니다.</span></div></section>`;
+    const preferences = objectiveReportPreferences(role);
+    const model = buildObjectiveReportModel({ assignment, events: state.events, sessions: state.careSessions || [], range: preferences.range, anchorDate: preferences.anchorDate });
+    return `<section class="page report-page">${demoBanner()}${workspaceNav}${pageHeading("OBJECTIVE CARE REPORT", "객관 지표 기간 분석", "구조화된 케어 기록을 일자별·시간별 표와 추이 차트로 자동 정리합니다.")}${objectiveReportBuilderMarkup(role, assignmentServiceType(assignment), assignment, assignments, model)}${objectiveReportMarkup(assignment, client, model, role)}${role === "client" ? clientPublishedReportsMarkup(client.id, serviceType) : ""}</section>`;
   }
 
   function careSessionReportPreviewMarkup(client, assignment, session) {
@@ -3037,10 +3331,9 @@ import {
   }
 
   function adminReports() {
-    const reportAssignments = state.assignments
-      .filter((assignment) => assignment.status !== "CANCELLED" && clientById(assignment.clientId))
-      .sort((first, second) => new Date(second.startAt) - new Date(first.startAt));
-    const assignment = reportAssignments.find((item) => item.id === state.adminSelectedAssignmentId)
+    const reportAssignments = objectiveReportAssignments("admin");
+    const reportPreferences = objectiveReportPreferences("admin");
+    const assignment = reportAssignments.find((item) => item.id === (reportPreferences.assignmentId || state.adminSelectedAssignmentId))
       || reportAssignments.find((item) => item.clientId === state.adminSelectedClientId)
       || reportAssignments[0];
     const client = assignment ? clientById(assignment.clientId) : null;
@@ -3065,11 +3358,14 @@ import {
       : reportSession
         ? `<button class="primary-button" data-publish-report="${assignment.id}" data-care-session-id="${reportSession.id}">리포트 생성·고객에게 보내기</button>`
         : '<span class="status-chip gold">완료된 케어 세션에서만 발행 가능</span>';
-    return `<section class="page report-page">${demoBanner()}${pageHeading("CARE REPORTS", "전체 산모·아기 차트와 리포트", "관리자는 모든 고객 기록을 검토하고 승인 리포트를 고객 화면에 전달할 수 있습니다.")}
-      <div class="report-toolbar card"><div class="field"><label for="report-assignment">서비스 배정 선택</label><select id="report-assignment" data-admin-assignment>${reportAssignments.map((item) => { const itemClient = clientById(item.clientId); const itemBabyName = babyNameFor(item, itemClient) || "아이"; return `<option value="${item.id}" ${item.id === assignment.id ? "selected" : ""}>${serviceMetaFor(item.serviceType).label} · ${escapeHtml(itemClient.motherName)} / ${escapeHtml(itemBabyName)} · ${formatDate(item.startAt)}</option>`; }).join("")}</select></div>${reportSessionOptions}<div class="report-actions"><button class="secondary-button" data-print-report>현재 화면 인쇄·PDF 저장</button>${reportAction}</div></div>
+    const objectiveModel = buildObjectiveReportModel({ assignment, events: state.events, sessions: state.careSessions || [], range: reportPreferences.range, anchorDate: reportPreferences.anchorDate });
+    return `<section class="page report-page">${demoBanner()}${pageHeading("CARE REPORTS", "객관 지표 분석과 공식 방문 리포트", "기간별 수치를 검토·PDF로 저장하고, 완료 방문 1건은 불변 보관본으로 고객에게 발행합니다.")}
+      ${objectiveReportBuilderMarkup("admin", assignmentServiceType(assignment), assignment, reportAssignments, objectiveModel)}
+      ${objectiveReportMarkup(assignment, client, objectiveModel, "admin")}
+      <section class="card card-pad visit-report-panel report-screen-only" style="margin-top:22px"><div class="section-header"><div><p class="eyebrow">OFFICIAL VISIT REPORT</p><h3>완료 방문 보관본 검토·발행</h3><p>기간 분석 리포트와 별도로, 완료된 방문 1건의 입력값을 불변 스냅샷으로 고객에게 전달합니다.</p></div>${serviceBadgeMarkup(assignmentServiceType(assignment))}</div><div class="report-toolbar">${reportSessionOptions}<div class="report-actions">${reportAction}</div></div>
       <header class="print-report-header"><div class="brand-mark">${brandLogoMarkup()}</div><div><strong>ProMoms CARE REPORT</strong><span>${reportSession?.serviceDate ? formatDate(`${reportSession.serviceDate}T12:00:00`) : "완료 방문 선택 필요"} · ${escapeHtml(client.motherName)} / ${escapeHtml(reportBabyName)}</span></div></header>
-      ${reportSession ? careSessionReportPreviewMarkup(client, assignment, reportSession) : '<article class="card card-pad"><div class="empty-state"><strong>발행할 완료 방문이 없습니다.</strong><span>관리사가 근무를 종료하면 방문별 검토 화면이 생성됩니다.</span></div></article>'}
-      <article class="card report-note" style="margin-top:18px"><p>${babysitting ? `${escapeHtml(reportBabyName)}의 식사와 생활 이벤트 기록을 바탕으로 만든 베이비시팅 운영 리포트입니다.` : `${escapeHtml(reportBabyName)}의 수유·수면·체온 기록과 ${escapeHtml(client.motherName)}님의 산모 케어 기록을 바탕으로 만든 운영 리포트입니다. 의료 진단이 아니며, 우려되는 상태는 의료 전문가와 상의해야 합니다.`}</p><span>Reviewed by ProMoms Administrator</span></article>
+      ${reportSession ? careSessionReportPreviewMarkup(client, assignment, reportSession) : '<div class="empty-state"><strong>발행할 완료 방문이 없습니다.</strong><span>관리사가 근무를 종료하면 방문별 검토 화면이 생성됩니다.</span></div>'}
+      <article class="report-note" style="margin-top:18px"><p>${babysitting ? `${escapeHtml(reportBabyName)}의 식사와 생활 이벤트 기록을 바탕으로 만든 방문 보관본입니다.` : `${escapeHtml(reportBabyName)}의 수유·수면·체온 기록과 ${escapeHtml(client.motherName)}님의 산모 케어 기록을 바탕으로 만든 방문 보관본입니다. 의료 진단이나 판정을 제공하지 않습니다.`}</p><span>Reviewed by ProMoms Administrator</span></article></section>
     </section>`;
   }
 
@@ -3480,8 +3776,8 @@ import {
     }
     const operationalPages = {
       admin: { overview: adminOverview, schedule: adminSchedule, requests: adminRequests, finance: adminFinance, history: adminServiceHistory, people: adminPeople, reports: adminReports },
-      caregiver: { caregiving: caregiverCaregivingHub, postpartum: () => caregiverServiceWorkspace("POSTPARTUM"), babysitting: () => caregiverServiceWorkspace("BABYSITTING"), profile: caregiverProfile },
-      client: { services: clientServicesHub, postpartum: () => clientServiceWorkspace("POSTPARTUM"), babysitting: () => clientServiceWorkspace("BABYSITTING") },
+      caregiver: { caregiving: caregiverCaregivingHub, postpartum: () => caregiverServiceWorkspace("POSTPARTUM"), babysitting: () => caregiverServiceWorkspace("BABYSITTING"), reports: () => objectiveReportPage("caregiver", null), profile: caregiverProfile },
+      client: { services: clientServicesHub, postpartum: () => clientServiceWorkspace("POSTPARTUM"), babysitting: () => clientServiceWorkspace("BABYSITTING"), reports: () => objectiveReportPage("client", null) },
       retail: {},
     };
     const previewPages = import.meta.env.DEV ? {
@@ -3654,6 +3950,46 @@ import {
       state.chartRangeByRole[state.role] = button.dataset.chartRange;
       saveState();
       render();
+    }));
+
+    document.querySelectorAll("[data-objective-report-assignment]").forEach((select) => select.addEventListener("change", () => {
+      const preferences = objectiveReportPreferences(state.role);
+      preferences.assignmentId = select.value;
+      preferences.anchorDate = "";
+      if (state.role === "admin") {
+        state.adminSelectedAssignmentId = select.value;
+        state.adminSelectedReportSessionId = null;
+        const assignment = state.assignments.find((item) => item.id === select.value);
+        if (assignment) state.adminSelectedClientId = assignment.clientId;
+      }
+      if (state.role === "client") state.selectedClientAssignmentId = select.value;
+      saveState();
+      render();
+    }));
+
+    document.querySelectorAll("[data-objective-report-range]").forEach((button) => button.addEventListener("click", () => {
+      objectiveReportPreferences(state.role).range = button.dataset.objectiveReportRange;
+      saveState();
+      render();
+    }));
+
+    document.querySelectorAll("[data-objective-report-granularity]").forEach((button) => button.addEventListener("click", () => {
+      objectiveReportPreferences(state.role).granularity = button.dataset.objectiveReportGranularity;
+      saveState();
+      render();
+    }));
+
+    document.querySelectorAll("[data-objective-report-anchor]").forEach((input) => input.addEventListener("change", () => {
+      objectiveReportPreferences(state.role).anchorDate = input.value;
+      saveState();
+      render();
+    }));
+
+    document.querySelectorAll("[data-print-objective-report]").forEach((button) => button.addEventListener("click", () => {
+      const previousTitle = document.title;
+      document.title = `ProMoms-Objective-Care-Report-${objectiveReportPreferences(state.role).anchorDate || localDateKey(new Date())}`;
+      window.print();
+      window.setTimeout(() => { document.title = previousTitle; }, 500);
     }));
 
     document.querySelectorAll("[data-caregiver-assignment-detail]").forEach((button) => button.addEventListener("click", () => openCaregiverAssignmentDetailModal(button.dataset.caregiverAssignmentDetail)));
@@ -3889,7 +4225,7 @@ import {
 
     document.querySelectorAll("[data-publish-report]").forEach((button) => {
       button.addEventListener("click", async () => {
-        const assignment = state.assignments.find((item) => item.id === button.dataset.publishReport && item.status !== "CANCELLED");
+        const assignment = state.assignments.find((item) => item.id === button.dataset.publishReport);
         if (!assignment) return showToast("리포트를 만들 서비스 배정을 찾을 수 없습니다.", "error");
         const careSessionId = button.dataset.careSessionId || assignment.careSessionId;
         const careSession = (state.careSessions || []).find((item) => item.id === careSessionId)

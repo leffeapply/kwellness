@@ -1,0 +1,334 @@
+export const OBJECTIVE_REPORT_TIME_ZONE = "America/New_York";
+
+export const OBJECTIVE_REPORT_RANGES = Object.freeze({
+  day: { days: 1, label: "1일" },
+  week: { days: 7, label: "7일" },
+  month: { days: 30, label: "30일" },
+});
+
+const DATE_KEY_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  timeZone: OBJECTIVE_REPORT_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+const DATE_LABEL_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: OBJECTIVE_REPORT_TIME_ZONE,
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+  weekday: "short",
+});
+
+const TIME_LABEL_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: OBJECTIVE_REPORT_TIME_ZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: true,
+});
+
+function numericValue(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function measuredFeedingAmount(event) {
+  const amount = numericValue(event?.data?.amount);
+  if (amount === null || amount < 0) return null;
+  // The entry form stores 0 as the sentinel for an unmeasured direct
+  // breastfeeding session. It must never be reported as a measured 0 ml.
+  if (event?.data?.method === "breast" && amount <= 0) return null;
+  return amount;
+}
+
+function round(value, digits = 1) {
+  if (!Number.isFinite(value)) return null;
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function average(values, digits = 1) {
+  if (!values.length) return null;
+  return round(values.reduce((sum, value) => sum + value, 0) / values.length, digits);
+}
+
+function partsToDateKey(parts) {
+  const values = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+export function objectiveDateKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return partsToDateKey(DATE_KEY_FORMATTER.formatToParts(date));
+}
+
+export function objectiveDateLabel(dateKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ""))) return "날짜 미등록";
+  return DATE_LABEL_FORMATTER.format(new Date(`${dateKey}T12:00:00-04:00`));
+}
+
+export function objectiveTimeLabel(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "시간 미등록";
+  return TIME_LABEL_FORMATTER.format(date);
+}
+
+function normalizedAnchorDate(anchorDate, events = []) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(anchorDate || ""))) return anchorDate;
+  const latestEvent = [...events]
+    .filter((event) => event?.at && !Number.isNaN(new Date(event.at).getTime()))
+    .sort((first, second) => new Date(second.at) - new Date(first.at))[0];
+  return latestEvent ? objectiveDateKey(latestEvent.at) : objectiveDateKey(new Date());
+}
+
+function dateKeysEndingAt(anchorDate, days) {
+  const anchor = new Date(`${anchorDate}T12:00:00Z`);
+  return Array.from({ length: days }, (_, index) => {
+    const date = new Date(anchor);
+    date.setUTCDate(anchor.getUTCDate() - (days - 1 - index));
+    return date.toISOString().slice(0, 10);
+  });
+}
+
+function countBy(values) {
+  return values.reduce((counts, rawValue) => {
+    const value = String(rawValue || "미입력").trim() || "미입력";
+    counts[value] = (counts[value] || 0) + 1;
+    return counts;
+  }, {});
+}
+
+export function objectiveDistributionLabel(distribution) {
+  const entries = Object.entries(distribution || {}).sort((first, second) => second[1] - first[1] || first[0].localeCompare(second[0], "ko"));
+  return entries.length ? entries.map(([label, count]) => `${label} ${count}건`).join(" · ") : "기록 없음";
+}
+
+function sessionMinutesForDate(sessions, assignmentId, dateKey) {
+  const durations = sessions
+    .filter((session) => session.assignmentId === assignmentId && session.serviceDate === dateKey && session.status === "COMPLETED" && session.startedAt && session.endedAt)
+    .map((session) => Math.round((new Date(session.endedAt) - new Date(session.startedAt)) / 60000))
+    .filter((minutes) => Number.isFinite(minutes) && minutes >= 0);
+  return durations.length ? durations.reduce((sum, minutes) => sum + minutes, 0) : null;
+}
+
+function invalidMetricCount(events) {
+  return events.reduce((count, event) => {
+    const data = event.data || {};
+    if (event.type === "feeding") {
+      const amountInvalid = data.amount !== "" && data.amount !== null && data.amount !== undefined && (numericValue(data.amount) === null || numericValue(data.amount) < 0);
+      const durationInvalid = data.duration !== "" && data.duration !== null && data.duration !== undefined && (numericValue(data.duration) === null || numericValue(data.duration) < 0);
+      return count + Number(amountInvalid) + Number(durationInvalid);
+    }
+    if (event.type === "sleep") return count + Number(numericValue(data.duration) === null || numericValue(data.duration) < 0);
+    if (event.type === "temperature" || event.type === "weight") return count + Number(numericValue(data.value) === null);
+    if (event.type === "bath" && data.waterTemperature !== "" && data.waterTemperature !== null && data.waterTemperature !== undefined) {
+      return count + Number(numericValue(data.waterTemperature) === null);
+    }
+    return count;
+  }, 0);
+}
+
+function aggregateDay(dateKey, events, sessions, assignmentId, serviceType) {
+  const dayEvents = events.filter((event) => objectiveDateKey(event.at) === dateKey);
+  const feeding = dayEvents.filter((event) => event.type === "feeding");
+  const measuredFeeding = feeding.map((event) => measuredFeedingAmount(event)).filter((value) => value !== null);
+  const diapers = dayEvents.filter((event) => event.type === "diaper");
+  const sleepValues = dayEvents.filter((event) => event.type === "sleep").map((event) => numericValue(event.data?.duration)).filter((value) => value !== null && value >= 0);
+  const temperatureValues = dayEvents.filter((event) => event.type === "temperature").map((event) => numericValue(event.data?.value)).filter((value) => value !== null);
+  const weightEvents = dayEvents.filter((event) => event.type === "weight").map((event) => ({ at: event.at, value: numericValue(event.data?.value) })).filter((item) => item.value !== null).sort((first, second) => new Date(first.at) - new Date(second.at));
+  const meals = dayEvents.filter((event) => event.type === "meal");
+  const sitterNotes = dayEvents.filter((event) => event.type === "sitter_note");
+  return {
+    dateKey,
+    dateLabel: objectiveDateLabel(dateKey),
+    events: dayEvents,
+    eventCount: dayEvents.length,
+    careMinutes: sessionMinutesForDate(sessions, assignmentId, dateKey),
+    feedingCount: feeding.length,
+    feedingMeasuredCount: measuredFeeding.length,
+    feedingUnmeasuredCount: feeding.length - measuredFeeding.length,
+    feedingMl: measuredFeeding.length ? round(measuredFeeding.reduce((sum, value) => sum + value, 0), 1) : null,
+    urineCount: diapers.filter((event) => event.data?.urine && event.data.urine !== "none").length,
+    stoolCount: diapers.filter((event) => event.data?.stool && event.data.stool !== "none").length,
+    diaperCount: diapers.length,
+    sleepCount: sleepValues.length,
+    sleepMinutes: sleepValues.length ? round(sleepValues.reduce((sum, value) => sum + value, 0), 1) : null,
+    temperatureCount: temperatureValues.length,
+    temperatureMin: temperatureValues.length ? Math.min(...temperatureValues) : null,
+    temperatureAverage: average(temperatureValues, 1),
+    temperatureMax: temperatureValues.length ? Math.max(...temperatureValues) : null,
+    weightCount: weightEvents.length,
+    lastWeight: weightEvents.length ? weightEvents.at(-1).value : null,
+    bathCount: dayEvents.filter((event) => event.type === "bath").length,
+    motherCareCount: dayEvents.filter((event) => event.type === "mother").length,
+    noteCount: dayEvents.filter((event) => event.type === "note").length,
+    mealCount: meals.length,
+    mealTypeDistribution: countBy(meals.map((event) => event.data?.mealType)),
+    appetiteDistribution: countBy(meals.map((event) => event.data?.appetite)),
+    activityCount: sitterNotes.length,
+    activityDistribution: countBy(sitterNotes.map((event) => event.data?.category)),
+    safetyCount: sitterNotes.filter((event) => event.data?.category === "안전 확인").length,
+    serviceType,
+  };
+}
+
+function metricTotals(daily, events, serviceType) {
+  const measuredFeeding = daily.reduce((sum, day) => sum + day.feedingMeasuredCount, 0);
+  const feedingCount = daily.reduce((sum, day) => sum + day.feedingCount, 0);
+  const feedingMlValues = daily.map((day) => day.feedingMl).filter((value) => value !== null);
+  const careMinuteValues = daily.map((day) => day.careMinutes).filter((value) => value !== null);
+  const temperatureValues = events.filter((event) => event.type === "temperature").map((event) => numericValue(event.data?.value)).filter((value) => value !== null);
+  const weights = events.filter((event) => event.type === "weight").map((event) => ({ at: event.at, value: numericValue(event.data?.value) })).filter((item) => item.value !== null).sort((first, second) => new Date(first.at) - new Date(second.at));
+  const meals = events.filter((event) => event.type === "meal");
+  const sitterNotes = events.filter((event) => event.type === "sitter_note");
+  const sleepValues = events.filter((event) => event.type === "sleep").map((event) => numericValue(event.data?.duration)).filter((value) => value !== null && value >= 0);
+  return {
+    serviceType,
+    eventCount: events.length,
+    recordedDays: daily.filter((day) => day.eventCount > 0).length,
+    sessionDays: careMinuteValues.length,
+    careMinutes: careMinuteValues.length ? careMinuteValues.reduce((sum, value) => sum + value, 0) : null,
+    feedingCount,
+    feedingMeasuredCount: measuredFeeding,
+    feedingUnmeasuredCount: feedingCount - measuredFeeding,
+    feedingMl: feedingMlValues.length ? round(feedingMlValues.reduce((sum, value) => sum + value, 0), 1) : null,
+    diaperCount: daily.reduce((sum, day) => sum + day.diaperCount, 0),
+    urineCount: daily.reduce((sum, day) => sum + day.urineCount, 0),
+    stoolCount: daily.reduce((sum, day) => sum + day.stoolCount, 0),
+    sleepCount: sleepValues.length,
+    sleepMinutes: sleepValues.length ? round(sleepValues.reduce((sum, value) => sum + value, 0), 1) : null,
+    sleepAverage: average(sleepValues, 1),
+    temperatureCount: temperatureValues.length,
+    temperatureMin: temperatureValues.length ? Math.min(...temperatureValues) : null,
+    temperatureAverage: average(temperatureValues, 1),
+    temperatureMax: temperatureValues.length ? Math.max(...temperatureValues) : null,
+    weightCount: weights.length,
+    firstWeight: weights.length ? weights[0].value : null,
+    lastWeight: weights.length ? weights.at(-1).value : null,
+    weightDelta: weights.length >= 2 ? round(weights.at(-1).value - weights[0].value, 2) : null,
+    bathCount: daily.reduce((sum, day) => sum + day.bathCount, 0),
+    motherCareCount: daily.reduce((sum, day) => sum + day.motherCareCount, 0),
+    noteCount: daily.reduce((sum, day) => sum + day.noteCount, 0),
+    mealCount: meals.length,
+    appetiteDistribution: countBy(meals.map((event) => event.data?.appetite)),
+    mealTypeDistribution: countBy(meals.map((event) => event.data?.mealType)),
+    activityCount: sitterNotes.length,
+    activityDistribution: countBy(sitterNotes.map((event) => event.data?.category)),
+    safetyCount: sitterNotes.filter((event) => event.data?.category === "안전 확인").length,
+  };
+}
+
+function buildPostpartumFacts(totals) {
+  const facts = [
+    `선택 기간에 ${totals.recordedDays}일, 총 ${totals.eventCount}건의 구조화 기록이 저장되었습니다.`,
+  ];
+  if (totals.careMinutes !== null) facts.push(`완료된 방문 ${totals.sessionDays}일의 시작·종료 시각 기준 케어시간 합계는 ${totals.careMinutes}분입니다.`);
+  else facts.push("선택 기간에 시작·종료 시각이 모두 있는 완료 방문이 없어 실제 케어시간 합계를 산출하지 않았습니다.");
+  if (totals.feedingCount) {
+    facts.push(`수유 기록 ${totals.feedingCount}건 중 양이 입력된 ${totals.feedingMeasuredCount}건의 합계는 ${totals.feedingMl ?? 0}ml입니다. 양 미입력 ${totals.feedingUnmeasuredCount}건은 합계에서 제외했습니다.`);
+  } else facts.push("선택 기간에 수유 기록이 없습니다.");
+  if (totals.sleepCount) facts.push(`수면 기록 ${totals.sleepCount}건의 합계는 ${totals.sleepMinutes}분, 기록 1건당 단순 평균은 ${totals.sleepAverage}분입니다.`);
+  else facts.push("선택 기간에 수면시간 기록이 없습니다.");
+  if (totals.temperatureCount) facts.push(`체온 측정 ${totals.temperatureCount}건의 기록 범위는 ${totals.temperatureMin.toFixed(1)}–${totals.temperatureMax.toFixed(1)}℃, 단순 평균은 ${totals.temperatureAverage.toFixed(1)}℃입니다.`);
+  else facts.push("선택 기간에 체온 측정 기록이 없습니다.");
+  if (totals.weightCount >= 2) facts.push(`체중 ${totals.weightCount}건의 첫 기록은 ${totals.firstWeight.toFixed(2)}kg, 마지막 기록은 ${totals.lastWeight.toFixed(2)}kg이며 단순 차이는 ${totals.weightDelta > 0 ? "+" : ""}${totals.weightDelta.toFixed(2)}kg입니다.`);
+  else if (totals.weightCount === 1) facts.push(`체중은 ${totals.lastWeight.toFixed(2)}kg 1건이 기록되어 변화량을 산출하지 않았습니다.`);
+  else facts.push("선택 기간에 체중 기록이 없습니다.");
+  facts.push(`기저귀 확인 ${totals.diaperCount}건 중 소변 표시 ${totals.urineCount}건, 대변 표시 ${totals.stoolCount}건이 입력되었습니다.`);
+  facts.push(`목욕 ${totals.bathCount}건, 산모 케어 ${totals.motherCareCount}건, 일반 메모 ${totals.noteCount}건이 기록되었습니다.`);
+  return facts;
+}
+
+function buildBabysittingFacts(totals) {
+  const facts = [
+    `선택 기간에 ${totals.recordedDays}일, 총 ${totals.eventCount}건의 구조화 기록이 저장되었습니다.`,
+  ];
+  if (totals.careMinutes !== null) facts.push(`완료된 방문 ${totals.sessionDays}일의 시작·종료 시각 기준 케어시간 합계는 ${totals.careMinutes}분입니다.`);
+  else facts.push("선택 기간에 시작·종료 시각이 모두 있는 완료 방문이 없어 실제 케어시간 합계를 산출하지 않았습니다.");
+  facts.push(totals.mealCount
+    ? `식사·간식 기록은 ${totals.mealCount}건이며, 관리사가 선택한 섭취 라벨 분포는 ${objectiveDistributionLabel(totals.appetiteDistribution)}입니다.`
+    : "선택 기간에 식사·간식 기록이 없습니다.");
+  facts.push(totals.activityCount
+    ? `생활 이벤트는 ${totals.activityCount}건이며 입력 분류는 ${objectiveDistributionLabel(totals.activityDistribution)}입니다.`
+    : "선택 기간에 놀이·산책 등 생활 이벤트 기록이 없습니다.");
+  facts.push(`안전 확인으로 분류된 이벤트는 ${totals.safetyCount}건입니다. 자유메모의 문장에서 횟수·시간·양을 추출하지 않았습니다.`);
+  return facts;
+}
+
+export function buildObjectiveReportModel({ assignment, events = [], sessions = [], range = "week", anchorDate = "" }) {
+  const serviceType = assignment?.serviceType === "BABYSITTING" ? "BABYSITTING" : "POSTPARTUM";
+  const allowedTypes = serviceType === "BABYSITTING"
+    ? new Set(["meal", "sitter_note"])
+    : new Set(["feeding", "diaper", "sleep", "temperature", "bath", "weight", "mother", "note"]);
+  const assignmentEvents = events.filter((event) => event.assignmentId === assignment?.id && allowedTypes.has(event.type));
+  const normalizedRange = OBJECTIVE_REPORT_RANGES[range] ? range : "week";
+  const normalizedAnchor = normalizedAnchorDate(anchorDate, assignmentEvents);
+  const dateKeys = dateKeysEndingAt(normalizedAnchor, OBJECTIVE_REPORT_RANGES[normalizedRange].days);
+  const dateKeySet = new Set(dateKeys);
+  const periodEvents = assignmentEvents.filter((event) => dateKeySet.has(objectiveDateKey(event.at))).sort((first, second) => new Date(first.at) - new Date(second.at));
+  const daily = dateKeys.map((dateKey) => aggregateDay(dateKey, periodEvents, sessions, assignment?.id, serviceType));
+  const totals = metricTotals(daily, periodEvents, serviceType);
+  return {
+    version: "objective-v1",
+    timeZone: OBJECTIVE_REPORT_TIME_ZONE,
+    serviceType,
+    range: normalizedRange,
+    rangeLabel: OBJECTIVE_REPORT_RANGES[normalizedRange].label,
+    anchorDate: normalizedAnchor,
+    fromDate: dateKeys[0],
+    toDate: dateKeys.at(-1),
+    dateKeys,
+    daily,
+    events: periodEvents,
+    totals,
+    dataQuality: {
+      invalidMetricCount: invalidMetricCount(periodEvents),
+      freeTextExcludedFromMetrics: periodEvents.filter((event) => ["note", "sitter_note"].includes(event.type) || event.data?.note || event.data?.text).length,
+    },
+    facts: serviceType === "BABYSITTING" ? buildBabysittingFacts(totals) : buildPostpartumFacts(totals),
+  };
+}
+
+export function objectiveEventValue(event) {
+  const data = event?.data || {};
+  const text = (value, fallback = "미입력") => String(value ?? "").trim() || fallback;
+  switch (event?.type) {
+    case "feeding": {
+      const method = { breast: "직접 수유", pumped: "유축 모유", formula: "분유" }[data.method] || text(data.method, "수유 방식 미입력");
+      const amount = measuredFeedingAmount(event);
+      const duration = numericValue(data.duration);
+      return amount !== null ? `${method} · ${amount} ml` : duration !== null ? `${method} · ${duration}분` : `${method} · 양 미입력`;
+    }
+    case "diaper":
+      return `소변 ${text(data.urine)} · 대변 ${text(data.stool)}${data.color ? ` · 색상 ${text(data.color)}` : ""}`;
+    case "sleep": {
+      const duration = numericValue(data.duration);
+      return duration === null ? "수면시간 미입력" : `${duration}분`;
+    }
+    case "temperature": {
+      const value = numericValue(data.value);
+      return value === null ? "측정값 미입력" : `${value.toFixed(1)}℃`;
+    }
+    case "bath": {
+      const water = numericValue(data.waterTemperature);
+      return `${text(data.bathType, "목욕")}${water === null ? "" : ` · 물 온도 ${water.toFixed(1)}℃`}${data.note ? ` · 입력 메모: ${text(data.note)}` : ""}`;
+    }
+    case "weight": {
+      const value = numericValue(data.value);
+      return value === null ? "측정값 미입력" : `${value.toFixed(2)}kg`;
+    }
+    case "mother":
+      return `${text(data.care, "산모 케어")}${data.note ? ` · 입력 메모: ${text(data.note)}` : ""}`;
+    case "meal":
+      return `${text(data.mealType, "식사")}${data.menu ? ` · 메뉴 ${text(data.menu)}` : ""}${data.appetite ? ` · 섭취 라벨 ${text(data.appetite)}` : ""}${data.note ? ` · 입력 메모: ${text(data.note)}` : ""}`;
+    case "sitter_note":
+      return `${text(data.category, "생활 이벤트")} · 입력 메모: ${text(data.text)}`;
+    case "note":
+      return `입력 메모: ${text(data.text)}`;
+    default:
+      return "구조화 값 없음";
+  }
+}

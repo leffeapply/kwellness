@@ -2834,7 +2834,7 @@ body:has(#modal-root:not(:empty)) {
   .bottom-nav.items-3 { grid-template-columns: repeat(3, 1fr); }
   .bottom-nav.items-4 { grid-template-columns: repeat(4, 1fr); }
   .bottom-nav.items-5 { grid-template-columns: repeat(5, 1fr); }
-  .bottom-nav.items-6, .bottom-nav.items-7, .bottom-nav.items-8 { grid-auto-flow: column; grid-auto-columns: 78px; grid-template-columns: none; justify-content: start; overflow-x: auto; }
+  .bottom-nav.items-6, .bottom-nav.items-7, .bottom-nav.items-8, .bottom-nav.items-9, .bottom-nav.items-10 { grid-auto-flow: column; grid-auto-columns: 78px; grid-template-columns: none; justify-content: start; overflow-x: auto; }
   .bottom-nav .nav-item {
     display: flex;
     min-height: 51px;
@@ -4856,5 +4856,694 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   .finance-collection-footer .status-chip {
     width: 100%;
     justify-content: center;
+  }
+}
+
+/* Objective care reports: readable on screen, compact on mobile, and A4-ready. */
+.report-print-only {
+  display: none !important;
+}
+
+.objective-report-builder {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+  margin-bottom: 22px;
+  padding: clamp(18px, 2.4vw, 26px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: var(--shadow-sm);
+}
+
+.report-builder-fields {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.report-builder-fields > * {
+  min-width: 0;
+}
+
+.report-builder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.report-range-tabs,
+.report-density-tabs {
+  display: inline-flex;
+  max-width: 100%;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--cream);
+  scrollbar-width: thin;
+}
+
+.report-range-tabs button,
+.report-density-tabs button {
+  min-width: 76px;
+  min-height: 40px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--ink-soft);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.report-range-tabs button.active,
+.report-density-tabs button.active,
+.report-range-tabs button[aria-pressed="true"],
+.report-density-tabs button[aria-pressed="true"] {
+  color: var(--white);
+  background: var(--green);
+  box-shadow: 0 5px 13px rgba(33, 77, 59, .14);
+}
+
+.objective-report {
+  width: min(100%, 1180px);
+  min-width: 0;
+  margin: 0 auto;
+  padding: clamp(20px, 3.2vw, 38px);
+  border: 1px solid var(--line);
+  border-radius: clamp(18px, 2.4vw, 28px);
+  color: #173a2d;
+  background: var(--paper);
+  box-shadow: 0 18px 46px rgba(22, 66, 61, .09);
+}
+
+.objective-report h1,
+.objective-report h2,
+.objective-report h3,
+.objective-report h4,
+.objective-report p {
+  overflow-wrap: anywhere;
+}
+
+.objective-report h1,
+.objective-report h2,
+.objective-report h3 {
+  color: #173a2d;
+}
+
+.objective-report-banner {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  margin-bottom: 18px;
+  padding: 17px 20px;
+  border: 1px solid #cadfd5;
+  border-left: 5px solid var(--green-2);
+  border-radius: 14px;
+  color: var(--ink);
+  background: linear-gradient(135deg, #f8fbf8, var(--mint-light));
+}
+
+.objective-report-banner > * {
+  margin: 0;
+}
+
+.objective-report-banner .report-print-only .promoms-logo {
+  width: 68px;
+  height: auto;
+  margin: 0 0 8px;
+}
+
+.objective-report-banner p,
+.objective-report-banner small {
+  color: #4c675b;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.objective-report-kpis {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.objective-report-kpi {
+  display: grid;
+  min-width: 0;
+  align-content: space-between;
+  gap: 8px;
+  min-height: 106px;
+  padding: 16px 17px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fffefa;
+}
+
+.objective-report-kpi span,
+.objective-report-kpi small {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.objective-report-kpi strong {
+  color: #173a2d;
+  font-family: Georgia, "Noto Serif KR", serif;
+  font-size: clamp(22px, 2.6vw, 31px);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+
+.objective-report-section {
+  min-width: 0;
+  margin-top: 18px;
+  padding: clamp(17px, 2.2vw, 24px);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fffefa;
+}
+
+.objective-report-section > :first-child {
+  margin-top: 0;
+}
+
+.objective-report-section > :last-child {
+  margin-bottom: 0;
+}
+
+.objective-report-section h2,
+.objective-report-section h3 {
+  margin: 0 0 12px;
+  font-family: Georgia, "Noto Serif KR", serif;
+  font-size: clamp(18px, 2.2vw, 24px);
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.objective-report-facts {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.objective-report-fact {
+  min-width: 0;
+  padding: 13px 15px;
+  border-left: 3px solid #78a294;
+  border-radius: 0 11px 11px 0;
+  color: #294c3e;
+  background: #f1f6f2;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.objective-report-fact strong,
+.objective-report-fact b {
+  color: #173a2d;
+  font-variant-numeric: tabular-nums;
+}
+
+.objective-report-table-wrap {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--white);
+  scrollbar-color: var(--green-2) #e7eee9;
+  scrollbar-width: thin;
+}
+
+.objective-report-table-group {
+  display: grid;
+  gap: 18px;
+}
+
+.objective-report-table-group > h3 {
+  margin: 8px 0 -8px;
+  color: var(--forest);
+  font-size: 16px;
+}
+
+.objective-report-table {
+  width: 100%;
+  min-width: 720px;
+  border-spacing: 0;
+  border-collapse: separate;
+  color: #244638;
+  font-size: 12px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+.objective-report-table th,
+.objective-report-table td {
+  padding: 11px 12px;
+  border-right: 1px solid #e5ece7;
+  border-bottom: 1px solid #e5ece7;
+  text-align: right;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.objective-report-table th:last-child,
+.objective-report-table td:last-child {
+  border-right: 0;
+}
+
+.objective-report-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.objective-report-table thead th {
+  color: #294c3e;
+  background: #e9f1ec;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .01em;
+}
+
+.objective-report-table th:first-child,
+.objective-report-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 112px;
+  text-align: left;
+  background: #fffefa;
+  box-shadow: 6px 0 9px -9px rgba(23, 58, 45, .68);
+}
+
+.objective-report-table thead th:first-child {
+  z-index: 2;
+  background: #e9f1ec;
+}
+
+.objective-report-table tbody tr:nth-child(even) td:not(:first-child) {
+  background: #fafcf9;
+}
+
+.objective-report-charts {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.objective-report-chart {
+  min-width: 0;
+  overflow: hidden;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--white);
+}
+
+.objective-report-chart svg,
+.objective-report-chart canvas,
+.objective-report-chart img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+}
+
+.objective-report-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0 0 10px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.objective-report-empty {
+  display: grid;
+  min-height: 150px;
+  place-items: center;
+  padding: 24px;
+  border: 1px dashed #bed1c8;
+  border-radius: 14px;
+  color: var(--ink-soft);
+  background: #f7faf7;
+  font-size: 13px;
+  line-height: 1.65;
+  text-align: center;
+}
+
+.objective-report-disclaimer {
+  margin-top: 18px;
+  padding: 14px 17px;
+  border: 1px solid #d3e1da;
+  border-radius: 12px;
+  color: #486458;
+  background: #f4f8f5;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.objective-report-footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 24px;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.objective-report-footer > * {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .report-builder-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .objective-report-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .objective-report-builder,
+  .objective-report {
+    border-radius: 17px;
+  }
+
+  .report-builder-fields,
+  .objective-report-facts,
+  .objective-report-charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .report-builder-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .report-builder-actions > button,
+  .report-builder-actions > a {
+    width: 100%;
+  }
+
+  .report-range-tabs,
+  .report-density-tabs {
+    display: flex;
+    width: 100%;
+  }
+
+  .report-range-tabs button,
+  .report-density-tabs button {
+    min-width: 82px;
+    flex: 1 0 auto;
+  }
+
+  .objective-report {
+    padding: 16px;
+  }
+
+  .objective-report-kpi {
+    min-height: 96px;
+    padding: 14px;
+  }
+
+  .objective-report-section {
+    padding: 15px;
+  }
+
+  .objective-report-table-wrap {
+    margin-right: -15px;
+    width: calc(100% + 15px);
+    border-right: 0;
+    border-radius: 12px 0 0 12px;
+  }
+
+  .objective-report-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 420px) {
+  .objective-report-kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .objective-report-kpi {
+    min-height: 84px;
+  }
+}
+
+@page {
+  size: A4 portrait;
+  margin: 12mm 11mm 14mm;
+}
+
+@media print {
+  html,
+  body {
+    width: auto;
+    max-width: 100%;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    color: #102f24;
+    background: #fff !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  body:has(.objective-report) .sidebar,
+  body:has(.objective-report) .topbar,
+  body:has(.objective-report) .mobile-header,
+  body:has(.objective-report) .bottom-nav,
+  body:has(.objective-report) .demo-banner,
+  body:has(.objective-report) #toast-root,
+  body:has(.objective-report) .objective-report-builder,
+  body:has(.objective-report) .report-screen-only,
+  body:has(.objective-report) .objective-report button,
+  body:has(.objective-report) .objective-report input,
+  body:has(.objective-report) .objective-report select,
+  body:has(.objective-report) .objective-report textarea {
+    display: none !important;
+  }
+
+  body:has(.objective-report) .main-area {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body:has(.objective-report) .page {
+    width: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  body:has(.objective-report) .page > :not(.objective-report):not(:has(.objective-report)):not(.report-print-only) {
+    display: none !important;
+  }
+
+  .report-print-only {
+    display: block !important;
+  }
+
+  .objective-report {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    color: #102f24 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    font-size: 9.2pt;
+  }
+
+  .objective-report-banner {
+    margin-bottom: 4mm;
+    padding: 3.2mm 4mm;
+    border-color: #b9cec3;
+    border-left-width: 1.2mm;
+    border-radius: 2.5mm;
+    background: #eef5f0 !important;
+    break-inside: avoid-page;
+  }
+
+  .objective-report-kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 2.2mm;
+    margin: 4mm 0;
+    break-inside: avoid-page;
+  }
+
+  .objective-report-kpi {
+    min-height: 22mm;
+    gap: 1.5mm;
+    padding: 3mm;
+    border-color: #cbd8d1;
+    border-radius: 2.5mm;
+    background: #fff !important;
+    break-inside: avoid-page;
+  }
+
+  .objective-report-kpi span,
+  .objective-report-kpi small {
+    font-size: 7.7pt;
+  }
+
+  .objective-report-kpi strong {
+    font-size: 16pt;
+  }
+
+  .objective-report-section {
+    margin-top: 4mm;
+    padding: 4mm;
+    border-color: #cbd8d1;
+    border-radius: 2.5mm;
+    background: #fff !important;
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
+
+  .objective-report-section h2,
+  .objective-report-section h3 {
+    margin-bottom: 2.5mm;
+    font-size: 14pt;
+  }
+
+  .objective-report-facts {
+    gap: 2mm;
+  }
+
+  .objective-report-fact {
+    padding: 2.5mm 3mm;
+    border-left-width: .8mm;
+    border-radius: 0 2mm 2mm 0;
+    background: #f0f5f1 !important;
+    font-size: 8.4pt;
+    break-inside: avoid-page;
+  }
+
+  .objective-report-table-wrap {
+    overflow: visible !important;
+    border-color: #cbd8d1;
+    border-radius: 2mm;
+  }
+
+  .objective-report-table-group {
+    gap: 3mm;
+  }
+
+  .objective-report-table-group > h3 {
+    margin: 1mm 0 0;
+    font-size: 10pt;
+    break-after: avoid-page;
+  }
+
+  .objective-report-table {
+    min-width: 0 !important;
+    table-layout: fixed;
+    font-size: 7.4pt;
+  }
+
+  .objective-report-table thead {
+    display: table-header-group;
+  }
+
+  .objective-report-table tfoot {
+    display: table-footer-group;
+  }
+
+  .objective-report-table tr,
+  .objective-report-table th,
+  .objective-report-table td {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
+
+  .objective-report-table th,
+  .objective-report-table td {
+    position: static !important;
+    min-width: 0 !important;
+    padding: 2mm 1.7mm;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    box-shadow: none !important;
+  }
+
+  .objective-report-table thead th,
+  .objective-report-table thead th:first-child {
+    color: #173a2d !important;
+    background: #e7efe9 !important;
+  }
+
+  .objective-report-charts {
+    gap: 3mm;
+  }
+
+  .objective-report-chart {
+    overflow: visible !important;
+    padding: 3mm;
+    border-color: #cbd8d1;
+    border-radius: 2.5mm;
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
+
+  .objective-report-chart svg,
+  .objective-report-chart canvas,
+  .objective-report-chart img {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 68mm;
+    object-fit: contain;
+    overflow: visible !important;
+  }
+
+  .objective-report-legend,
+  .objective-report-disclaimer,
+  .objective-report-footer {
+    font-size: 7.6pt;
+  }
+
+  .objective-report-disclaimer {
+    margin-top: 4mm;
+    padding: 3mm 3.5mm;
+    border-color: #cbd8d1;
+    background: #f3f7f4 !important;
+    break-inside: avoid-page;
+  }
+
+  .objective-report-footer {
+    margin-top: 5mm;
+    padding-top: 3mm;
+    break-inside: avoid-page;
+  }
+
+  .objective-report-empty {
+    min-height: 28mm;
+    background: #f7faf7 !important;
+    break-inside: avoid-page;
   }
 }
