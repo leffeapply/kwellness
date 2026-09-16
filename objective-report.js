@@ -223,19 +223,19 @@ function metricTotals(daily, events, serviceType) {
 
 function buildPostpartumFacts(totals) {
   const facts = [
-    `선택 기간에 ${totals.recordedDays}일, 총 ${totals.eventCount}건의 구조화 기록이 저장되었습니다.`,
+    `선택한 기간 중 ${totals.recordedDays}일에 관리사가 총 ${totals.eventCount}건의 케어 기록을 남겼습니다.`,
   ];
-  if (totals.careMinutes !== null) facts.push(`완료된 방문 ${totals.sessionDays}일의 시작·종료 시각 기준 케어시간 합계는 ${totals.careMinutes}분입니다.`);
-  else facts.push("선택 기간에 시작·종료 시각이 모두 있는 완료 방문이 없어 실제 케어시간 합계를 산출하지 않았습니다.");
+  if (totals.careMinutes !== null) facts.push(`완료된 근무 ${totals.sessionDays}일의 시작·종료 시간을 더하면 총 ${totals.careMinutes}분입니다.`);
+  else facts.push("선택한 기간에는 시작 시간과 종료 시간이 모두 입력된 완료 근무가 없어 총 근무시간을 계산하지 않았습니다.");
   if (totals.feedingCount) {
-    facts.push(`수유 기록 ${totals.feedingCount}건 중 양이 입력된 ${totals.feedingMeasuredCount}건의 합계는 ${totals.feedingMl ?? 0}ml입니다. 양 미입력 ${totals.feedingUnmeasuredCount}건은 합계에서 제외했습니다.`);
+    facts.push(`수유 기록 ${totals.feedingCount}건 중 수유량이 입력된 ${totals.feedingMeasuredCount}건의 합계는 ${totals.feedingMl ?? 0}ml입니다. 수유량이 없는 ${totals.feedingUnmeasuredCount}건은 합계에 넣지 않았습니다.`);
   } else facts.push("선택 기간에 수유 기록이 없습니다.");
-  if (totals.sleepCount) facts.push(`수면 기록 ${totals.sleepCount}건의 합계는 ${totals.sleepMinutes}분, 기록 1건당 단순 평균은 ${totals.sleepAverage}분입니다.`);
+  if (totals.sleepCount) facts.push(`수면 기록 ${totals.sleepCount}건을 더하면 총 ${totals.sleepMinutes}분이며, 기록 1건당 평균은 ${totals.sleepAverage}분입니다.`);
   else facts.push("선택 기간에 수면시간 기록이 없습니다.");
-  if (totals.temperatureCount) facts.push(`체온 측정 ${totals.temperatureCount}건의 기록 범위는 ${totals.temperatureMin.toFixed(1)}–${totals.temperatureMax.toFixed(1)}℃, 단순 평균은 ${totals.temperatureAverage.toFixed(1)}℃입니다.`);
+  if (totals.temperatureCount) facts.push(`체온은 ${totals.temperatureCount}회 측정했으며, 가장 낮은 값은 ${totals.temperatureMin.toFixed(1)}℃, 가장 높은 값은 ${totals.temperatureMax.toFixed(1)}℃, 측정값 평균은 ${totals.temperatureAverage.toFixed(1)}℃입니다.`);
   else facts.push("선택 기간에 체온 측정 기록이 없습니다.");
-  if (totals.weightCount >= 2) facts.push(`체중 ${totals.weightCount}건의 첫 기록은 ${totals.firstWeight.toFixed(2)}kg, 마지막 기록은 ${totals.lastWeight.toFixed(2)}kg이며 단순 차이는 ${totals.weightDelta > 0 ? "+" : ""}${totals.weightDelta.toFixed(2)}kg입니다.`);
-  else if (totals.weightCount === 1) facts.push(`체중은 ${totals.lastWeight.toFixed(2)}kg 1건이 기록되어 변화량을 산출하지 않았습니다.`);
+  if (totals.weightCount >= 2) facts.push(`체중은 ${totals.weightCount}회 측정했으며, 첫 측정값은 ${totals.firstWeight.toFixed(2)}kg, 마지막 측정값은 ${totals.lastWeight.toFixed(2)}kg입니다. 두 값의 차이는 ${totals.weightDelta > 0 ? "+" : ""}${totals.weightDelta.toFixed(2)}kg입니다.`);
+  else if (totals.weightCount === 1) facts.push(`체중은 ${totals.lastWeight.toFixed(2)}kg으로 1회 측정되어 변화량을 계산하지 않았습니다.`);
   else facts.push("선택 기간에 체중 기록이 없습니다.");
   facts.push(`기저귀 확인 ${totals.diaperCount}건 중 소변 표시 ${totals.urineCount}건, 대변 표시 ${totals.stoolCount}건이 입력되었습니다.`);
   facts.push(`목욕 ${totals.bathCount}건, 산모 케어 ${totals.motherCareCount}건, 일반 메모 ${totals.noteCount}건이 기록되었습니다.`);
@@ -244,17 +244,17 @@ function buildPostpartumFacts(totals) {
 
 function buildBabysittingFacts(totals) {
   const facts = [
-    `선택 기간에 ${totals.recordedDays}일, 총 ${totals.eventCount}건의 구조화 기록이 저장되었습니다.`,
+    `선택한 기간 중 ${totals.recordedDays}일에 관리사가 총 ${totals.eventCount}건의 시팅 기록을 남겼습니다.`,
   ];
-  if (totals.careMinutes !== null) facts.push(`완료된 방문 ${totals.sessionDays}일의 시작·종료 시각 기준 케어시간 합계는 ${totals.careMinutes}분입니다.`);
-  else facts.push("선택 기간에 시작·종료 시각이 모두 있는 완료 방문이 없어 실제 케어시간 합계를 산출하지 않았습니다.");
+  if (totals.careMinutes !== null) facts.push(`완료된 근무 ${totals.sessionDays}일의 시작·종료 시간을 더하면 총 ${totals.careMinutes}분입니다.`);
+  else facts.push("선택한 기간에는 시작 시간과 종료 시간이 모두 입력된 완료 근무가 없어 총 근무시간을 계산하지 않았습니다.");
   facts.push(totals.mealCount
-    ? `식사·간식 기록은 ${totals.mealCount}건이며, 관리사가 선택한 섭취 라벨 분포는 ${objectiveDistributionLabel(totals.appetiteDistribution)}입니다.`
+    ? `식사·간식 기록은 ${totals.mealCount}건이며, 관리사가 입력한 섭취량은 ${objectiveDistributionLabel(totals.appetiteDistribution)}입니다.`
     : "선택 기간에 식사·간식 기록이 없습니다.");
   facts.push(totals.activityCount
-    ? `생활 이벤트는 ${totals.activityCount}건이며 입력 분류는 ${objectiveDistributionLabel(totals.activityDistribution)}입니다.`
-    : "선택 기간에 놀이·산책 등 생활 이벤트 기록이 없습니다.");
-  facts.push(`안전 확인으로 분류된 이벤트는 ${totals.safetyCount}건입니다. 자유메모의 문장에서 횟수·시간·양을 추출하지 않았습니다.`);
+    ? `놀이·산책 등 생활 기록은 ${totals.activityCount}건이며, 기록 종류는 ${objectiveDistributionLabel(totals.activityDistribution)}입니다.`
+    : "선택 기간에 놀이·산책 등 생활 기록이 없습니다.");
+  facts.push(`‘안전 확인’으로 입력된 기록은 ${totals.safetyCount}건입니다. 관리사가 직접 작성한 메모에서 횟수·시간·양을 임의로 계산하지 않았습니다.`);
   return facts;
 }
 
@@ -323,12 +323,12 @@ export function objectiveEventValue(event) {
     case "mother":
       return `${text(data.care, "산모 케어")}${data.note ? ` · 입력 메모: ${text(data.note)}` : ""}`;
     case "meal":
-      return `${text(data.mealType, "식사")}${data.menu ? ` · 메뉴 ${text(data.menu)}` : ""}${data.appetite ? ` · 섭취 라벨 ${text(data.appetite)}` : ""}${data.note ? ` · 입력 메모: ${text(data.note)}` : ""}`;
+      return `${text(data.mealType, "식사")}${data.menu ? ` · 메뉴 ${text(data.menu)}` : ""}${data.appetite ? ` · 섭취 상태 ${text(data.appetite)}` : ""}${data.note ? ` · 입력 메모: ${text(data.note)}` : ""}`;
     case "sitter_note":
-      return `${text(data.category, "생활 이벤트")} · 입력 메모: ${text(data.text)}`;
+      return `${text(data.category, "생활 기록")} · 입력 메모: ${text(data.text)}`;
     case "note":
       return `입력 메모: ${text(data.text)}`;
     default:
-      return "구조화 값 없음";
+      return "입력 내용 없음";
   }
 }

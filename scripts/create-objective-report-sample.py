@@ -59,7 +59,7 @@ class ReportDocTemplate(BaseDocTemplate):
             rightMargin=13 * mm,
             topMargin=14 * mm,
             bottomMargin=17 * mm,
-            title="ProMoms 객관 지표 기간 분석 리포트",
+            title="ProMoms 산후조리 관리 기록 리포트",
             author="ProMoms",
         )
         frame = Frame(self.leftMargin, self.bottomMargin, self.width, self.height, id="normal")
@@ -72,7 +72,7 @@ class ReportDocTemplate(BaseDocTemplate):
         canvas.line(13 * mm, 12 * mm, A4[0] - 13 * mm, 12 * mm)
         canvas.setFont(REGULAR_FONT, 7.2)
         canvas.setFillColor(SOFT)
-        canvas.drawString(13 * mm, 7.8 * mm, "ProMoms · 관리사 입력 기록의 객관적 요약 · 의료 판단 아님")
+        canvas.drawString(13 * mm, 7.8 * mm, "ProMoms · 관리사가 작성한 돌봄 기록 요약 · 의료 판단 아님")
         canvas.drawRightString(A4[0] - 13 * mm, 7.8 * mm, f"LIVE-SAMPLE-20260916 · {doc.page}")
         canvas.restoreState()
 
@@ -178,10 +178,10 @@ def p(text: str, style: str = "body") -> Paragraph:
 
 def banner() -> Table:
     content = [
-        p("PROMOMS OBJECTIVE CARE REPORT", "eyebrow"),
-        p("산후조리 기간 분석 리포트", "title"),
-        p("Sarah Kim · Emma Kim · 2026년 9월 10일–9월 16일", "subtitle"),
-        p("Report ID LIVE-SAMPLE-20260916 · America/New_York · objective-v1", "small"),
+        p("PROMOMS CARE RECORD REPORT", "eyebrow"),
+        p("산후조리 관리 기록 리포트", "title"),
+        p("Sarah Kim · Emma Kim · 2026년 9월 10일~9월 16일", "subtitle"),
+        p("리포트 번호 LIVE-SAMPLE-20260916 · 기준 시간 미국 동부시간", "small"),
     ]
     table = Table([[content]], colWidths=[180 * mm])
     table.setStyle(
@@ -207,14 +207,14 @@ def kpi_card(label: str, value: str, note: str):
 def kpi_grid() -> Table:
     rows = [
         [
-            kpi_card("기록 커버리지", "7/7일", "이벤트가 1건 이상인 날짜"),
-            kpi_card("구조화 기록", "40건", "선택 배정·기간의 기록"),
-            kpi_card("측정 수유량", "1,188 ml", "양 입력 16건 · 미입력 0건"),
+            kpi_card("관리 기간", "7일", "7일 모두 관리 기록 있음"),
+            kpi_card("관리사의 기록 횟수", "40회", "선택한 관리 기간 동안 작성"),
+            kpi_card("수유량 합계", "1,188 ml", "수유량 입력 16회 · 미입력 0회"),
         ],
         [
-            kpi_card("기록된 수면", "39시간 17분", "8건 합계"),
-            kpi_card("체온 표본", "8건", "범위 36.5–36.8℃"),
-            kpi_card("체중 표본", "3건", "첫값–마지막값 +0.09kg"),
+            kpi_card("수면 시간 합계", "39시간 17분", "수면 기록 8회 합계"),
+            kpi_card("체온 측정", "8회", "최저 36.5℃ · 최고 36.8℃"),
+            kpi_card("체중 측정", "3회", "첫 측정 대비 마지막 측정 +0.09kg"),
         ],
     ]
     table = Table(rows, colWidths=[58.7 * mm] * 3, rowHeights=[28 * mm, 28 * mm])
@@ -237,12 +237,12 @@ def kpi_grid() -> Table:
 
 def fact_table() -> Table:
     facts = [
-        "선택 기간에 7일, 총 40건의 구조화 기록이 저장되었습니다.",
-        "수유 16건 모두 양이 입력되었고, 측정량 합계는 1,188ml입니다.",
-        "수면 기록 8건의 합계는 2,357분, 기록 1건당 단순 평균은 294.6분입니다.",
-        "체온 측정 8건의 범위는 36.5–36.8℃, 단순 평균은 36.7℃입니다.",
-        "체중 첫 기록은 4.15kg, 마지막 기록은 4.24kg이며 단순 차이는 +0.09kg입니다.",
-        "기저귀 1건, 목욕 1건, 산모 케어 3건이 입력되었습니다.",
+        "7일 동안 관리사가 총 40회 기록했습니다.",
+        "수유 16회 모두 수유량이 입력되었으며, 합계는 1,188ml입니다.",
+        "수면 기록 8회의 합계는 2,357분이며, 한 번 기록할 때 평균은 294.6분입니다.",
+        "체온은 8회 측정했으며, 최저 36.5℃, 최고 36.8℃, 평균 36.7℃입니다.",
+        "첫 체중 측정값은 4.15kg, 마지막 측정값은 4.24kg으로 마지막 값이 0.09kg 높습니다.",
+        "기저귀 1회, 목욕 1회, 산모 돌봄 3회가 기록되었습니다.",
     ]
     rows = [[p(f"<b>{index + 1:02d}</b>", "small"), p(text, "body")] for index, text in enumerate(facts)]
     table = Table(rows, colWidths=[10 * mm, 167 * mm])
@@ -267,7 +267,7 @@ def bar_chart(title: str, values: list[float | None], unit: str, color) -> Drawi
     height = 138
     drawing = Drawing(width, height)
     drawing.add(String(0, 124, title, fontName=BOLD_FONT, fontSize=9, fillColor=GREEN))
-    drawing.add(String(0, 111, f"일별 입력값 · {unit} · 막대 없음은 기록 없음", fontName=REGULAR_FONT, fontSize=5.8, fillColor=SOFT))
+    drawing.add(String(0, 111, f"날짜별 기록 · {unit} · 막대가 없으면 입력된 값이 없음", fontName=REGULAR_FONT, fontSize=5.8, fillColor=SOFT))
     chart_left, chart_bottom, chart_width, chart_height = 27, 24, 218, 76
     finite = [value for value in values if value is not None]
     maximum = max(finite) if finite else 1
@@ -291,10 +291,10 @@ def bar_chart(title: str, values: list[float | None], unit: str, color) -> Drawi
 
 def chart_grid() -> Table:
     charts = [
-        bar_chart("일별 측정 수유량", [152, 140, 152, 142, 154, 166, 282], "ml", GREEN_2),
-        bar_chart("일별 기록 수면시간", [306, 323, 340, 357, 374, 296, 361], "분", colors.HexColor("#6D9188")),
-        bar_chart("일별 평균 체온", [36.7, 36.8, 36.5, 36.6, 36.6, 36.7, 36.8], "℃", CORAL),
-        bar_chart("일별 마지막 체중", [None, 4.15, None, None, 4.21, None, 4.24], "kg", colors.HexColor("#9A765D")),
+        bar_chart("날짜별 수유량", [152, 140, 152, 142, 154, 166, 282], "ml", GREEN_2),
+        bar_chart("날짜별 수면 시간", [306, 323, 340, 357, 374, 296, 361], "분", colors.HexColor("#6D9188")),
+        bar_chart("날짜별 평균 체온", [36.7, 36.8, 36.5, 36.6, 36.6, 36.7, 36.8], "℃", CORAL),
+        bar_chart("날짜별 마지막 체중 측정", [None, 4.15, None, None, 4.21, None, 4.24], "kg", colors.HexColor("#9A765D")),
     ]
     table = Table([[charts[0], charts[1]], [charts[2], charts[3]]], colWidths=[89 * mm, 89 * mm], rowHeights=[53 * mm, 53 * mm])
     table.setStyle(
@@ -314,15 +314,15 @@ def chart_grid() -> Table:
 
 
 def daily_table() -> Table:
-    headers = ["날짜", "수유", "측정량", "기저귀", "수면", "체온 min/avg/max", "최근 체중", "산모 케어"]
+    headers = ["날짜", "수유 횟수", "수유량", "기저귀", "수면 시간", "체온 최저/평균/최고", "마지막 체중", "산모 돌봄"]
     rows = [
-        ["9/10", "2건", "152ml", "0건", "306분", "36.7/36.7/36.7", "—", "0건"],
-        ["9/11", "2건", "140ml", "0건", "323분", "36.8/36.8/36.8", "4.15kg", "0건"],
-        ["9/12", "2건", "152ml", "0건", "340분", "36.5/36.5/36.5", "—", "1건"],
-        ["9/13", "2건", "142ml", "0건", "357분", "36.6/36.6/36.6", "—", "0건"],
-        ["9/14", "2건", "154ml", "0건", "374분", "36.6/36.6/36.6", "4.21kg", "0건"],
-        ["9/15", "2건", "166ml", "0건", "296분", "36.7/36.7/36.7", "—", "0건"],
-        ["9/16", "4건", "282ml", "1건", "361분", "36.8/36.8/36.8", "4.24kg", "2건"],
+        ["9/10", "2회", "152ml", "0회", "306분", "36.7/36.7/36.7", "없음", "0회"],
+        ["9/11", "2회", "140ml", "0회", "323분", "36.8/36.8/36.8", "4.15kg", "0회"],
+        ["9/12", "2회", "152ml", "0회", "340분", "36.5/36.5/36.5", "없음", "1회"],
+        ["9/13", "2회", "142ml", "0회", "357분", "36.6/36.6/36.6", "없음", "0회"],
+        ["9/14", "2회", "154ml", "0회", "374분", "36.6/36.6/36.6", "4.21kg", "0회"],
+        ["9/15", "2회", "166ml", "0회", "296분", "36.7/36.7/36.7", "없음", "0회"],
+        ["9/16", "4회", "282ml", "1회", "361분", "36.8/36.8/36.8", "4.24kg", "2회"],
     ]
     data = [[p(value, "table_header") for value in headers]] + [[p(value, "table") for value in row] for row in rows]
     table = Table(data, repeatRows=1, colWidths=[18 * mm, 17 * mm, 20 * mm, 18 * mm, 20 * mm, 39 * mm, 24 * mm, 23 * mm])
@@ -345,16 +345,16 @@ def daily_table() -> Table:
 
 
 def hourly_table() -> Table:
-    headers = ["날짜", "시간", "기록 유형", "입력값·원문", "입력자"]
+    headers = ["날짜", "시간", "돌봄 내용", "기록 내용", "작성자"]
     rows = [
         ["9/16", "오전 10:22", "수유", "유축 모유 · 80ml", "Mina Kim"],
-        ["9/16", "오전 11:05", "기저귀", "소변 medium · 대변 normal · 색상 yellow", "Mina Kim"],
+        ["9/16", "오전 11:05", "기저귀", "소변 양 중간 · 대변 상태 보통 · 노란색", "Mina Kim"],
         ["9/16", "오전 11:20", "수면", "48분", "Mina Kim"],
-        ["9/16", "오후 12:30", "산모 케어", "Rest support · 입력 메모 원문", "Mina Kim"],
+        ["9/16", "오후 12:30", "산모 돌봄", "휴식 도움 · 관리사가 작성한 메모", "Mina Kim"],
         ["9/16", "오후 12:40", "수유", "분유 · 70ml", "Mina Kim"],
         ["9/16", "오후 1:10", "수유", "분유 · 55ml", "Mina Kim"],
         ["9/16", "오후 1:15", "체온", "36.8℃", "Mina Kim"],
-        ["9/16", "오후 1:35", "산모 케어", "Light stretching · 입력 메모 원문", "Mina Kim"],
+        ["9/16", "오후 1:35", "산모 돌봄", "가벼운 스트레칭 · 관리사가 작성한 메모", "Mina Kim"],
         ["9/16", "오후 3:05", "수면", "313분", "Mina Kim"],
         ["9/16", "오후 4:15", "체온", "36.8℃", "Mina Kim"],
         ["9/15", "오전 9:20", "수유", "유축 모유 · 92ml", "Mina Kim"],
@@ -387,36 +387,36 @@ def build_pdf(output_path: Path):
     story = [
         banner(),
         Spacer(1, 4 * mm),
-        p("데이터 범위", "section"),
-        p("7일 중 기록일 7일 · 구조화 이벤트 40건 · 완료 방문시간 기록 없음", "body"),
-        p("기록 없음은 실제 0과 구분합니다. 자유메모는 원문 표에만 표시하고 수치 집계에는 사용하지 않습니다.", "small"),
+        p("관리 기간과 기록", "section"),
+        p("관리 기간 7일 · 기록이 있는 날 7일 · 관리사 기록 40회 · 방문 완료 시간은 기록되지 않음", "body"),
+        p("입력하지 않은 항목은 0으로 보지 않습니다. 직접 작성한 메모는 상세 기록에서만 보여주며, 합계나 평균 계산에는 포함하지 않습니다.", "small"),
         Spacer(1, 3 * mm),
         kpi_grid(),
         Spacer(1, 4 * mm),
-        p("객관적 자동 요약", "section"),
+        p("관리 기록 한눈에 보기", "section"),
         fact_table(),
         Spacer(1, 4 * mm),
-        p("이 문서는 입력 기록의 집계이며 의료 진단·성장 판정·건강 상태 평가를 제공하지 않습니다.", "small"),
+        p("이 문서는 관리사가 입력한 기록을 모아 보여줍니다. 의료 진단이나 성장·건강 상태에 대한 판단을 제공하지 않습니다.", "small"),
         PageBreak(),
-        p("변화 추이", "section"),
-        p("선택 기간의 일별 기록값을 그대로 표시합니다. 정상·위험·호전·악화 판정은 하지 않습니다.", "small"),
+        p("날짜별 기록 변화", "section"),
+        p("관리 기간에 입력된 값을 날짜별로 보여줍니다. 정상·위험 또는 호전·악화 여부는 판단하지 않습니다.", "small"),
         Spacer(1, 2 * mm),
         chart_grid(),
         Spacer(1, 5 * mm),
-        p("일자별 표", "section"),
-        p("단위와 표본 수를 함께 표시하며, 측정값이 없는 항목은 ‘—’로 표시합니다.", "small"),
+        p("날짜별 기록", "section"),
+        p("횟수와 단위를 함께 표시하며, 입력된 값이 없는 항목은 ‘없음’으로 표시합니다.", "small"),
         Spacer(1, 2 * mm),
         daily_table(),
         PageBreak(),
         p("시간별 상세 기록", "section"),
-        p("관리사가 입력한 구조화 값과 자유메모 원문을 시간순으로 표시합니다. 자유문장의 숫자는 자동 집계에 사용하지 않습니다.", "small"),
+        p("관리사가 선택하거나 숫자로 입력한 내용과 직접 작성한 메모를 시간순으로 보여줍니다. 메모에 적힌 숫자는 합계나 평균 계산에 포함하지 않습니다.", "small"),
         Spacer(1, 3 * mm),
         hourly_table(),
         Spacer(1, 6 * mm),
         KeepTogether(
             [
-                p("산출 기준", "section"),
-                p("• 시간대: America/New_York<br/>• 측정 수유량: amount 숫자가 입력된 기록만 합산<br/>• 기록 없음과 0을 분리<br/>• 체온·체중: 단순 통계만 표시하고 상태 판정 없음<br/>• 자유메모: 원문 표에만 표시하고 수치 추출 없음", "body"),
+                p("계산 및 표시 방법", "section"),
+                p("• 기준 시간: 미국 동부시간<br/>• 수유량 합계: 수유량 숫자가 입력된 기록만 더함<br/>• 입력하지 않음과 0을 다르게 표시<br/>• 체온·체중: 측정한 값의 요약만 보여주며 건강 상태를 판단하지 않음<br/>• 직접 작성한 메모: 상세 기록에만 보여주며 메모 속 숫자는 계산에 포함하지 않음", "body"),
             ]
         ),
     ]

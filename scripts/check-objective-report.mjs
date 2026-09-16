@@ -26,7 +26,7 @@ assert.equal(postpartum.totals.feedingMeasuredCount, 1);
 assert.equal(postpartum.totals.feedingUnmeasuredCount, 1);
 assert.equal(postpartum.totals.temperatureAverage, 36.8);
 assert.equal(postpartum.totals.weightDelta, 0.1);
-assert.match(postpartum.facts.join(" "), /양 미입력 1건은 합계에서 제외/);
+assert.match(postpartum.facts.join(" "), /수유량이 없는 1건은 합계에 넣지 않았습니다/);
 assert.doesNotMatch(postpartum.facts.join(" "), /정상|위험|호전|악화|건강/);
 assert.equal(objectiveEventValue(postpartumEvents[2]), "36.8℃");
 assert.equal(objectiveEventValue(postpartumEvents[1]), "직접 수유 · 양 미입력");
@@ -48,6 +48,6 @@ assert.equal(babysitting.totals.mealCount, 1);
 assert.equal(babysitting.totals.activityCount, 1);
 assert.equal(objectiveDistributionLabel(babysitting.totals.activityDistribution), "산책 1건");
 assert.doesNotMatch(babysitting.facts.join(" "), /25분/);
-assert.match(babysitting.facts.join(" "), /자유메모의 문장에서 횟수·시간·양을 추출하지 않았습니다/);
+assert.match(babysitting.facts.join(" "), /직접 작성한 메모에서 횟수·시간·양을 임의로 계산하지 않았습니다/);
 
 console.log("Objective report checks passed.");
