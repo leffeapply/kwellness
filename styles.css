@@ -843,6 +843,14 @@ button:disabled {
   font-weight: 600;
 }
 
+.timeline-time small {
+  display: block;
+  margin-top: 2px;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
 .timeline-icon {
   display: grid;
   width: 38px;
@@ -1354,6 +1362,19 @@ button:disabled {
   color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.care-record-time-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.care-record-time-control .secondary-button {
+  min-height: 44px;
+  padding: 0 16px;
+  white-space: nowrap;
 }
 
 .field input,
@@ -2869,6 +2890,14 @@ body:has(#modal-root:not(:empty)) {
 }
 
 @media (max-width: 560px) {
+  .care-record-time-control {
+    grid-template-columns: 1fr;
+  }
+
+  .care-record-time-control .secondary-button {
+    width: 100%;
+  }
+
   .grid.stats { gap: 10px; }
   .stat-card { padding: 16px; }
   .stat-value { font-size: 28px; }

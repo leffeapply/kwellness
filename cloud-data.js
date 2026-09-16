@@ -40,36 +40,24 @@ function shortTime(value) {
   return value ? String(value).slice(0, 5) : "";
 }
 
-function easternDateKey(value = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(value));
-  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${byType.year}-${byType.month}-${byType.day}`;
+function deviceDateKey(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function sessionTimestamp(row) {
   return new Date(row.ended_at || row.started_at || `${row.service_date}T12:00:00`).getTime();
 }
 
-function assignmentRunsOnDate(assignment, dateKey) {
-  const weekdayTokens = [
-    ["일", "SUN", "SUNDAY", "7"],
-    ["월", "MON", "MONDAY", "1"],
-    ["화", "TUE", "TUESDAY", "2"],
-    ["수", "WED", "WEDNESDAY", "3"],
-    ["목", "THU", "THURSDAY", "4"],
-    ["금", "FRI", "FRIDAY", "5"],
-    ["토", "SAT", "SATURDAY", "6"],
-  ];
-  const date = new Date(`${dateKey}T12:00:00`);
-  const serviceDays = assignment.service_days?.length ? assignment.service_days : ["월", "화", "수", "목", "금"];
-  return easternDateKey(assignment.starts_at) <= dateKey
-    && dateKey <= easternDateKey(assignment.ends_at)
-    && weekdayTokens[date.getDay()].some((token) => serviceDays.includes(token));
+function assignmentContractCoversDate(assignment, dateKey) {
+  if (!assignment || !dateKey) return false;
+  const startDate = assignment.contractStartDate || deviceDateKey(assignment.startAt);
+  const endDate = assignment.contractEndDate || deviceDateKey(assignment.endAt);
+  return Boolean(startDate && endDate && startDate <= dateKey && dateKey <= endDate);
 }
 
 function appRoleFor(profile, roles, caregiverApplication, membership) {
@@ -80,11 +68,12 @@ function appRoleFor(profile, roles, caregiverApplication, membership) {
   return "client";
 }
 
-function assignmentStatus(row) {
+function assignmentStatus(row, contract, dateKey = deviceDateKey()) {
   if (row.status === "CANCELLED") return "CANCELLED";
   if (row.status === "COMPLETED") return "COMPLETED";
-  const now = Date.now();
-  if (new Date(row.starts_at).getTime() <= now && now <= new Date(row.ends_at).getTime()) return "ACTIVE";
+  const startDate = contract?.start_date || deviceDateKey(row.starts_at);
+  const endDate = contract?.end_date || deviceDateKey(row.ends_at);
+  if (startDate && endDate && startDate <= dateKey && dateKey <= endDate) return "ACTIVE";
   return "SCHEDULED";
 }
 
@@ -292,7 +281,7 @@ async function loadCloudStateOnce(session) {
     sessionsByAssignment.get(item.assignment_id).push(item);
   });
   sessionsByAssignment.forEach((items) => items.sort((a, b) => sessionTimestamp(b) - sessionTimestamp(a)));
-  const todayKey = easternDateKey();
+  const todayKey = deviceDateKey();
   const todaySessionForAssignment = (assignmentId) => (sessionsByAssignment.get(assignmentId) || []).find((item) => item.service_date === todayKey) || null;
   const latestCompletedSessionForAssignment = (assignmentId) => (sessionsByAssignment.get(assignmentId) || []).find((item) => item.status === "COMPLETED") || null;
   const profileById = new Map(profiles.map((item) => [item.id, item]));
@@ -423,6 +412,8 @@ async function loadCloudStateOnce(session) {
       depositPaidAt: assignment.deposit_paid_at,
       startAt: assignment.starts_at,
       endAt: assignment.ends_at,
+      contractStartDate: contract?.start_date || deviceDateKey(assignment.starts_at),
+      contractEndDate: contract?.end_date || deviceDateKey(assignment.ends_at),
       dailyStart: shortTime(assignment.daily_start_time),
       dailyEnd: shortTime(assignment.daily_end_time),
       daysOfWeek: assignment.service_days || [],
@@ -434,14 +425,16 @@ async function loadCloudStateOnce(session) {
       mealInstructions: assignment.meal_instructions || "",
       routineNotes: assignment.routine_notes || "",
       pickupNotes: assignment.pickup_notes || "",
-      status: assignmentStatus(assignment),
+      status: assignmentStatus(assignment, contract, todayKey),
       databaseStatus: assignment.status,
       careSessionId: reportSession?.id || null,
       careSessionStatus: reportSession?.status || null,
       careSessionDate: reportSession?.service_date || null,
+      careSessionTimeZone: reportSession?.service_time_zone || "America/New_York",
       todayCareSessionId: todaySession?.id || null,
       todayCareSessionStatus: todaySession?.status || null,
       todayCareSessionEndedAt: todaySession?.ended_at || null,
+      todayCareSessionTimeZone: todaySession?.service_time_zone || null,
       lastCompletedCareAt: latestCompletedSession?.ended_at || null,
       createdAt: assignment.created_at,
     };
@@ -524,8 +517,10 @@ async function loadCloudStateOnce(session) {
     refundTransactions: appServiceRefunds.filter((item) => item.requestId === request.id),
   }));
 
+  const careSessionById = new Map(careSessions.map((item) => [item.id, item]));
   const assignmentBySession = new Map(careSessions.map((item) => [item.id, appAssignments.find((assignment) => assignment.id === item.assignment_id)]));
   const appEvents = careEvents.map((event) => {
+    const careSession = careSessionById.get(event.care_session_id);
     const assignment = assignmentBySession.get(event.care_session_id);
     const creator = profileById.get(event.created_by);
     return {
@@ -536,6 +531,7 @@ async function loadCloudStateOnce(session) {
       babyId: assignment?.babyId,
       type: EVENT_TO_APP[event.event_type] || "note",
       at: event.event_time,
+      serviceTimeZone: careSession?.service_time_zone || "America/New_York",
       author: creator?.full_name || "ProMoms",
       data: event.payload || {},
     };
@@ -548,7 +544,7 @@ async function loadCloudStateOnce(session) {
   }
   const currentUserIsCaregiver = currentUser.databaseRoles?.includes("CAREGIVER");
   const todayAssignments = appAssignments
-    .filter((item) => item.status === "ACTIVE" && assignmentRunsOnDate(assignments.find((row) => row.id === item.id), todayKey) && (currentUserIsCaregiver ? item.caregiverUserId === currentUser.id : true))
+    .filter((item) => item.status === "ACTIVE" && assignmentContractCoversDate(item, todayKey) && (currentUserIsCaregiver ? item.caregiverUserId === currentUser.id : true))
     .sort((a, b) => String(a.dailyStart).localeCompare(String(b.dailyStart)));
   const recoveredCareSession = currentUserIsCaregiver
     ? [...careSessions]
@@ -636,6 +632,7 @@ async function loadCloudStateOnce(session) {
       id: item.id,
       assignmentId: item.assignment_id,
       serviceDate: item.service_date,
+      serviceTimeZone: item.service_time_zone || "America/New_York",
       status: item.status,
       startedAt: item.started_at,
       endedAt: item.ended_at,
@@ -646,6 +643,7 @@ async function loadCloudStateOnce(session) {
       clientId: currentAssignment?.clientId || null,
       babyId: currentAssignment?.babyId || null,
       serviceDate: currentCareSession?.service_date || null,
+      serviceTimeZone: currentCareSession?.service_time_zone || null,
       active: currentCareSession?.status === "IN_PROGRESS",
       startedAt: currentCareSession?.started_at || null,
       endedAt: currentCareSession?.ended_at || null,
@@ -794,18 +792,22 @@ export async function reassignCaregiverCloud({ assignmentId, caregiverId, reason
   }), "관리사 재배정");
 }
 
-export async function setCareSessionStatusCloud(assignmentId, status) {
+export async function setCareSessionStatusCloud(assignmentId, status, { serviceDate = null, timeZone = null } = {}) {
   return throwIfError(await supabase.rpc("set_care_session_status", {
     p_assignment_id: assignmentId,
     p_status: status,
+    p_service_date: serviceDate,
+    p_time_zone: timeZone,
   }), "케어 세션 상태 저장");
 }
 
-export async function setCareShiftCheckCloud(assignmentId, checkKey, checked) {
+export async function setCareShiftCheckCloud(assignmentId, checkKey, checked, { serviceDate = null, timeZone = null } = {}) {
   return throwIfError(await supabase.rpc("set_care_shift_check", {
     p_assignment_id: assignmentId,
     p_check_key: checkKey,
     p_checked: Boolean(checked),
+    p_service_date: serviceDate,
+    p_time_zone: timeZone,
   }), "근무 전 확인사항 저장");
 }
 

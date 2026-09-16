@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import {
   buildObjectiveReportModel,
   objectiveDistributionLabel,
+  objectiveEventDateKey,
+  objectiveEventTimeZone,
   objectiveEventValue,
+  objectiveTimeLabel,
 } from "../objective-report.js";
 
 const postpartumAssignment = { id: "postpartum", serviceType: "POSTPARTUM" };
@@ -49,5 +52,40 @@ assert.equal(babysitting.totals.activityCount, 1);
 assert.equal(objectiveDistributionLabel(babysitting.totals.activityDistribution), "산책 1건");
 assert.doesNotMatch(babysitting.facts.join(" "), /25분/);
 assert.match(babysitting.facts.join(" "), /직접 작성한 메모에서 횟수·시간·양을 임의로 계산하지 않았습니다/);
+
+const koreaAssignment = { id: "korea-postpartum", serviceType: "POSTPARTUM" };
+const koreaEvents = [
+  {
+    assignmentId: "korea-postpartum",
+    serviceTimeZone: "Asia/Seoul",
+    type: "temperature",
+    at: "2026-09-15T14:30:00Z",
+    data: { value: 36.7, recordedTimeZone: "Asia/Seoul" },
+  },
+  {
+    assignmentId: "korea-postpartum",
+    serviceTimeZone: "Asia/Seoul",
+    type: "temperature",
+    at: "2026-09-15T15:30:00Z",
+    data: { value: 36.8, recordedLocalDate: "2026-09-16", recordedLocalTime: "00:30", recordedTimeZone: "Asia/Seoul" },
+  },
+];
+const koreaReport = buildObjectiveReportModel({
+  assignment: koreaAssignment,
+  events: koreaEvents,
+  sessions: [],
+  range: "week",
+  anchorDate: "2026-09-16",
+});
+
+assert.equal(objectiveEventTimeZone(koreaEvents[1]), "Asia/Seoul");
+assert.equal(objectiveEventDateKey(koreaEvents[0]), "2026-09-15");
+assert.equal(objectiveEventDateKey(koreaEvents[1]), "2026-09-16");
+assert.equal(objectiveTimeLabel(koreaEvents[0].at, objectiveEventTimeZone(koreaEvents[0])), "오후 11:30");
+assert.equal(objectiveTimeLabel(koreaEvents[1].at, objectiveEventTimeZone(koreaEvents[1])), "오전 12:30");
+assert.equal(koreaReport.daily.find((day) => day.dateKey === "2026-09-15")?.eventCount, 1);
+assert.equal(koreaReport.daily.find((day) => day.dateKey === "2026-09-16")?.eventCount, 1);
+assert.equal(koreaReport.timeZone, "Asia/Seoul");
+assert.equal(koreaReport.totals.temperatureAverage, 36.8);
 
 console.log("Objective report checks passed.");

@@ -6,27 +6,52 @@ export const OBJECTIVE_REPORT_RANGES = Object.freeze({
   month: { days: 30, label: "30일" },
 });
 
-const DATE_KEY_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  timeZone: OBJECTIVE_REPORT_TIME_ZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
 const DATE_LABEL_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
-  timeZone: OBJECTIVE_REPORT_TIME_ZONE,
+  timeZone: "UTC",
   year: "numeric",
   month: "long",
   day: "numeric",
   weekday: "short",
 });
 
-const TIME_LABEL_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
-  timeZone: OBJECTIVE_REPORT_TIME_ZONE,
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: true,
-});
+const DATE_KEY_FORMATTERS = new Map();
+const TIME_LABEL_FORMATTERS = new Map();
+
+export function normalizedReportTimeZone(value = OBJECTIVE_REPORT_TIME_ZONE) {
+  const candidate = String(value || OBJECTIVE_REPORT_TIME_ZONE);
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: candidate }).format(new Date());
+    return candidate;
+  } catch (_error) {
+    return OBJECTIVE_REPORT_TIME_ZONE;
+  }
+}
+
+function dateKeyFormatter(timeZone) {
+  const normalized = normalizedReportTimeZone(timeZone);
+  if (!DATE_KEY_FORMATTERS.has(normalized)) {
+    DATE_KEY_FORMATTERS.set(normalized, new Intl.DateTimeFormat("en-US", {
+      timeZone: normalized,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }));
+  }
+  return DATE_KEY_FORMATTERS.get(normalized);
+}
+
+function timeLabelFormatter(timeZone) {
+  const normalized = normalizedReportTimeZone(timeZone);
+  if (!TIME_LABEL_FORMATTERS.has(normalized)) {
+    TIME_LABEL_FORMATTERS.set(normalized, new Intl.DateTimeFormat("ko-KR", {
+      timeZone: normalized,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    }));
+  }
+  return TIME_LABEL_FORMATTERS.get(normalized);
+}
 
 function numericValue(value) {
   if (value === "" || value === null || value === undefined) return null;
@@ -59,21 +84,32 @@ function partsToDateKey(parts) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-export function objectiveDateKey(value) {
+export function objectiveDateKey(value, timeZone = OBJECTIVE_REPORT_TIME_ZONE) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return partsToDateKey(DATE_KEY_FORMATTER.formatToParts(date));
+  return partsToDateKey(dateKeyFormatter(timeZone).formatToParts(date));
 }
 
 export function objectiveDateLabel(dateKey) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ""))) return "날짜 미등록";
-  return DATE_LABEL_FORMATTER.format(new Date(`${dateKey}T12:00:00-04:00`));
+  return DATE_LABEL_FORMATTER.format(new Date(`${dateKey}T12:00:00Z`));
 }
 
-export function objectiveTimeLabel(value) {
+export function objectiveTimeLabel(value, timeZone = OBJECTIVE_REPORT_TIME_ZONE) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "시간 미등록";
-  return TIME_LABEL_FORMATTER.format(date);
+  return timeLabelFormatter(timeZone).format(date);
+}
+
+export function objectiveEventTimeZone(event) {
+  return normalizedReportTimeZone(event?.serviceTimeZone || event?.data?.recordedTimeZone);
+}
+
+export function objectiveEventDateKey(event) {
+  const recordedDate = String(event?.data?.recordedLocalDate || "");
+  return /^\d{4}-\d{2}-\d{2}$/.test(recordedDate)
+    ? recordedDate
+    : objectiveDateKey(event?.at, objectiveEventTimeZone(event));
 }
 
 function normalizedAnchorDate(anchorDate, events = []) {
@@ -81,7 +117,7 @@ function normalizedAnchorDate(anchorDate, events = []) {
   const latestEvent = [...events]
     .filter((event) => event?.at && !Number.isNaN(new Date(event.at).getTime()))
     .sort((first, second) => new Date(second.at) - new Date(first.at))[0];
-  return latestEvent ? objectiveDateKey(latestEvent.at) : objectiveDateKey(new Date());
+  return latestEvent ? objectiveEventDateKey(latestEvent) : objectiveDateKey(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone);
 }
 
 function dateKeysEndingAt(anchorDate, days) {
@@ -132,7 +168,7 @@ function invalidMetricCount(events) {
 }
 
 function aggregateDay(dateKey, events, sessions, assignmentId, serviceType) {
-  const dayEvents = events.filter((event) => objectiveDateKey(event.at) === dateKey);
+  const dayEvents = events.filter((event) => objectiveEventDateKey(event) === dateKey);
   const feeding = dayEvents.filter((event) => event.type === "feeding");
   const measuredFeeding = feeding.map((event) => measuredFeedingAmount(event)).filter((value) => value !== null);
   const diapers = dayEvents.filter((event) => event.type === "diaper");
@@ -268,12 +304,12 @@ export function buildObjectiveReportModel({ assignment, events = [], sessions = 
   const normalizedAnchor = normalizedAnchorDate(anchorDate, assignmentEvents);
   const dateKeys = dateKeysEndingAt(normalizedAnchor, OBJECTIVE_REPORT_RANGES[normalizedRange].days);
   const dateKeySet = new Set(dateKeys);
-  const periodEvents = assignmentEvents.filter((event) => dateKeySet.has(objectiveDateKey(event.at))).sort((first, second) => new Date(first.at) - new Date(second.at));
+  const periodEvents = assignmentEvents.filter((event) => dateKeySet.has(objectiveEventDateKey(event))).sort((first, second) => new Date(first.at) - new Date(second.at));
   const daily = dateKeys.map((dateKey) => aggregateDay(dateKey, periodEvents, sessions, assignment?.id, serviceType));
   const totals = metricTotals(daily, periodEvents, serviceType);
   return {
     version: "objective-v1",
-    timeZone: OBJECTIVE_REPORT_TIME_ZONE,
+    timeZone: [...new Set(periodEvents.map(objectiveEventTimeZone))].join(", ") || OBJECTIVE_REPORT_TIME_ZONE,
     serviceType,
     range: normalizedRange,
     rangeLabel: OBJECTIVE_REPORT_RANGES[normalizedRange].label,

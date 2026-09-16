@@ -7,6 +7,8 @@ import {
   objectiveDateKey,
   objectiveDateLabel,
   objectiveDistributionLabel,
+  objectiveEventDateKey,
+  objectiveEventTimeZone,
   objectiveEventValue,
   objectiveTimeLabel,
 } from "./objective-report.js";
@@ -267,7 +269,7 @@ import {
       careSessions: [],
       reviews: [],
       events: [],
-      session: { id: null, assignmentId: null, clientId: null, babyId: null, serviceDate: null, active: false, startedAt: null, endedAt: null, clientName: "", babyName: "", babyInitial: "", caregiverName: "", schedule: "", address: "" },
+      session: { id: null, assignmentId: null, clientId: null, babyId: null, serviceDate: null, serviceTimeZone: null, active: false, startedAt: null, endedAt: null, clientName: "", babyName: "", babyInitial: "", caregiverName: "", schedule: "", address: "" },
       retail: { selectedCategory: "ALL", posCategory: "ALL", cart: [], carts: {}, products: [], inventoryMovements: [], orders: [] },
     };
   }
@@ -649,6 +651,11 @@ import {
     if (message.includes("a complete service address is required")) return "기본 서비스 주소를 5자 이상 입력해 주세요.";
     if (message.includes("in-progress care session")) return "진행 중인 케어 세션을 먼저 종료하거나 취소한 뒤 서비스를 삭제해 주세요.";
     if (message.includes("detailed service removal reason")) return "서비스 삭제 사유를 5자 이상 구체적으로 입력해 주세요.";
+    if (message.includes("unsupported device time zone")) return "휴대폰의 현재 시간대를 확인하지 못했습니다. 기기의 날짜·시간 자동 설정을 켠 뒤 다시 시도해 주세요.";
+    if (message.includes("device-local current date")) return "기기 날짜가 변경되었습니다. 화면을 새로고침한 뒤 오늘 근무를 다시 시작해 주세요.";
+    if (message.includes("only during the confirmed contract period") || message.includes("only during the contract period")) return "확정된 서비스 계약기간 안에서만 케어를 시작하고 기록할 수 있습니다.";
+    if (message.includes("complete all four safety checks")) return "근무 전 안전 확인 4개를 모두 완료한 뒤 케어를 시작해 주세요.";
+    if (message.includes("completion date does not match")) return "현재 열린 케어의 현지 날짜가 일치하지 않습니다. 화면을 새로고침한 뒤 종료해 주세요.";
     if (message.includes("assigned service days")) return "선택한 날짜는 해당 배정의 서비스 요일이 아닙니다.";
     if (message.includes("retrospective report cannot be entered for a future date") || message.includes("retrospective report cannot end in the future")) return "지난 근무 리포트에는 완료된 오늘 또는 과거 근무만 입력할 수 있습니다.";
     if (message.includes("published care report is immutable")) return "이미 고객에게 발행된 보관 리포트는 변경할 수 없습니다. 관리자에게 정정 절차를 요청해 주세요.";
@@ -672,6 +679,21 @@ import {
 
   function timeLabel(value) {
     return TIME_FORMATTER.format(new Date(value));
+  }
+
+  function serviceTimeZoneLabel(timeZone) {
+    const normalized = String(timeZone || OBJECTIVE_REPORT_TIME_ZONE);
+    if (normalized === "Asia/Seoul") return "한국시간";
+    if (normalized === "America/New_York") return "미국 동부시간";
+    return normalized.replaceAll("_", " ");
+  }
+
+  function careEventTimeParts(event) {
+    const timeZone = objectiveEventTimeZone(event);
+    return {
+      time: objectiveTimeLabel(event.at, timeZone),
+      zone: serviceTimeZoneLabel(timeZone),
+    };
   }
 
   function authUser() {
@@ -775,9 +797,28 @@ import {
     return true;
   }
 
+  function deviceTimeZone() {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || OBJECTIVE_REPORT_TIME_ZONE;
+  }
+
+  function assignmentStartDateKey(assignment) {
+    return assignment?.contractStartDate || objectiveDateKey(assignment?.startAt, OBJECTIVE_REPORT_TIME_ZONE);
+  }
+
+  function assignmentEndDateKey(assignment) {
+    return assignment?.contractEndDate || objectiveDateKey(assignment?.endAt, OBJECTIVE_REPORT_TIME_ZONE);
+  }
+
+  function assignmentCoversDeviceDate(assignment, value = new Date()) {
+    if (!assignment || assignment.status === "CANCELLED") return false;
+    const deviceDate = localDateKey(value);
+    const startDate = assignmentStartDateKey(assignment);
+    const endDate = assignmentEndDateKey(assignment);
+    return Boolean(startDate && endDate && startDate <= deviceDate && deviceDate <= endDate);
+  }
+
   function isAssignmentCurrent(assignment) {
-    const now = new Date();
-    return new Date(assignment.startAt) <= now && now <= new Date(assignment.endAt) && assignment.status !== "CANCELLED";
+    return assignmentCoversDeviceDate(assignment);
   }
 
   const KOREAN_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -793,7 +834,11 @@ import {
   }
 
   function assignmentIsScheduledToday(assignment) {
-    return isAssignmentCurrent(assignment) && assignmentOccursOnDate(assignment, new Date());
+    return assignmentCoversDeviceDate(assignment, new Date()) && assignmentOccursOnDate(assignment, new Date());
+  }
+
+  function assignmentAcceptsCareEntriesToday(assignment) {
+    return assignmentCoversDeviceDate(assignment, new Date());
   }
 
   function assignmentServiceType(assignment) {
@@ -917,7 +962,7 @@ import {
       : null;
     if (recoveredAssignment) return recoveredAssignment;
     const todaysAssignments = state.assignments
-      .filter((assignment) => assignment.caregiverUserId === userId && assignmentIsScheduledToday(assignment) && (!serviceType || assignmentServiceType(assignment) === serviceType))
+      .filter((assignment) => assignment.caregiverUserId === userId && assignmentAcceptsCareEntriesToday(assignment) && (!serviceType || assignmentServiceType(assignment) === serviceType))
       .sort((a, b) => String(a.dailyStart).localeCompare(String(b.dailyStart)));
     return todaysAssignments.find((assignment) => state.session.active && state.session.assignmentId === assignment.id)
       || todaysAssignments.find((assignment) => assignment.todayCareSessionStatus !== "COMPLETED" && !(state.session.assignmentId === assignment.id && state.session.endedAt))
@@ -927,7 +972,10 @@ import {
 
   function assignmentCompletedToday(assignment) {
     return assignment?.todayCareSessionStatus === "COMPLETED"
-      || (!usingCloudData() && state.session.assignmentId === assignment?.id && Boolean(state.session.endedAt));
+      || (!usingCloudData()
+        && state.session.assignmentId === assignment?.id
+        && state.session.serviceDate === localDateKey(new Date())
+        && Boolean(state.session.endedAt));
   }
 
   function nextAssignmentFor(userId, serviceType = null) {
@@ -1342,13 +1390,17 @@ import {
     const allowed = accessibleClientIds();
     const contextId = activeClientId();
     const assignment = assignmentOverride || activeAssignmentContext() || (contextId ? assignmentForClient(contextId) : null);
-    const sessionDateKey = state.session.active
-      && state.session.assignmentId === assignment?.id
-      && state.session.serviceDate
+    const sessionMatchesAssignment = state.session.assignmentId === assignment?.id;
+    const sessionId = sessionMatchesAssignment ? state.session.id : null;
+    const sessionDateKey = sessionMatchesAssignment && state.session.serviceDate
       ? state.session.serviceDate
       : localDateKey(new Date());
     const allowedEventTypes = assignmentServiceType(assignment) === "BABYSITTING" ? ["meal", "sitter_note"] : ["feeding", "diaper", "sleep", "temperature", "bath", "weight", "mother", "note"];
-    return state.events.filter((event) => allowed.includes(event.clientId) && (!contextId || event.clientId === contextId) && (!assignment || event.assignmentId === assignment.id) && localDateKey(event.at) === sessionDateKey && allowedEventTypes.includes(event.type));
+    return state.events.filter((event) => allowed.includes(event.clientId)
+      && (!contextId || event.clientId === contextId)
+      && (!assignment || event.assignmentId === assignment.id)
+      && (sessionId ? event.careSessionId === sessionId : objectiveEventDateKey(event) === sessionDateKey)
+      && allowedEventTypes.includes(event.type));
   }
 
   function activeSessionIsStale(assignment = null) {
@@ -2276,7 +2328,7 @@ import {
     const client = clientById(primary.clientId);
     if (!client) return `<article class="card service-overview-card empty ${meta.tone}"><div class="service-overview-icon">!</div><div>${serviceBadgeMarkup(serviceType)}<h3>배정 고객 정보를 확인할 수 없습니다.</h3><p>개인정보 보호 또는 데이터 연결 상태를 관리자가 확인해야 합니다.</p></div></article>`;
     const babyName = babyNameFor(primary, client) || "아이";
-    return `<article class="card service-overview-card ${meta.tone}"><div class="service-overview-top"><div>${serviceBadgeMarkup(serviceType)}<h3>${current ? "현재 담당 중" : "다음 배정 예정"}</h3></div><span class="status-chip ${current ? "" : "gold"}">${assignmentCountdown(primary)}</span></div><strong class="service-overview-family">${escapeHtml(client.motherName)} · ${escapeHtml(babyName)}</strong><p>${new Date(primary.startAt).toLocaleDateString("ko-KR")}–${new Date(primary.endAt).toLocaleDateString("ko-KR")} · ${primary.dailyStart}–${primary.dailyEnd}</p><div class="service-overview-actions"><button class="primary-button" data-enter-caregiver-service="${serviceType}">${meta.label} 작업공간</button><button class="secondary-button" data-caregiver-assignment-detail="${primary.id}">고객 정보</button></div></article>`;
+    return `<article class="card service-overview-card ${meta.tone}"><div class="service-overview-top"><div>${serviceBadgeMarkup(serviceType)}<h3>${current ? "현재 담당 중" : "다음 배정 예정"}</h3></div><span class="status-chip ${current ? "" : "gold"}">${assignmentCountdown(primary)}</span></div><strong class="service-overview-family">${escapeHtml(client.motherName)} · ${escapeHtml(babyName)}</strong><p>${formatDate(assignmentStartDateKey(primary))}–${formatDate(assignmentEndDateKey(primary))} · 고객 요청 참고시간 ${primary.dailyStart}–${primary.dailyEnd}</p><div class="service-overview-actions"><button class="primary-button" data-enter-caregiver-service="${serviceType}">${meta.label} 작업공간</button><button class="secondary-button" data-caregiver-assignment-detail="${primary.id}">고객 정보</button></div></article>`;
   }
 
   function caregiverCaregivingHub() {
@@ -2312,7 +2364,7 @@ import {
     const client = clientById(assignment.clientId);
     if (!client) return `<div class="assignment-peek-card empty"><span class="peek-label">${label}</span><strong>고객 정보 확인 필요</strong><small>관리자에게 배정 데이터 연결 상태를 문의해 주세요.</small></div>`;
     const babyName = babyNameFor(assignment, client) || "아이";
-    return `<button type="button" class="assignment-peek-card ${serviceMetaFor(assignment.serviceType).tone}" data-caregiver-assignment-detail="${assignment.id}"><span class="peek-top"><span class="peek-label">${label}</span><span class="status-chip ${new Date(assignment.startAt) > new Date() ? "gold" : ""}">${assignmentCountdown(assignment)}</span></span>${serviceBadgeMarkup(assignment.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyName)}</strong><small>${new Date(assignment.startAt).toLocaleDateString("ko-KR")}–${new Date(assignment.endAt).toLocaleDateString("ko-KR")} · ${assignment.dailyStart}–${assignment.dailyEnd}</small><span class="peek-link">고객 정보 확인 →</span></button>`;
+    return `<button type="button" class="assignment-peek-card ${serviceMetaFor(assignment.serviceType).tone}" data-caregiver-assignment-detail="${assignment.id}"><span class="peek-top"><span class="peek-label">${label}</span><span class="status-chip ${new Date(assignment.startAt) > new Date() ? "gold" : ""}">${assignmentCountdown(assignment)}</span></span>${serviceBadgeMarkup(assignment.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyName)}</strong><small>${formatDate(assignmentStartDateKey(assignment))}–${formatDate(assignmentEndDateKey(assignment))} · 고객 요청 참고시간 ${assignment.dailyStart}–${assignment.dailyEnd}</small><span class="peek-link">고객 정보 확인 →</span></button>`;
   }
 
   function caregiverSafetyChecklistMarkup(assignment) {
@@ -2325,7 +2377,7 @@ import {
       ["scope", "업무 범위 확인", babysitting ? "의료행위 없이 승인된 베이비시팅 범위만 수행합니다." : "의료행위·무면허 마사지 없이 승인된 산후조리 범위만 수행합니다."],
     ];
     const completed = items.filter(([id]) => saved[id]).length;
-    return `<article class="card card-pad shift-checklist-card" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">PRE-SHIFT CHECK</p><h3>근무 전 안전 체크</h3><p>매 방문마다 확인 상태가 해당 배정에 저장됩니다.</p></div><span class="status-chip ${completed === items.length ? "" : "gold"}">${completed}/${items.length} 완료</span></div><div class="shift-check-list">${items.map(([id, title, detail]) => `<label><input type="checkbox" data-shift-check="${assignment.id}" data-check-id="${id}" ${saved[id] ? "checked" : ""}/><span>✓</span><div><strong>${title}</strong><small>${detail}</small></div></label>`).join("")}</div></article>`;
+    return `<article class="card card-pad shift-checklist-card" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">PRE-SHIFT CHECK</p><h3>근무 전 안전 체크</h3><p>현재 기기의 현지 날짜(${escapeHtml(formatDate(localDateKey(new Date())))}) 기준으로 저장됩니다.</p></div><span class="status-chip ${completed === items.length ? "" : "gold"}">${completed}/${items.length} 완료</span></div><div class="shift-check-list">${items.map(([id, title, detail]) => `<label><input type="checkbox" data-shift-check="${assignment.id}" data-check-id="${id}" ${saved[id] ? "checked" : ""}/><span>✓</span><div><strong>${title}</strong><small>${detail}</small></div></label>`).join("")}</div></article>`;
   }
 
   function caregiverBabysittingToday(user, assignment, nextAssignment, workspaceNav = "") {
@@ -2337,7 +2389,7 @@ import {
     const completedToday = assignmentCompletedToday(assignment);
     const sitterEvents = visibleCareEvents(assignment).filter((event) => ["meal", "sitter_note"].includes(event.type));
     const babyName = babyNameFor(assignment, client) || "아이";
-    return `<section class="page babysitting-workspace">${demoBanner()}${workspaceNav}${pageHeading("BABYSITTING WORKSPACE", `안녕하세요, ${escapeHtml(user.fullName)}님.`, `${escapeHtml(client.motherName)} 보호자의 ${escapeHtml(babyName)} 아이에게 배정된 베이비시팅 화면입니다.`)}<article class="card babysitting-hero"><div><div class="hero-care-top"><div>${serviceBadgeMarkup("BABYSITTING")}<p class="eyebrow">TODAY'S SITTING</p><h3>${escapeHtml(babyName)}</h3><p>${assignment.dailyStart}–${assignment.dailyEnd} · ${escapeHtml(assignment.address)}</p></div><div class="live-pill"><span class="live-dot"></span>${staleSession ? "CLOSE PREVIOUS SESSION" : active ? "SITTING IN PROGRESS" : completedToday ? "TODAY COMPLETED" : "SESSION READY"}</div></div><div class="assignment-brief"><span>보호자 ${escapeHtml(client.motherName)}</span><span>알러지 ${escapeHtml(assignment.allergies)}</span><span>추가인원 ${assignment.extraHouseholdMembers}명</span><span>${assignment.weeks}주 일정</span></div><div class="care-actions">${active ? `<button class="primary-button" data-notice="${sitterEvents.length}개의 해당 근무일 시팅 기록이 저장되어 있습니다.">시팅 진행 중 · ${timeLabel(state.session.startedAt)}</button><button class="secondary-button" data-end-care>시팅 종료</button>` : completedToday ? '<button class="secondary-button" disabled>오늘 시팅 완료</button>' : `<button class="primary-button" data-start-care data-assignment-id="${assignment.id}">시팅 시작하기</button>`}<button class="secondary-button" data-caregiver-assignment-detail="${assignment.id}">아이 상세정보</button></div></div></article>${staleSessionBannerMarkup()}<div class="assignment-peek-grid" style="margin-top:18px">${caregiverAssignmentPeekMarkup(assignment, "현재 시팅")}${caregiverAssignmentPeekMarkup(nextAssignment, "다음 일정")}</div>${staleSession ? "" : caregiverSafetyChecklistMarkup(assignment)}<div class="grid two babysitting-guide-grid" style="margin-top:18px"><article class="card card-pad"><div class="section-header"><div><h3>식사·안전 지침</h3><p>보호자가 신청 시 전달한 내용</p></div><span class="status-chip coral">확인 필수</span></div><dl class="sitting-instructions"><div><dt>알러지</dt><dd>${escapeHtml(assignment.allergies || "없음")}</dd></div><div><dt>식사·간식</dt><dd>${escapeHtml(assignment.mealInstructions || "별도 지침 없음")}</dd></div><div><dt>생활 루틴</dt><dd>${escapeHtml(assignment.routineNotes || "별도 지침 없음")}</dd></div><div><dt>인계·출입</dt><dd>${escapeHtml(assignment.pickupNotes || "별도 지침 없음")}</dd></div></dl></article><article class="card quick-log-card sitter-quick-card"><div class="section-header"><div><h3>빠른 시팅 기록</h3><p>식사와 주요 이벤트만 간단히 공유</p></div><span class="status-chip ${canLog ? "" : "gold"}">${canLog ? "기록 가능" : staleSession ? "이전 근무 종료 필요" : completedToday ? "오늘 기록 완료" : "시팅 시작 필요"}</span></div><div class="quick-log-grid sitter-grid">${["meal", "sitter_note"].map((type) => { const meta = EVENT_META[type]; return `<button class="quick-button" data-log-type="${type}" ${canLog ? "" : "disabled"}><span class="quick-icon">${meta.icon}</span><span>${meta.label}</span></button>`; }).join("")}</div>${canLog ? "" : `<p class="session-hint">${staleSession ? "이전 근무 세션을 종료하면 오늘 일정으로 진행할 수 있습니다." : completedToday ? "오늘 시팅이 종료되어 기록이 잠겼습니다." : "‘시팅 시작하기’를 누르면 기록할 수 있습니다."}</p>`}</article></div><article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>${staleSession ? "미종료 근무일" : "오늘의"} 식사·이벤트</h3><p>${sitterEvents.length}개의 베이비시팅 기록</p></div><button class="text-button" data-service-tab="timeline" data-service-type="BABYSITTING">전체 보기 →</button></div>${timelineMarkup(6, assignment)}</article></section>`;
+    return `<section class="page babysitting-workspace">${demoBanner()}${workspaceNav}${pageHeading("BABYSITTING WORKSPACE", `안녕하세요, ${escapeHtml(user.fullName)}님.`, `${escapeHtml(client.motherName)} 보호자의 ${escapeHtml(babyName)} 아이에게 배정된 베이비시팅 화면입니다. 계약 기간에는 요청 시간과 관계없이 기록할 수 있습니다.`)}<article class="card babysitting-hero"><div><div class="hero-care-top"><div>${serviceBadgeMarkup("BABYSITTING")}<p class="eyebrow">TODAY'S SITTING</p><h3>${escapeHtml(babyName)}</h3><p>고객 요청 참고시간 ${assignment.dailyStart}–${assignment.dailyEnd} · ${escapeHtml(assignment.address)}</p></div><div class="live-pill"><span class="live-dot"></span>${staleSession ? "CLOSE PREVIOUS SESSION" : active ? "SITTING IN PROGRESS" : completedToday ? "TODAY COMPLETED" : "SESSION READY"}</div></div><div class="assignment-brief"><span>보호자 ${escapeHtml(client.motherName)}</span><span>알러지 ${escapeHtml(assignment.allergies)}</span><span>추가인원 ${assignment.extraHouseholdMembers}명</span><span>${assignment.weeks}주 일정</span></div><div class="care-actions">${active ? `<button class="primary-button" data-notice="${sitterEvents.length}개의 해당 근무일 시팅 기록이 저장되어 있습니다.">시팅 진행 중 · ${timeLabel(state.session.startedAt)}</button><button class="secondary-button" data-end-care>시팅 종료</button>` : completedToday ? '<button class="secondary-button" disabled>오늘 시팅 완료</button>' : `<button class="primary-button" data-start-care data-assignment-id="${assignment.id}">시팅 시작하기</button>`}<button class="secondary-button" data-caregiver-assignment-detail="${assignment.id}">아이 상세정보</button></div></div></article>${staleSessionBannerMarkup()}<div class="assignment-peek-grid" style="margin-top:18px">${caregiverAssignmentPeekMarkup(assignment, "현재 시팅")}${caregiverAssignmentPeekMarkup(nextAssignment, "다음 일정")}</div>${staleSession ? "" : caregiverSafetyChecklistMarkup(assignment)}<div class="grid two babysitting-guide-grid" style="margin-top:18px"><article class="card card-pad"><div class="section-header"><div><h3>식사·안전 지침</h3><p>보호자가 신청 시 전달한 내용</p></div><span class="status-chip coral">확인 필수</span></div><dl class="sitting-instructions"><div><dt>알러지</dt><dd>${escapeHtml(assignment.allergies || "없음")}</dd></div><div><dt>식사·간식</dt><dd>${escapeHtml(assignment.mealInstructions || "별도 지침 없음")}</dd></div><div><dt>생활 루틴</dt><dd>${escapeHtml(assignment.routineNotes || "별도 지침 없음")}</dd></div><div><dt>인계·출입</dt><dd>${escapeHtml(assignment.pickupNotes || "별도 지침 없음")}</dd></div></dl></article><article class="card quick-log-card sitter-quick-card"><div class="section-header"><div><h3>빠른 시팅 기록</h3><p>식사와 주요 이벤트만 간단히 공유</p></div><span class="status-chip ${canLog ? "" : "gold"}">${canLog ? "기록 가능" : staleSession ? "이전 근무 종료 필요" : completedToday ? "오늘 기록 완료" : "시팅 시작 필요"}</span></div><div class="quick-log-grid sitter-grid">${["meal", "sitter_note"].map((type) => { const meta = EVENT_META[type]; return `<button class="quick-button" data-log-type="${type}" ${canLog ? "" : "disabled"}><span class="quick-icon">${meta.icon}</span><span>${meta.label}</span></button>`; }).join("")}</div>${canLog ? "" : `<p class="session-hint">${staleSession ? "이전 근무 세션을 종료하면 오늘 일정으로 진행할 수 있습니다." : completedToday ? "오늘 시팅이 종료되어 기록이 잠겼습니다." : "계약 기간에는 언제든 ‘시팅 시작하기’를 누른 뒤 기록할 수 있습니다."}</p>`}</article></div><article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>${staleSession ? "미종료 근무일" : "오늘의"} 식사·이벤트</h3><p>${sitterEvents.length}개의 베이비시팅 기록</p></div><button class="text-button" data-service-tab="timeline" data-service-type="BABYSITTING">전체 보기 →</button></div>${timelineMarkup(6, assignment)}</article></section>`;
   }
 
   function caregiverToday(serviceType = "POSTPARTUM", workspaceNav = "") {
@@ -2369,10 +2421,10 @@ import {
       <section class="page">
         ${demoBanner()}
         ${workspaceNav}
-        ${pageHeading("CAREGIVER WORKSPACE", `안녕하세요, ${escapeHtml(user.fullName)}님.`, `배정된 ${escapeHtml(client.motherName)} 산모와 ${escapeHtml(babyName)} 아기의 정보만 접근할 수 있습니다.`)}
+        ${pageHeading("CAREGIVER WORKSPACE", `안녕하세요, ${escapeHtml(user.fullName)}님.`, `배정된 ${escapeHtml(client.motherName)} 산모와 ${escapeHtml(babyName)} 아기의 정보만 접근할 수 있습니다. 계약 기간에는 요청 시간과 관계없이 기록할 수 있습니다.`)}
         <article class="card hero-care">
           <div class="hero-care-top">
-            <div><p class="eyebrow">TODAY'S ASSIGNMENT</p><h3>${escapeHtml(babyName)}</h3><p>${assignment.dailyStart} – ${assignment.dailyEnd} · ${escapeHtml(assignment.address)}</p></div>
+            <div><p class="eyebrow">TODAY'S ASSIGNMENT</p><h3>${escapeHtml(babyName)}</h3><p>고객 요청 참고시간 ${assignment.dailyStart} – ${assignment.dailyEnd} · ${escapeHtml(assignment.address)}</p></div>
             <div class="live-pill"><span class="live-dot"></span>${staleSession ? "CLOSE PREVIOUS SESSION" : active ? "CARE IN PROGRESS" : completedToday ? "TODAY COMPLETED" : "SESSION READY"}</div>
           </div>
           <div class="assignment-brief"><span>산모 ${escapeHtml(client.motherName)}</span><span>알러지 ${escapeHtml(assignment.allergies)}</span><span>가정 내 추가인원 ${assignment.extraHouseholdMembers}명</span><span>${assignment.weeks}주 계약</span></div>
@@ -2402,7 +2454,7 @@ import {
               )
               .join("")}
           </div>
-          ${canLog ? "" : `<p class="session-hint">${staleSession ? "이전 근무 세션을 종료하면 오늘 일정으로 진행할 수 있습니다." : "위의 ‘케어 시작하기’를 누르면 기록 버튼이 활성화됩니다."}</p>`}
+          ${canLog ? "" : `<p class="session-hint">${staleSession ? "이전 근무 세션을 종료하면 오늘 일정으로 진행할 수 있습니다." : "계약 기간에는 언제든 ‘케어 시작하기’를 누른 뒤 기록할 수 있습니다."}</p>`}
         </article>
 
         <article class="card card-pad" style="margin-top:18px">
@@ -2456,9 +2508,10 @@ import {
     return `<div class="timeline">${events
       .map((event) => {
         const meta = EVENT_META[event.type] || EVENT_META.note;
+        const recordedTime = careEventTimeParts(event);
         return `
           <div class="timeline-item">
-            <div class="timeline-time">${timeLabel(event.at)}</div>
+            <div class="timeline-time">${escapeHtml(recordedTime.time)}<small>${escapeHtml(recordedTime.zone)}</small></div>
             <div class="timeline-icon">${meta.icon}</div>
             <div class="timeline-copy"><strong>${meta.label}</strong><span>${escapeHtml(eventDescription(event))}</span></div>
             <div class="timeline-author">${escapeHtml(event.author)}</div>
@@ -2486,12 +2539,12 @@ import {
 
   function caregiverUpcomingAssignmentRowMarkup(item, index) {
     if (!caregiverCanViewClientBrief(item)) {
-      return `<div class="assignment-row"><div>${serviceBadgeMarkup(item.serviceType)}<strong>${formatDate(item.startAt)} 시작 예정</strong><span>${new Date(item.startAt).toLocaleDateString("ko-KR")}–${new Date(item.endAt).toLocaleDateString("ko-KR")} · ${item.weeks}주</span></div><div><strong>${item.dailyStart}–${item.dailyEnd}</strong><span>방문 시간</span></div><div><strong>고객 정보 공개 대기</strong><span>${caregiverClientBriefAccessText(item)}</span></div><span class="status-chip gold">${assignmentCountdown(item)}</span></div>`;
+      return `<div class="assignment-row"><div>${serviceBadgeMarkup(item.serviceType)}<strong>${formatDate(item.startAt)} 시작 예정</strong><span>${formatDate(assignmentStartDateKey(item))}–${formatDate(assignmentEndDateKey(item))} · ${item.weeks}주</span></div><div><strong>${item.dailyStart}–${item.dailyEnd}</strong><span>고객 요청 참고시간</span></div><div><strong>고객 정보 공개 대기</strong><span>${caregiverClientBriefAccessText(item)}</span></div><span class="status-chip gold">${assignmentCountdown(item)}</span></div>`;
     }
     const upcomingClient = clientById(item.clientId);
     if (!upcomingClient) return `<div class="assignment-row"><div><strong>고객 정보 연결 확인 필요</strong><span>${formatDate(item.startAt)} 시작 예정</span></div><span class="status-chip coral">관리자 확인</span></div>`;
     const upcomingBabyName = babyNameFor(item, upcomingClient);
-    return `<button type="button" class="assignment-row caregiver-upcoming-row assignment-detail-button" data-caregiver-assignment-detail="${item.id}"><span>${serviceBadgeMarkup(item.serviceType)}<strong>${escapeHtml(upcomingClient.motherName)} · ${escapeHtml(upcomingBabyName || "아이")}</strong><span>${new Date(item.startAt).toLocaleDateString("ko-KR")}–${new Date(item.endAt).toLocaleDateString("ko-KR")} · ${item.weeks}주</span></span><span><strong>${item.dailyStart}–${item.dailyEnd}</strong><span>방문 시간</span></span><span><strong>${escapeHtml(item.address)}</strong><span>${index === 0 ? "가장 가까운 다음 일정" : "클릭하여 고객 준비정보 확인"}</span></span><span class="status-chip gold">${assignmentCountdown(item)}</span></button>`;
+    return `<button type="button" class="assignment-row caregiver-upcoming-row assignment-detail-button" data-caregiver-assignment-detail="${item.id}"><span>${serviceBadgeMarkup(item.serviceType)}<strong>${escapeHtml(upcomingClient.motherName)} · ${escapeHtml(upcomingBabyName || "아이")}</strong><span>${formatDate(assignmentStartDateKey(item))}–${formatDate(assignmentEndDateKey(item))} · ${item.weeks}주</span></span><span><strong>${item.dailyStart}–${item.dailyEnd}</strong><span>고객 요청 참고시간</span></span><span><strong>${escapeHtml(item.address)}</strong><span>${index === 0 ? "가장 가까운 다음 일정" : "클릭하여 고객 준비정보 확인"}</span></span><span class="status-chip gold">${assignmentCountdown(item)}</span></button>`;
   }
 
   function caregiverProfile() {
@@ -3257,9 +3310,26 @@ import {
     if (!model.events.length) return '<div class="objective-report-empty">선택 기간에 표시할 시간별 기록이 없습니다.</div>';
     const rows = model.events.map((event) => {
       const meta = EVENT_META[event.type] || EVENT_META.note;
-      return [objectiveDateLabel(objectiveDateKey(event.at)), objectiveTimeLabel(event.at), meta.label, objectiveEventValue(event), event.author || "입력자 미등록"];
+      const eventTimeZone = objectiveEventTimeZone(event);
+      return [
+        objectiveDateLabel(objectiveEventDateKey(event)),
+        `${objectiveTimeLabel(event.at, eventTimeZone)} · ${serviceTimeZoneLabel(eventTimeZone)}`,
+        meta.label,
+        objectiveEventValue(event),
+        event.author || "입력자 미등록",
+      ];
     });
-    return `<div class="objective-report-table-wrap"><table class="objective-report-table"><thead><tr><th scope="col">날짜</th><th scope="col">시간</th><th scope="col">기록 항목</th><th scope="col">기록 내용</th><th scope="col">입력자</th></tr></thead><tbody>${rows.map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    return `<div class="objective-report-table-wrap"><table class="objective-report-table"><thead><tr><th scope="col">날짜</th><th scope="col">기록한 현지시간</th><th scope="col">기록 항목</th><th scope="col">기록 내용</th><th scope="col">입력자</th></tr></thead><tbody>${rows.map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  }
+
+  function objectiveReportTimeBasisLabel(model) {
+    const timeZones = [...new Set(String(model?.timeZone || "")
+      .split(",")
+      .map((timeZone) => timeZone.trim())
+      .filter(Boolean))];
+    if (!timeZones.length) return "기록 기기의 현지시간";
+    const labels = timeZones.map(serviceTimeZoneLabel);
+    return labels.length === 1 ? `${labels[0]} 기준` : `기록별 현지시간 (${labels.join(" · ")})`;
   }
 
   function objectiveReportChartsMarkup(model) {
@@ -3285,7 +3355,7 @@ import {
       const itemBaby = babyNameFor(item, itemClient) || "아이";
       return `<option value="${item.id}" ${item.id === assignment.id ? "selected" : ""}>${escapeHtml(serviceMetaFor(item.serviceType).label)} · ${escapeHtml(itemClient?.motherName || "고객")} / ${escapeHtml(itemBaby)} · ${formatDate(item.startAt)}</option>`;
     }).join("");
-    return `<section class="objective-report-builder report-screen-only" aria-label="케어 리포트 설정"><div class="section-header"><div><p class="eyebrow">CARE REPORT</p><h3>기간별 케어 리포트 보기</h3><p>관리사가 입력한 내용만 계산하며, 직접 작성한 메모에서 수치나 원인을 임의로 판단하지 않습니다.</p></div><span class="status-chip">${escapeHtml(serviceMetaFor(serviceType).label)}</span></div><div class="report-builder-fields"><div class="field"><label for="objective-report-assignment">서비스 선택</label><select id="objective-report-assignment" data-objective-report-assignment>${assignmentOptions}</select></div><div class="field"><label for="objective-report-anchor">조회 종료일</label><input id="objective-report-anchor" type="date" value="${escapeHtml(model.anchorDate)}" data-objective-report-anchor/></div><div class="field"><label>보고 싶은 기간</label><div class="report-range-tabs" role="group" aria-label="보고 싶은 기간">${Object.entries(OBJECTIVE_REPORT_RANGES).map(([id, info]) => `<button type="button" data-objective-report-range="${id}" class="${model.range === id ? "active" : ""}" aria-pressed="${model.range === id}">${escapeHtml(info.label)}</button>`).join("")}</div></div></div><div class="report-builder-fields"><div class="field"><label>보고서 보기</label><div class="report-density-tabs" role="group" aria-label="보고서 보기">${[["daily", "날짜별"], ["hourly", "시간별"], ["both", "모두"]].map(([id, label]) => `<button type="button" data-objective-report-granularity="${id}" class="${preferences.granularity === id ? "active" : ""}" aria-pressed="${preferences.granularity === id}">${label}</button>`).join("")}</div></div><div class="field"><label>기록 시간 기준</label><div class="status-chip">미국 동부시간</div></div><div class="report-builder-actions"><button type="button" class="primary-button" data-print-objective-report>PDF로 저장·인쇄</button></div></div></section>`;
+    return `<section class="objective-report-builder report-screen-only" aria-label="케어 리포트 설정"><div class="section-header"><div><p class="eyebrow">CARE REPORT</p><h3>기간별 케어 리포트 보기</h3><p>관리사가 입력한 내용만 계산하며, 직접 작성한 메모에서 수치나 원인을 임의로 판단하지 않습니다.</p></div><span class="status-chip">${escapeHtml(serviceMetaFor(serviceType).label)}</span></div><div class="report-builder-fields"><div class="field"><label for="objective-report-assignment">서비스 선택</label><select id="objective-report-assignment" data-objective-report-assignment>${assignmentOptions}</select></div><div class="field"><label for="objective-report-anchor">조회 종료일</label><input id="objective-report-anchor" type="date" value="${escapeHtml(model.anchorDate)}" data-objective-report-anchor/></div><div class="field"><label>보고 싶은 기간</label><div class="report-range-tabs" role="group" aria-label="보고 싶은 기간">${Object.entries(OBJECTIVE_REPORT_RANGES).map(([id, info]) => `<button type="button" data-objective-report-range="${id}" class="${model.range === id ? "active" : ""}" aria-pressed="${model.range === id}">${escapeHtml(info.label)}</button>`).join("")}</div></div></div><div class="report-builder-fields"><div class="field"><label>기록 시간 기준</label><div class="status-chip">${escapeHtml(objectiveReportTimeBasisLabel(model))}</div></div><div class="field"><label>보고서 보기</label><div class="report-density-tabs" role="group" aria-label="보고서 보기">${[["daily", "날짜별"], ["hourly", "시간별"], ["both", "모두"]].map(([id, label]) => `<button type="button" data-objective-report-granularity="${id}" class="${preferences.granularity === id ? "active" : ""}" aria-pressed="${preferences.granularity === id}">${label}</button>`).join("")}</div></div><div class="report-builder-actions"><button type="button" class="primary-button" data-print-objective-report>PDF로 저장·인쇄</button></div></div></section>`;
   }
 
   function objectiveReportMarkup(assignment, client, model, role = state.role) {
@@ -3293,10 +3363,12 @@ import {
     const babyName = babyNameFor(assignment, client) || "아이";
     const generatedAtDate = new Date();
     const reportId = `LIVE-${String(assignment.id).slice(0, 8).toUpperCase()}-${model.fromDate.replaceAll("-", "")}-${model.toDate.replaceAll("-", "")}-${generatedAtDate.getTime().toString(36).toUpperCase()}`;
-    const generatedAt = generatedAtDate.toLocaleString("ko-KR", { timeZone: OBJECTIVE_REPORT_TIME_ZONE });
+    const generatedAtTimeZone = deviceTimeZone();
+    const generatedAt = generatedAtDate.toLocaleString("ko-KR", { timeZone: generatedAtTimeZone });
+    const reportTimeBasis = objectiveReportTimeBasisLabel(model);
     const showDaily = preferences.granularity === "daily" || preferences.granularity === "both";
     const showHourly = preferences.granularity === "hourly" || preferences.granularity === "both";
-    return `<article class="objective-report" aria-labelledby="objective-report-title"><header class="objective-report-banner"><div class="report-print-only">${brandLogoMarkup(true)}</div><p class="eyebrow">PROMOMS CARE REPORT</p><h1 id="objective-report-title">${escapeHtml(serviceMetaFor(model.serviceType).label)} 기간별 케어 리포트</h1><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyName)} · ${escapeHtml(objectiveDateLabel(model.fromDate))}–${escapeHtml(objectiveDateLabel(model.toDate))}</p><small>리포트 번호 ${escapeHtml(reportId)} · 미국 동부시간 · 생성 ${escapeHtml(generatedAt)}</small></header><div class="objective-report-banner"><strong>조회한 기간과 기록</strong><p>${model.dateKeys.length}일 중 ${model.totals.recordedDays}일 기록 · 관리사 기록 ${model.totals.eventCount}건 · 완료된 근무시간 ${model.totals.careMinutes === null ? "기록 없음" : reportDurationValue(model.totals.careMinutes)}</p><small>‘기록 없음’은 실제 숫자 0과 다릅니다. 메모가 포함된 ${model.dataQuality.freeTextExcludedFromMetrics}건은 아래 상세 기록에 그대로 표시했습니다. 메모 속 숫자는 합계·평균 계산에 사용하지 않았습니다. 숫자로 읽을 수 없는 입력 ${model.dataQuality.invalidMetricCount}건.</small></div>${objectiveReportKpisMarkup(model)}<section class="objective-report-section"><h2>기간별 기록 요약</h2><div class="objective-report-facts">${model.facts.map((fact) => `<p class="objective-report-fact">${escapeHtml(fact)}</p>`).join("")}</div></section><section class="objective-report-section"><h2>날짜별 변화</h2><p class="objective-report-legend">선택한 기간에 관리사가 입력한 값을 날짜별로 표시합니다. 정상·위험·호전·악화 여부를 판단하지 않습니다.</p>${objectiveReportChartsMarkup(model)}</section>${showDaily ? `<section class="objective-report-section"><h2>날짜별 기록</h2><p class="objective-report-legend">측정 단위와 측정 횟수를 함께 표시하며, 입력된 값이 없는 항목은 ‘기록 없음’으로 표시합니다.</p>${objectiveReportDailyTableMarkup(model)}</section>` : ""}${showHourly ? `<section class="objective-report-section"><h2>시간별 상세 기록</h2><p class="objective-report-legend">관리사가 입력한 내용과 직접 작성한 메모를 시간순으로 표시합니다.</p>${objectiveReportHourlyTableMarkup(model)}</section>` : ""}<p class="objective-report-disclaimer"><strong>중요:</strong> 이 문서는 관리사가 입력한 내용을 합계·평균으로 정리한 리포트입니다. 의료 진단, 성장 판정, 건강 상태 평가 또는 원인 추정을 제공하지 않습니다. 판단이 필요한 경우 해당 분야의 자격을 갖춘 전문가에게 문의하세요.</p><footer class="objective-report-footer"><p>ProMoms · 엄마 곁의 전문가</p><p>${escapeHtml(reportId)} · 계산 기준 1.0 · ${escapeHtml(model.fromDate)}–${escapeHtml(model.toDate)}</p></footer></article>`;
+    return `<article class="objective-report" aria-labelledby="objective-report-title"><header class="objective-report-banner"><div class="report-print-only">${brandLogoMarkup(true)}</div><p class="eyebrow">PROMOMS CARE REPORT</p><h1 id="objective-report-title">${escapeHtml(serviceMetaFor(model.serviceType).label)} 기간별 케어 리포트</h1><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyName)} · ${escapeHtml(objectiveDateLabel(model.fromDate))}–${escapeHtml(objectiveDateLabel(model.toDate))}</p><small>리포트 번호 ${escapeHtml(reportId)} · 기록 시간 ${escapeHtml(reportTimeBasis)} · 생성 ${escapeHtml(generatedAt)} (${escapeHtml(serviceTimeZoneLabel(generatedAtTimeZone))})</small></header><div class="objective-report-banner"><strong>조회한 기간과 기록</strong><p>${model.dateKeys.length}일 중 ${model.totals.recordedDays}일 기록 · 관리사 기록 ${model.totals.eventCount}건 · 완료된 근무시간 ${model.totals.careMinutes === null ? "기록 없음" : reportDurationValue(model.totals.careMinutes)}</p><small>날짜와 시간은 각 기록을 입력한 기기의 현지시간을 기준으로 표시합니다. ‘기록 없음’은 실제 숫자 0과 다릅니다. 메모가 포함된 ${model.dataQuality.freeTextExcludedFromMetrics}건은 아래 상세 기록에 그대로 표시했습니다. 메모 속 숫자는 합계·평균 계산에 사용하지 않았습니다. 숫자로 읽을 수 없는 입력 ${model.dataQuality.invalidMetricCount}건.</small></div>${objectiveReportKpisMarkup(model)}<section class="objective-report-section"><h2>기간별 기록 요약</h2><div class="objective-report-facts">${model.facts.map((fact) => `<p class="objective-report-fact">${escapeHtml(fact)}</p>`).join("")}</div></section><section class="objective-report-section"><h2>날짜별 변화</h2><p class="objective-report-legend">각 기록을 입력한 기기의 현지날짜별로 값을 표시합니다. 정상·위험·호전·악화 여부를 판단하지 않습니다.</p>${objectiveReportChartsMarkup(model)}</section>${showDaily ? `<section class="objective-report-section"><h2>날짜별 기록</h2><p class="objective-report-legend">각 기록의 현지날짜를 기준으로 측정 단위와 횟수를 표시하며, 입력된 값이 없는 항목은 ‘기록 없음’으로 표시합니다.</p>${objectiveReportDailyTableMarkup(model)}</section>` : ""}${showHourly ? `<section class="objective-report-section"><h2>시간별 상세 기록</h2><p class="objective-report-legend">관리사가 입력한 내용과 직접 작성한 메모에 각 기록 기기의 현지시간과 시간대를 함께 표시합니다.</p>${objectiveReportHourlyTableMarkup(model)}</section>` : ""}<p class="objective-report-disclaimer"><strong>중요:</strong> 이 문서는 관리사가 입력한 내용을 합계·평균으로 정리한 리포트입니다. 의료 진단, 성장 판정, 건강 상태 평가 또는 원인 추정을 제공하지 않습니다. 판단이 필요한 경우 해당 분야의 자격을 갖춘 전문가에게 문의하세요.</p><footer class="objective-report-footer"><p>ProMoms · 엄마 곁의 전문가</p><p>${escapeHtml(reportId)} · 계산 기준 1.0 · ${escapeHtml(model.fromDate)}–${escapeHtml(model.toDate)}</p></footer></article>`;
   }
 
   function objectiveReportPage(role, serviceType, workspaceNav = "") {
@@ -3922,7 +3994,10 @@ import {
       if (usingCloudData()) {
         checkbox.disabled = true;
         try {
-          await setCareShiftCheckCloud(assignmentId, checkId, checkbox.checked);
+          await setCareShiftCheckCloud(assignmentId, checkId, checkbox.checked, {
+            serviceDate: localDateKey(new Date()),
+            timeZone: deviceTimeZone(),
+          });
           await refreshCloudState();
           showToast(checkbox.checked ? "오늘의 근무 전 확인사항을 저장했습니다." : "오늘의 확인 상태를 해제했습니다.");
         } catch (error) {
@@ -4003,7 +4078,10 @@ import {
         if (usingCloudData()) {
           button.disabled = true;
           try {
-            await setCareSessionStatusCloud(assignment.id, "IN_PROGRESS");
+            await setCareSessionStatusCloud(assignment.id, "IN_PROGRESS", {
+              serviceDate: localDateKey(new Date()),
+              timeZone: deviceTimeZone(),
+            });
             await refreshCloudState();
             showToast("케어 세션을 시작했습니다. 지금부터 기록이 실제 데이터베이스에 저장됩니다.");
           } catch (error) {
@@ -4019,6 +4097,7 @@ import {
         state.session.clientId = assignment.clientId;
         state.session.babyId = assignment.babyId;
         state.session.serviceDate = localDateKey(new Date());
+        state.session.serviceTimeZone = deviceTimeZone();
         state.session.clientName = client.motherName;
         state.session.babyName = babyNameFor(assignment, client) || client.babyName;
         state.session.caregiverName = authUser().fullName;
@@ -4043,7 +4122,10 @@ import {
             ? formatDate(`${state.session.serviceDate}T12:00:00`)
             : "오늘";
           try {
-            await setCareSessionStatusCloud(assignment.id, "COMPLETED");
+            await setCareSessionStatusCloud(assignment.id, "COMPLETED", {
+              serviceDate: state.session.serviceDate || localDateKey(new Date()),
+              timeZone: state.session.serviceTimeZone || deviceTimeZone(),
+            });
             await refreshCloudState();
             showToast(`케어 세션을 종료했습니다. ${completedServiceLabel} ${completedEventCount}개의 기록이 저장되었습니다.`);
           } catch (error) {
@@ -4435,9 +4517,16 @@ import {
     showToast(`${order.id} ${context === "client" ? "로컬 주문을 접수" : "로컬 판매를 완료"}했습니다.`);
   }
 
-  function defaultTimeValue() {
-    const now = new Date();
-    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  function localDateTimeInputValue(value = new Date()) {
+    const date = value instanceof Date ? value : new Date(value);
+    return `${localDateKey(date)}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function deviceUtcOffsetLabel(value = new Date()) {
+    const minutes = -(value instanceof Date ? value : new Date(value)).getTimezoneOffset();
+    const sign = minutes >= 0 ? "+" : "-";
+    const absolute = Math.abs(minutes);
+    return `UTC${sign}${String(Math.floor(absolute / 60)).padStart(2, "0")}:${String(absolute % 60).padStart(2, "0")}`;
   }
 
   function radioOptions(name, options, selected) {
@@ -5831,6 +5920,10 @@ import {
     if (!client) return showToast("배정된 고객 정보를 확인할 수 없어 기록 화면을 열지 않았습니다.", "error");
     const meta = EVENT_META[type] || EVENT_META.note;
     const babyName = babyNameFor(assignment, client) || "아이";
+    const deviceNow = new Date();
+    const sessionDate = state.session.serviceDate || localDateKey(deviceNow);
+    const currentLocalDateTime = localDateTimeInputValue(deviceNow);
+    const sessionTimeZone = state.session.serviceTimeZone || deviceTimeZone();
     modalRoot.innerHTML = `
       <div class="modal-backdrop" data-modal-backdrop>
         <section class="modal" role="dialog" aria-modal="true" aria-labelledby="log-modal-title">
@@ -5839,7 +5932,7 @@ import {
             <button class="close-button" data-close-modal aria-label="닫기">×</button>
           </header>
           <form class="modal-form" data-log-form data-log-form-type="${type}">
-            <div class="field"><label for="event-time">기록 시간</label><input id="event-time" name="time" type="time" value="${defaultTimeValue()}" required /></div>
+            <div class="field care-record-time-field"><label for="event-recorded-at">기록 일시</label><div class="care-record-time-control"><input id="event-recorded-at" name="recordedAt" type="datetime-local" min="${sessionDate}T00:00" max="${escapeHtml(currentLocalDateTime)}" value="${escapeHtml(currentLocalDateTime)}" step="60" required /><button type="button" class="secondary-button" data-use-device-now>현재 시각</button></div><small>휴대폰의 현재 시각이 기본으로 입력됩니다. 실제 기록 시각이 다르면 저장 전에 수정하세요. · ${escapeHtml(serviceTimeZoneLabel(sessionTimeZone))} (${escapeHtml(deviceUtcOffsetLabel(deviceNow))})</small></div>
             ${fieldsForType(type)}
             <div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">기록 저장</button></div>
           </form>
@@ -5847,6 +5940,16 @@ import {
       </div>`;
 
     bindModalFrame();
+    modalRoot.querySelector("[data-use-device-now]")?.addEventListener("click", () => {
+      const input = modalRoot.querySelector("#event-recorded-at");
+      const now = new Date();
+      if (localDateKey(now) !== state.session.serviceDate) {
+        showToast("기기 날짜가 바뀌었습니다. 현재 근무를 종료한 뒤 새 날짜로 다시 시작해 주세요.", "error");
+        return;
+      }
+      input.max = localDateTimeInputValue(now);
+      input.value = localDateTimeInputValue(now);
+    });
     modalRoot.querySelector("[data-log-form]").addEventListener("submit", saveLogEvent);
   }
 
@@ -5893,12 +5996,10 @@ import {
     modalReturnFocus = null;
   }
 
-  function eventDateFromTime(time) {
-    const [hours, minutes] = time.split(":").map(Number);
-    const dateKey = state.session.serviceDate || localDateKey(new Date());
-    const [year, month, day] = dateKey.split("-").map(Number);
-    const date = new Date(year, month - 1, day, hours, minutes, 0, 0);
-    return date.toISOString();
+  function eventDateFromLocalInput(value) {
+    const selected = new Date(String(value || ""));
+    if (Number.isNaN(selected.getTime())) return null;
+    return selected.toISOString();
   }
 
   async function saveLogEvent(event) {
@@ -5907,7 +6008,25 @@ import {
     const type = form.dataset.logFormType;
     const values = Object.fromEntries(new FormData(form).entries());
     const data = { ...values };
-    delete data.time;
+    delete data.recordedAt;
+
+    const [recordedLocalDate = "", recordedLocalTime = ""] = String(values.recordedAt || "").split("T");
+    const eventAt = eventDateFromLocalInput(values.recordedAt);
+    const selectedDate = eventAt ? new Date(eventAt) : null;
+    if (!eventAt || !/^\d{4}-\d{2}-\d{2}$/.test(recordedLocalDate) || !/^\d{2}:\d{2}$/.test(recordedLocalTime)) {
+      return showToast("기록 날짜와 시간을 확인해 주세요.", "error");
+    }
+    if (recordedLocalDate !== state.session.serviceDate) {
+      return showToast("현재 진행 중인 근무일과 같은 날짜의 기록만 저장할 수 있습니다.", "error");
+    }
+    if (selectedDate.getTime() > Date.now() + 15 * 60 * 1000) {
+      return showToast("현재 시각보다 15분을 초과한 미래 시간은 기록할 수 없습니다.", "error");
+    }
+    data.recordedLocalDate = recordedLocalDate;
+    data.recordedLocalTime = recordedLocalTime;
+    data.recordedTimeZone = state.session.serviceTimeZone || deviceTimeZone();
+    data.recordedUtcOffsetMinutes = -selectedDate.getTimezoneOffset();
+    data.submittedAt = new Date().toISOString();
 
     ["amount", "duration", "value", "waterTemperature"].forEach((key) => {
       if (key in data) data[key] = data[key] === "" ? null : Number(data[key]);
@@ -5922,7 +6041,7 @@ import {
         await saveCareEventCloud({
           careSessionId: state.session.id,
           type,
-          at: eventDateFromTime(values.time),
+          at: eventAt,
           data,
           notes: data.note || data.notes || null,
         });
@@ -5942,8 +6061,9 @@ import {
       clientId: state.session.clientId,
       babyId: state.session.babyId,
       type,
-      at: eventDateFromTime(values.time),
+      at: eventAt,
       author: authUser().fullName,
+      serviceTimeZone: state.session.serviceTimeZone || deviceTimeZone(),
       data,
     });
     saveState();
