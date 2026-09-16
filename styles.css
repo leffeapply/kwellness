@@ -314,6 +314,75 @@
   font-size: 9px;
 }
 
+.review-photo-gallery,
+.review-photo-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.review-photo-gallery {
+  margin-top: 11px;
+}
+
+.review-photo-gallery a,
+.review-photo-preview > div {
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  aspect-ratio: 4 / 3;
+  border: 1px solid #d8e4de;
+  border-radius: 11px;
+  background: #edf4ef;
+}
+
+.review-photo-gallery a {
+  display: block;
+  box-shadow: 0 5px 14px rgba(26, 73, 64, .06);
+}
+
+.review-photo-gallery img,
+.review-photo-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.review-photo-gallery a:focus-visible {
+  outline: 3px solid rgba(53, 107, 82, .3);
+  outline-offset: 2px;
+}
+
+.review-photo-preview {
+  margin-top: 10px;
+}
+
+.review-photo-preview > div {
+  display: grid;
+}
+
+.review-photo-preview span {
+  position: absolute;
+  inset: auto 5px 5px;
+  overflow: hidden;
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: white;
+  background: rgba(24, 60, 48, .78);
+  font-size: 8px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-button {
+  min-height: 36px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  font-size: 10px;
+}
+
 .completed-review-center {
   margin-top: 24px;
   padding: 22px;
@@ -519,6 +588,8 @@
   .star-rating-options span { min-height: 54px; padding: 6px 3px; }
   .star-rating-options span b { font-size: 21px; }
   .completed-review-center { padding: 15px; }
+  .review-photo-gallery,
+  .review-photo-preview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 [hidden] { display: none !important; }

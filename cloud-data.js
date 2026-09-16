@@ -120,6 +120,12 @@ function publicCaregiverPhotoUrl(photoPath) {
   return data?.publicUrl || "";
 }
 
+function publicCaregiverReviewPhotoUrl(photoPath) {
+  if (!photoPath || !supabase) return "";
+  const { data } = supabase.storage.from("caregiver-review-photos").getPublicUrl(photoPath);
+  return data?.publicUrl || "";
+}
+
 function normalizePublicCaregiver(row) {
   const reviews = Array.isArray(row?.reviews) ? row.reviews : [];
   const distribution = row?.rating_distribution && typeof row.rating_distribution === "object"
@@ -154,6 +160,10 @@ function normalizePublicCaregiver(row) {
       serviceType: review.service_type || null,
       serviceDate: review.service_date || null,
       reviewerLabel: review.reviewer_label || "서비스 이용 고객",
+      photoPaths: Array.isArray(review.photo_paths) ? review.photo_paths : [],
+      photoUrls: (Array.isArray(review.photo_paths) ? review.photo_paths : [])
+        .map(publicCaregiverReviewPhotoUrl)
+        .filter(Boolean),
       createdAt: review.created_at || null,
     })),
   };
@@ -727,6 +737,7 @@ async function loadCloudStateOnce(session) {
         tags: item.tags,
         comment: item.comment,
         createdAt: item.created_at,
+        createdBy: item.created_by,
         source: "CLIENT",
         publicConsent: Boolean(publication?.customer_public_consent),
         publicationStatus: publication?.status || "PRIVATE",
@@ -734,6 +745,8 @@ async function loadCloudStateOnce(session) {
         invalidReasonCode: publication?.validity_reason_code || null,
         invalidReasonNote: publication?.validity_reason_note || "",
         invalidatedAt: publication?.validity_moderated_at || null,
+        photoPaths: item.photo_paths || [],
+        photoUrls: (item.photo_paths || []).map(publicCaregiverReviewPhotoUrl).filter(Boolean),
       };
     }).concat(historicalReviews.map((item) => ({
       id: item.id,
@@ -748,9 +761,14 @@ async function loadCloudStateOnce(session) {
       serviceDate: item.service_date,
       serviceType: item.service_type,
       reviewerAlias: item.reviewer_alias || "이전 서비스 고객",
-      source: "ADMIN_LEGACY",
+      source: item.verification_status === "VERIFIED" ? "VERIFIED_EXTERNAL" : "ADMIN_LEGACY",
       publicationStatus: item.is_published ? "PUBLISHED" : "HIDDEN",
       archived: Boolean(item.archived_at),
+      photoPaths: item.photo_paths || [],
+      photoUrls: (item.photo_paths || []).map(publicCaregiverReviewPhotoUrl).filter(Boolean),
+      verificationStatus: item.verification_status || "UNVERIFIED",
+      verificationNote: item.verification_note || "",
+      verifiedAt: item.verified_at || null,
     }))),
     publicCaregivers,
     reports: reports.map((item) => {
@@ -1099,15 +1117,78 @@ export async function updateMyClientProfileCloud(values) {
   return result;
 }
 
-export async function saveServiceReviewCloud({ assignmentId, rating, tags, comment, publicConsent }) {
+const REVIEW_PHOTO_MIME_EXTENSIONS = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+
+function validateReviewPhotoFiles(files) {
+  const normalized = Array.from(files || []).filter((file) => file instanceof File && file.size > 0);
+  if (normalized.length > 3) throw new Error("후기 사진은 최대 3장까지 등록할 수 있습니다.");
+  normalized.forEach((file) => {
+    if (!REVIEW_PHOTO_MIME_EXTENSIONS[file.type]) throw new Error("후기 사진은 JPG, PNG, WebP 형식만 등록할 수 있습니다.");
+    if (file.size > 5 * 1024 * 1024) throw new Error("후기 사진은 장당 5MB 이하만 등록할 수 있습니다.");
+  });
+  return normalized;
+}
+
+async function uploadReviewPhotoFiles(prefix, files) {
+  const normalized = validateReviewPhotoFiles(files);
+  const uploadedPaths = [];
+  try {
+    for (const file of normalized) {
+      const extension = REVIEW_PHOTO_MIME_EXTENSIONS[file.type];
+      const photoPath = `${prefix}/${crypto.randomUUID()}.${extension}`;
+      throwIfError(await supabase.storage.from("caregiver-review-photos").upload(photoPath, file, {
+        cacheControl: "3600",
+        contentType: file.type,
+        upsert: false,
+      }), "후기 사진 업로드");
+      uploadedPaths.push(photoPath);
+    }
+    return uploadedPaths;
+  } catch (error) {
+    if (uploadedPaths.length) await supabase.storage.from("caregiver-review-photos").remove(uploadedPaths);
+    throw error;
+  }
+}
+
+async function cleanupUnattachedReviewPhotos(photoPaths) {
+  if (!photoPaths?.length) return;
+  await supabase.storage.from("caregiver-review-photos").remove(photoPaths);
+}
+
+export async function addServiceReviewPhotosCloud(reviewId, photoFiles) {
   await authenticatedUserId();
-  return throwIfError(await supabase.rpc("submit_caregiver_review", {
+  const photoPaths = await uploadReviewPhotoFiles(`customer/${reviewId}`, photoFiles);
+  try {
+    return throwIfError(await supabase.rpc("attach_caregiver_review_photos", {
+      p_review_id: reviewId,
+      p_photo_paths: photoPaths,
+    }), "고객 후기 사진 연결");
+  } catch (error) {
+    await cleanupUnattachedReviewPhotos(photoPaths);
+    throw error;
+  }
+}
+
+export async function saveServiceReviewCloud({ assignmentId, rating, tags, comment, publicConsent, photoFiles = [] }) {
+  await authenticatedUserId();
+  const savedReview = throwIfError(await supabase.rpc("submit_caregiver_review", {
     p_assignment_id: assignmentId,
     p_rating: Number(rating),
     p_tags: Array.isArray(tags) ? tags : [],
     p_comment: String(comment || "").trim(),
     p_public_consent: Boolean(publicConsent),
   }), "서비스 후기 저장");
+  if (!photoFiles.length) return savedReview;
+  try {
+    await addServiceReviewPhotosCloud(savedReview.review_id, photoFiles);
+    return { ...savedReview, photo_count: photoFiles.length };
+  } catch (error) {
+    return { ...savedReview, photo_upload_error: error.message || "후기 사진을 연결하지 못했습니다." };
+  }
 }
 
 export async function uploadCaregiverPublicPhotoCloud(caregiverId, file) {
@@ -1147,10 +1228,25 @@ export async function updateCaregiverPublicProfileCloud(caregiverId, values, pho
   }), "홈페이지 관리사 프로필 저장");
 }
 
-export async function createHistoricalCaregiverReviewCloud(caregiverId, values) {
+export async function addHistoricalReviewEvidenceCloud(caregiverId, reviewId, photoFiles, verificationNote) {
+  await authenticatedUserId();
+  const photoPaths = await uploadReviewPhotoFiles(`external/${caregiverId}/${reviewId}`, photoFiles);
+  try {
+    return throwIfError(await supabase.rpc("admin_verify_historical_caregiver_review", {
+      p_review_id: reviewId,
+      p_photo_paths: photoPaths,
+      p_verification_note: String(verificationNote || "").trim(),
+    }), "외부 경로 후기 확인");
+  } catch (error) {
+    await cleanupUnattachedReviewPhotos(photoPaths);
+    throw error;
+  }
+}
+
+export async function createHistoricalCaregiverReviewCloud(caregiverId, values, photoFiles = []) {
   await authenticatedUserId();
   const tags = String(values.tags || "").split(/[,·\n]/).map((item) => item.trim()).filter(Boolean);
-  return throwIfError(await supabase.rpc("admin_create_historical_caregiver_review", {
+  const savedReview = throwIfError(await supabase.rpc("admin_create_historical_caregiver_review", {
     p_caregiver_id: caregiverId,
     p_rating: Number(values.rating),
     p_tags: tags,
@@ -1160,6 +1256,13 @@ export async function createHistoricalCaregiverReviewCloud(caregiverId, values) 
     p_reviewer_alias: String(values.reviewerAlias || "이전 서비스 고객").trim(),
     p_is_published: values.isPublished === "on",
   }), "이전 관리사 후기 저장");
+  if (!photoFiles.length) return savedReview;
+  try {
+    await addHistoricalReviewEvidenceCloud(caregiverId, savedReview.review_id, photoFiles, values.verificationNote);
+    return { ...savedReview, verification_status: "VERIFIED", photo_count: photoFiles.length };
+  } catch (error) {
+    return { ...savedReview, verification_status: "UNVERIFIED", photo_upload_error: error.message || "외부 후기 사진을 연결하지 못했습니다." };
+  }
 }
 
 export async function setCaregiverReviewPublicationCloud(reviewId, status) {

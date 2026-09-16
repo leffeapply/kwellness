@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [app, cloud, migration, moderationMigration] = await Promise.all([
+const [app, cloud, migration, moderationMigration, photoMigration] = await Promise.all([
   readFile(new URL("../app.js", import.meta.url), "utf8"),
   readFile(new URL("../cloud-data.js", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/033_caregiver_reputation_marketing.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/034_review_moderation_integrity.sql", import.meta.url), "utf8"),
+  readFile(new URL("../supabase/migrations/035_verified_external_reviews_and_photos.sql", import.meta.url), "utf8"),
 ]);
 
 const requiredSql = [
@@ -75,27 +76,56 @@ assert.ok(
   "review moderation must preserve the prior publication status for restoration",
 );
 
-const scoreSummaryStart = moderationMigration.indexOf("left join lateral (\n    select\n      round(avg(review.rating)");
-const scoreSummaryEnd = moderationMigration.indexOf(") score_summary on true", scoreSummaryStart);
-assert.ok(scoreSummaryStart >= 0 && scoreSummaryEnd > scoreSummaryStart, "verified score summary query is missing");
-const scoreSummarySql = moderationMigration.slice(scoreSummaryStart, scoreSummaryEnd);
-assert.ok(scoreSummarySql.includes("from public.caregiver_reviews review"), "public ratings must originate from verified customer reviews");
-assert.ok(scoreSummarySql.includes("publication.validity_status = 'VALID'"), "policy-invalid customer reviews must be excluded from ratings");
-assert.ok(scoreSummarySql.includes("public.care_assignment_has_delivered_history(review.assignment_id)"), "ratings must require delivered service history");
-assert.ok(!scoreSummarySql.includes("caregiver_historical_reviews"), "administrator-imported historical ratings must never affect the verified average");
-assert.ok(!scoreSummarySql.includes("ADMIN_LEGACY"), "legacy review sources must never affect the verified average");
+const requiredPhotoSql = [
+  "add column if not exists photo_paths text[] not null default '{}'::text[]",
+  "add column if not exists verification_status text not null default 'UNVERIFIED'",
+  "'caregiver-review-photos'",
+  "array['image/jpeg', 'image/png', 'image/webp']",
+  "create or replace function public.attach_caregiver_review_photos",
+  "create or replace function public.admin_verify_historical_caregiver_review",
+  "publication.customer_public_consent",
+  "historical.verification_status = 'VERIFIED'",
+  "'VERIFIED_CUSTOMER'::text as source",
+  "'VERIFIED_EXTERNAL'::text",
+  "'photo_paths', visible_review.photo_paths",
+  "cardinality(photo_paths) between 0 and 3",
+  "char_length(trim(verification_note)) between 10 and 500",
+  "'CAREGIVER_EXTERNAL_REVIEW_VERIFIED'",
+];
 
-const publicReviewListStart = moderationMigration.indexOf("left join lateral (\n    select jsonb_agg(", scoreSummaryEnd);
-const publicReviewListEnd = moderationMigration.indexOf(") public_review_list on true", publicReviewListStart);
+requiredPhotoSql.forEach((snippet) => assert.ok(
+  photoMigration.includes(snippet),
+  `verified review photo migration is missing: ${snippet}`,
+));
+assert.ok(
+  !photoMigration.includes("^customer/' || auth.uid()::text"),
+  "public customer review photo paths must not expose the authentication user UUID",
+);
+
+const scoreSummaryStart = photoMigration.indexOf("left join lateral (\n    select\n      round(avg(score.rating)");
+const scoreSummaryEnd = photoMigration.indexOf(") score_summary on true", scoreSummaryStart);
+assert.ok(scoreSummaryStart >= 0 && scoreSummaryEnd > scoreSummaryStart, "combined verified score summary query is missing");
+const scoreSummarySql = photoMigration.slice(scoreSummaryStart, scoreSummaryEnd);
+assert.ok(scoreSummarySql.includes("from public.caregiver_reviews review"), "public ratings must include verified customer reviews");
+assert.ok(scoreSummarySql.includes("publication.validity_status = 'VALID'"), "policy-invalid customer reviews must be excluded from ratings");
+assert.ok(scoreSummarySql.includes("public.care_assignment_has_delivered_history(review.assignment_id)"), "customer ratings must require delivered service history");
+assert.ok(scoreSummarySql.includes("from public.caregiver_historical_reviews historical"), "verified off-platform reviews must contribute to the combined average");
+assert.ok(scoreSummarySql.includes("historical.verification_status = 'VERIFIED'"), "unverified administrator-entered reviews must not affect the combined average");
+assert.ok(scoreSummarySql.includes("historical.archived_at is null"), "archived external reviews must not affect the combined average");
+
+const publicReviewListStart = photoMigration.indexOf("left join lateral (\n    select jsonb_agg(", scoreSummaryEnd);
+const publicReviewListEnd = photoMigration.indexOf(") public_review_list on true", publicReviewListStart);
 assert.ok(publicReviewListStart >= 0 && publicReviewListEnd > publicReviewListStart, "public review copy query is missing");
-const publicReviewListSql = moderationMigration.slice(publicReviewListStart, publicReviewListEnd);
+const publicReviewListSql = photoMigration.slice(publicReviewListStart, publicReviewListEnd);
 assert.ok(publicReviewListSql.includes("publication.customer_public_consent"), "public customer copy must require consent");
 assert.ok(publicReviewListSql.includes("publication.status = 'PUBLISHED'"), "homepage copy must require administrator selection");
 assert.ok(publicReviewListSql.includes("publication.validity_status = 'VALID'"), "policy-invalid copy must never be public");
-assert.ok(publicReviewListSql.includes("'ADMIN_LEGACY'::text as source"), "administrator-imported copy must keep a transparent source marker");
-assert.ok(moderationMigration.includes("from public.caregivers caregiver"), "active caregivers must be the public-directory base set");
-assert.ok(moderationMigration.includes("left join public.caregiver_public_profiles public_profile"), "a missing marketing profile must not hide an active caregiver");
-assert.ok(moderationMigration.includes("where coalesce(public_profile.is_published, true)"), "active caregivers without a marketing profile must use the safe public fallback");
+assert.ok(!publicReviewListSql.includes("'ADMIN_LEGACY'::text as source"), "unverified administrator-entered copy must not be public");
+assert.ok(publicReviewListSql.includes("'VERIFIED_EXTERNAL'::text as source"), "verified external copy must keep a transparent source marker");
+assert.ok(publicReviewListSql.includes("historical.verification_status = 'VERIFIED'"), "public external-review copy must retain a verified source state");
+assert.ok(photoMigration.includes("from public.caregivers caregiver"), "active caregivers must be the public-directory base set");
+assert.ok(photoMigration.includes("left join public.caregiver_public_profiles public_profile"), "a missing marketing profile must not hide an active caregiver");
+assert.ok(photoMigration.includes("where coalesce(public_profile.is_published, true)"), "active caregivers without a marketing profile must use the safe public fallback");
 
 assert.ok(cloud.includes('supabase.rpc("submit_caregiver_review"'), "customer reviews must use the atomic RPC");
 assert.ok(!cloud.includes('supabase.from("caregiver_reviews").insert'), "browser must not directly insert caregiver reviews");
@@ -104,6 +134,10 @@ assert.ok(cloud.includes('from("caregiver-public-photos").upload'), "public prof
 assert.ok(cloud.includes('supabase.rpc("admin_set_caregiver_review_validity"'), "audited review validity RPC wrapper is missing");
 assert.ok(!cloud.includes('supabase.rpc("withdraw_caregiver_review_public_consent"'), "self-service public-consent withdrawal must remain removed");
 assert.ok(cloud.includes('`${caregiverId}/profile`'), "public profile photos must replace one stable object instead of leaving old extensions public");
+assert.ok(cloud.includes('storage.from("caregiver-review-photos").upload'), "review photo storage upload is missing");
+assert.ok(cloud.includes('supabase.rpc("attach_caregiver_review_photos"'), "customer review photo attachment RPC wrapper is missing");
+assert.ok(cloud.includes('supabase.rpc("admin_verify_historical_caregiver_review"'), "external-review verification RPC wrapper is missing");
+assert.ok(cloud.includes('`customer/${reviewId}`'), "customer review photo paths must use the review ID without exposing the auth user ID");
 
 assert.ok(app.includes("function assignmentHasDeliveredCare"), "delivered-care eligibility guard is missing");
 assert.ok(app.includes("clientCompletedReviewCenterMarkup(client)"), "completed-service review route is missing");
@@ -111,12 +145,16 @@ assert.ok(app.includes('name="publicConsent"'), "customer public-review consent 
 assert.ok(!app.includes("data-withdraw-review-consent"), "customer public-review consent withdrawal control must remain removed");
 assert.ok(app.includes("data-invalidate-client-review"), "administrator policy-invalidation control is missing");
 assert.ok(app.includes("data-restore-client-review"), "administrator review-restoration control is missing");
-assert.ok(app.includes("이전 서비스 후기 · 관리자 등록"), "administrator-imported reviews must remain visibly attributed");
+assert.ok(app.includes("외부 경로 확인 후기"), "verified off-platform reviews must remain visibly attributed");
 assert.ok(!app.includes('rating === 5 ? "checked"'), "five-star default selection must not be restored");
 assert.ok(app.includes('publicProfile.isPublished === true ? "checked"'), "new public caregiver profiles must default to private");
 assert.ok(app.includes("const easternToday = easternDateKey()"), "historical review dates must use the server business timezone");
 assert.ok(app.includes("data-add-historical-review"), "administrator historical review entry point is missing");
 assert.ok(app.includes("publicCaregiverDirectoryMarkup()"), "homepage caregiver directory is missing");
+assert.ok(app.includes('name="reviewPhotos"'), "review photo selection controls are missing");
+assert.ok(app.includes("data-add-review-photos"), "customer review photo follow-up control is missing");
+assert.ok(app.includes("data-verify-historical-review"), "administrator external-review evidence control is missing");
+assert.ok(app.includes("reviewPhotoGalleryMarkup(review)"), "public caregiver reviews must render their attached photos");
 
 const average = (ratings) => ratings.length
   ? Number((ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length).toFixed(1))

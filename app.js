@@ -13,6 +13,8 @@ import {
 } from "./objective-report.js";
 import {
   approveCaregiverCloud,
+  addHistoricalReviewEvidenceCloud,
+  addServiceReviewPhotosCloud,
   archiveMemberCloud,
   archiveServiceRequestCloud,
   cloudEnabled,
@@ -2692,7 +2694,8 @@ import {
       const consentControl = existing.publicConsent
         ? `<small>${existing.publicationStatus === "PUBLISHED" ? "관리자 선정 후 홈페이지에 익명 공개 중입니다." : "홈페이지 익명 공개 검토 중입니다."}</small>`
         : `<small>홈페이지 후기 원문은 공개되지 않습니다.</small>`;
-      return `<article class="card service-review-card completed"><div class="review-icon">✓</div><div><p class="eyebrow">SERVICE REVIEW COMPLETED</p><h3>${escapeHtml(reviewedCaregiver?.fullName || "담당 관리사")} 관리사 후기</h3><div class="review-stars" aria-label="별점 ${existing.rating}점">${"★".repeat(Number(existing.rating))}${"☆".repeat(5 - Number(existing.rating))}</div><p>${escapeHtml(existing.comment || "소중한 후기가 등록되었습니다.")}</p><small>${new Date(existing.createdAt).toLocaleDateString("ko-KR")} 작성 · 동일 배정에는 후기를 한 번만 작성할 수 있습니다.</small>${consentControl}</div></article>`;
+      const canAddPhotos = existing.publicConsent && (existing.photoUrls || []).length < 3;
+      return `<article class="card service-review-card completed"><div class="review-icon">✓</div><div><p class="eyebrow">SERVICE REVIEW COMPLETED</p><h3>${escapeHtml(reviewedCaregiver?.fullName || "담당 관리사")} 관리사 후기</h3><div class="review-stars" aria-label="별점 ${existing.rating}점">${"★".repeat(Number(existing.rating))}${"☆".repeat(5 - Number(existing.rating))}</div><p>${escapeHtml(existing.comment || "소중한 후기가 등록되었습니다.")}</p>${reviewPhotoGalleryMarkup(existing, "내 후기 사진")}<small>${new Date(existing.createdAt).toLocaleDateString("ko-KR")} 작성 · 동일 배정에는 후기를 한 번만 작성할 수 있습니다.</small>${consentControl}${canAddPhotos ? `<button type="button" class="secondary-button compact-button" data-add-review-photos="${existing.id}" data-photo-slots="${3 - (existing.photoUrls || []).length}">후기 사진 추가</button>` : ""}</div></article>`;
     }
     const available = assignmentHasCompletedCare(assignment);
     const waitingForDelivery = !assignmentHasDeliveredCare(assignment);
@@ -3640,6 +3643,54 @@ import {
     return `<div class="caregiver-public-rating" aria-label="평균 별점 ${Number(profile.averageRating).toFixed(1)}점, 후기 ${profile.reviewCount}건"><span aria-hidden="true">${"★".repeat(rounded)}${"☆".repeat(5 - rounded)}</span><strong>${Number(profile.averageRating).toFixed(1)}</strong>${compact ? "" : `<small>후기 ${Number(profile.reviewCount)}건</small>`}</div>`;
   }
 
+  function reviewPhotoGalleryMarkup(review, label = "후기 첨부 사진") {
+    const photoUrls = Array.isArray(review?.photoUrls) ? review.photoUrls.filter(Boolean).slice(0, 3) : [];
+    if (!photoUrls.length) return "";
+    return `<div class="review-photo-gallery" aria-label="${escapeHtml(label)}">${photoUrls.map((url, index) => `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(label)} ${index + 1} 크게 보기"><img src="${escapeHtml(url)}" alt="${escapeHtml(label)} ${index + 1}" loading="lazy" decoding="async"/></a>`).join("")}</div>`;
+  }
+
+  function publicReviewSourceLabel(review) {
+    if (review?.source === "VERIFIED_EXTERNAL") return "외부 경로 확인 후기";
+    if (review?.source === "ADMIN_LEGACY") return "이전 후기 자료";
+    return "ProMoms 이용 후기";
+  }
+
+  function selectedReviewPhotoFiles(form) {
+    return Array.from(form?.querySelector('[name="reviewPhotos"]')?.files || []).filter((file) => file.size > 0);
+  }
+
+  function validateReviewPhotoSelection(files) {
+    if (files.length > 3) return "후기 사진은 최대 3장까지 등록할 수 있습니다.";
+    if (files.some((file) => !/^image\/(jpeg|png|webp)$/.test(file.type))) return "후기 사진은 JPG·PNG·WebP 형식만 등록할 수 있습니다.";
+    if (files.some((file) => file.size > 5 * 1024 * 1024)) return "후기 사진은 장당 5MB 이하만 등록할 수 있습니다.";
+    return "";
+  }
+
+  function bindReviewPhotoPreview(form) {
+    const input = form?.querySelector('[name="reviewPhotos"]');
+    const preview = form?.querySelector("[data-review-photo-preview]");
+    if (!input || !preview) return;
+    input.addEventListener("change", () => {
+      const files = selectedReviewPhotoFiles(form);
+      const error = validateReviewPhotoSelection(files);
+      if (error) {
+        input.value = "";
+        preview.innerHTML = "";
+        return showToast(error, "error");
+      }
+      preview.innerHTML = files.map((file, index) => `<div><img src="${URL.createObjectURL(file)}" alt="선택한 후기 사진 ${index + 1}"/><span>${escapeHtml(file.name)}</span></div>`).join("");
+    });
+  }
+
+  async function reviewFilesToDataUrls(files) {
+    return Promise.all(files.map((file) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener("load", () => resolve(String(reader.result || "")));
+      reader.addEventListener("error", () => reject(reader.error || new Error("후기 사진을 읽지 못했습니다.")));
+      reader.readAsDataURL(file);
+    })));
+  }
+
   function caregiverPublicPortraitMarkup(profile, detail = false) {
     if (profile.photoUrl) return `<img src="${escapeHtml(profile.photoUrl)}" alt="${escapeHtml(profile.photoAlt || `${profile.displayName} 관리사`)}" loading="lazy" decoding="async"/>`;
     return `<div class="caregiver-public-initials" aria-label="${escapeHtml(profile.displayName)} 관리사 사진 미등록">${escapeHtml(initialsFor(profile.displayName) || "PM")}</div>`;
@@ -3670,7 +3721,7 @@ import {
         <div class="public-content">${publicServiceStatusMarkup(user)}
           <section class="public-section public-about" id="about"><div class="public-section-heading"><p class="eyebrow">ABOUT ProMoms</p><h2>가족에게 필요한 케어를<br/>더 투명하고 책임 있게.</h2></div><div class="about-story"><p>ProMoms는 조지아 애틀랜타 메트로 지역의 가족을 중심으로 산모의 회복, 아이의 안전한 돌봄, 생활에 필요한 제품까지 연결하는 패밀리 웰니스 서비스입니다. W-2 직접 고용과 회사 차원의 책임보상보험·근로자재해보험 운영을 원칙으로 삼아 고객에게 고용 및 업무상 재해 리스크를 전가하지 않는 체계를 지향합니다.</p><div class="about-metrics"><div><strong>W-2</strong><span>직접 고용 운영 원칙</span></div><div><strong>Company</strong><span>보험 책임 회사 관리</span></div><div><strong>Atlanta</strong><span>메트로 지역 방문 케어</span></div></div></div></section>
           <section class="public-section" id="services"><div class="public-section-heading centered"><p class="eyebrow">OUR SERVICES</p><h2>가족에게 필요한 돌봄을 선택하세요.</h2><p>산후조리와 베이비시팅은 각각 독립적으로 신청할 수 있으며, 동일 아기의 서비스 기간만 겹치지 않도록 운영합니다.</p></div><div class="public-service-grid"><article class="public-service-card featured"><span class="service-number">01</span><div class="service-symbol">♡</div><p class="eyebrow">POSTPARTUM CARE</p><h3>산후조리 서비스</h3><p>산모 회복 지원과 신생아 수유·수면·체온·목욕·체중 기록을 세심하게 관리합니다.</p><ul><li>2·3·4주 맞춤 일정</li><li>산모 식사·휴식·회복 지원</li><li>신생아 케어 기록과 주간 차트</li><li>보험 적용·W-2 정식 직원 운영 원칙</li></ul><div class="service-price"><span>2주 기본 패키지</span><strong>$3,600<small> · 주 $1,800</small></strong></div><button class="primary-button" data-service-apply="POSTPARTUM">산후조리 신청</button></article><article class="public-service-card"><span class="service-number">02</span><div class="service-symbol">☆</div><p class="eyebrow">BABYSITTING</p><h3>베이비시팅 서비스</h3><p>아이의 식사와 한국형 이유식·유아식, 놀이·산책과 생활 이벤트를 보호자에게 정확하게 공유합니다.</p><ul><li>보험 적용·W-2 정식 직원 운영 원칙</li><li>고용 및 사고 Risk 고객 전가 없음</li><li>이유식 및 유아식 한국형 준비</li><li>놀이·산책·특이 이벤트 메모</li></ul><div class="service-price"><span>4시간분 예약금 $128 · 최소 2주</span><strong>$32<small>부터</small></strong></div><button class="primary-button" data-service-apply="BABYSITTING">베이비시팅 신청</button></article><article class="public-service-card premium-coming-soon"><span class="service-number">03</span><div class="service-symbol">✦</div><p class="eyebrow">PREMIUM ADD-ON · COMING SOON</p><h3>산모 마사지</h3><p>산후조리 고객을 위한 프리미엄 추가 상품으로 준비하고 있습니다.</p><ul><li>Georgia Massage Therapist License 필수</li><li>라이선스 확인된 전문가만 제공</li><li>마사지 업무 보험 범위 확인</li><li>산후조리 계약 Add-on 형태</li></ul><div class="service-price"><span>출시 준비 중</span><strong>미정</strong></div><button class="secondary-button" disabled>현재 선택 불가</button></article></div><section class="insured-staffing-panel"><div><p class="eyebrow">WHY INSURED STAFFING MATTERS</p><h3>보험·고용 책임을 회사가 관리합니다.</h3><p>ProMoms는 W-2 직접 고용과 책임보상보험·근로자재해보험 운영을 회사의 원칙으로 두고 있습니다.</p></div><ul><li><span>◈</span><strong>책임보상보험</strong><small>서비스 수행 중 대인·대물 리스크 관리</small></li><li><span>✓</span><strong>근로자재해보험</strong><small>업무상 재해 책임을 고객에게 전가하지 않음</small></li><li><span>W-2</span><strong>정식 직원</strong><small>독립계약자 편법 운영 없이 회사가 고용 의무 처리</small></li></ul></section><div class="public-rules" id="rules"><div><strong>이용 규칙</strong><span>① 산후조리 예약금 $500 · 시작 30일 전까지 취소 시 환불</span><span>② 시작 30일 이내 산후조리 예약금 환불 불가</span><span>③ 베이비시팅 예약금 $128 · 4시간분</span><span>④ 시작 72시간 이전 취소 시 베이비시팅 예약금 환불</span><span>⑤ 시작 72시간 이내 취소·노쇼 시 예약금 환불 불가</span><span>⑥ 동일 아기의 산후조리·베이비시팅 기간 중복 불가</span><span>⑦ 의료행위·무면허 마사지는 제공하지 않음</span></div></div></section>
-          <section class="public-section public-caregiver-section" id="caregivers"><div class="public-section-heading"><p class="eyebrow">MEET OUR CARE PROFESSIONALS</p><h2>경력과 고객 경험으로<br/>확인하는 ProMoms 관리사.</h2><p>등록된 관리사의 공개 약력과 전문분야, 실제 서비스 별점 평균을 투명하게 확인하세요. 배정은 서비스 지역과 실제 일정까지 확인해 진행합니다.</p></div>${publicCaregiverDirectoryMarkup()}</section>
+          <section class="public-section public-caregiver-section" id="caregivers"><div class="public-section-heading"><p class="eyebrow">MEET OUR CARE PROFESSIONALS</p><h2>경력과 고객 경험으로<br/>확인하는 ProMoms 관리사.</h2><p>등록된 관리사의 공개 약력과 전문분야, ProMoms 서비스 후기와 근거가 확인된 외부 경로 후기의 통합 별점을 투명하게 확인하세요.</p></div>${publicCaregiverDirectoryMarkup()}</section>
           <section class="public-section" id="shop-preview"><div class="public-section-heading public-shop-heading"><div><p class="eyebrow">ProMoms SELECT · COMING SOON</p><h2>Beauty & Baby Store</h2><p>상품·결제·재고 운영 체계가 준비된 뒤 별도 스토어로 선보일 예정입니다.</p></div><button class="secondary-button" disabled>출시 준비 중</button></div><div class="store-readiness-note"><strong>지금은 돌봄 서비스 신청과 기록 기능만 운영합니다.</strong><span>샘플 상품이나 재고를 실제 판매 상품처럼 표시하지 않습니다.</span></div></section>
           <section class="public-section public-location" id="location"><div class="location-card"><p class="eyebrow">SERVICE AREA</p><h2>Atlanta Metro 방문 케어</h2><p>고객의 서비스 주소와 일정, 관리사 이동 가능 범위를 확인한 뒤 방문 가능 여부를 안내합니다.</p><dl><div><dt>기본 지역</dt><dd>Atlanta Metro, Georgia</dd></div><div><dt>상담 방식</dt><dd>전화 상담 후 일정·주소 확인</dd></div><div><dt>방문 안내</dt><dd>신청 승인 전 최종 서비스 가능 지역을 확인합니다.</dd></div></dl><a class="primary-button public-link-button" href="tel:+14704049467">전화로 가능 지역 문의</a></div><div class="location-map" role="img" aria-label="Atlanta Metro 방문 서비스 지역 안내"><div class="map-road road-one"></div><div class="map-road road-two"></div><div class="map-pin"><span class="promoms-mark">${brandLogoMarkup()}</span><strong>ProMoms</strong></div><small>Atlanta Metro · Georgia</small></div></section>
           <section class="public-section public-contact" id="contact"><div><p class="eyebrow">CONTACT US</p><h2>돌봄이 필요한 순간,<br/>편하게 이야기해 주세요.</h2></div><div class="contact-methods"><a href="tel:+14704049467"><span>☎</span><div><small>전화 상담</small><strong>470-404-9467</strong></div></a><button data-notice="이메일 문의 채널은 운영 주소 확정 후 안내합니다. 현재는 전화로 문의해 주세요."><span>✉</span><div><small>이메일 문의</small><strong>채널 준비 중</strong></div></button><button data-notice="Atlanta Metro 내 상세 방문 가능 여부는 서비스 주소와 일정을 확인한 뒤 안내합니다."><span>GA</span><div><small>서비스 지역</small><strong>Atlanta Metro</strong></div></button></div></section>
@@ -3688,7 +3739,10 @@ import {
       return `<div class="rating-distribution-row"><span>${rating}점</span><i><b style="width:${width}%"></b></i><small>${count}</small></div>`;
     }).join("");
     const reviews = (profile.reviews || []).slice(0, 8);
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal caregiver-public-detail-modal" role="dialog" aria-modal="true" aria-labelledby="caregiver-public-detail-title"><header class="modal-header"><div><p class="eyebrow">CARE PROFESSIONAL</p><h3 id="caregiver-public-detail-title">${escapeHtml(profile.displayName)} 관리사</h3><p>${escapeHtml(profile.headline)}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><div class="caregiver-public-detail-body"><div class="caregiver-public-detail-hero"><div class="caregiver-public-detail-photo">${caregiverPublicPortraitMarkup(profile, true)}</div><div><h4>${escapeHtml(profile.displayName)}</h4>${caregiverPublicRatingMarkup(profile)}<p>${escapeHtml(profile.biography || "가족의 돌봄 필요를 세심하게 살피는 ProMoms 관리사입니다.")}</p><div class="caregiver-public-facts"><span>경력 ${Number(profile.careerYears || 0).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}년</span>${profile.serviceArea ? `<span>${escapeHtml(profile.serviceArea)}</span>` : ""}</div></div></div><div class="caregiver-public-detail-grid"><section><h4>전문분야</h4><div class="caregiver-public-tags">${(profile.specialties || []).length ? profile.specialties.map((item) => `<span>${escapeHtml(item)}</span>`).join("") : "<span>등록 준비 중</span>"}</div><h4>자격·교육</h4><ul class="caregiver-credential-list">${(profile.credentials || []).length ? profile.credentials.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : "<li>등록 준비 중</li>"}</ul><h4>사용 언어</h4><p>${escapeHtml((profile.languages || []).join(" · ") || "등록 준비 중")}</p></section><section><h4>별점 분포</h4><div class="rating-distribution">${distribution}</div></section></div><section class="caregiver-public-reviews"><div class="section-header"><div><h4>관리자 선정 공개 후기</h4><p>고객이 익명 공개에 동의하고 관리자가 홈페이지용으로 선정한 후기만 표시합니다. 평점은 실제 서비스가 확인된 유효 고객 후기만 집계하며, 출처가 표시된 이전 후기 자료는 평균에 포함하지 않습니다.</p></div></div>${reviews.length ? reviews.map((review) => `<article><div><div class="review-stars" aria-label="별점 ${review.rating}점">${"★".repeat(review.rating)}${"☆".repeat(5 - review.rating)}</div><span>${escapeHtml(review.reviewerLabel || "서비스 이용 고객")} · ${review.source === "ADMIN_LEGACY" ? "이전 서비스 후기 · 관리자 등록" : "ProMoms 이용 후기"}</span></div><p>${escapeHtml(review.comment)}</p>${review.tags?.length ? `<div class="caregiver-public-tags">${review.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>` : ""}<small>${review.serviceType ? serviceMetaFor(review.serviceType).label : "돌봄 서비스"}${review.serviceDate ? ` · ${formatDate(review.serviceDate)}` : ""}</small></article>`).join("") : `<div class="empty-state"><strong>아직 선정된 공개 후기가 없습니다.</strong><span>유효 고객 별점은 후기 원문 공개 여부와 별개로 평균에 반영됩니다.</span></div>`}</section></div><div class="modal-footer"><button type="button" class="primary-button" data-close-modal>확인</button></div></section></div>`;
+    const reviewsMarkup = reviews.length
+      ? reviews.map((review) => `<article><div><div class="review-stars" aria-label="별점 ${review.rating}점">${"★".repeat(review.rating)}${"☆".repeat(5 - review.rating)}</div><span>${escapeHtml(review.reviewerLabel || "서비스 이용 고객")} · ${publicReviewSourceLabel(review)}</span></div><p>${escapeHtml(review.comment)}</p>${reviewPhotoGalleryMarkup(review)}${review.tags?.length ? `<div class="caregiver-public-tags">${review.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>` : ""}<small>${review.serviceType ? serviceMetaFor(review.serviceType).label : "돌봄 서비스"}${review.serviceDate ? ` · ${formatDate(review.serviceDate)}` : ""}</small></article>`).join("")
+      : `<div class="empty-state"><strong>아직 선정된 공개 후기가 없습니다.</strong><span>유효한 ProMoms 이용 후기와 근거가 확인된 외부 경로 후기는 원문 공개 여부와 별개로 통합 평균에 반영됩니다.</span></div>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal caregiver-public-detail-modal" role="dialog" aria-modal="true" aria-labelledby="caregiver-public-detail-title"><header class="modal-header"><div><p class="eyebrow">CARE PROFESSIONAL</p><h3 id="caregiver-public-detail-title">${escapeHtml(profile.displayName)} 관리사</h3><p>${escapeHtml(profile.headline)}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><div class="caregiver-public-detail-body"><div class="caregiver-public-detail-hero"><div class="caregiver-public-detail-photo">${caregiverPublicPortraitMarkup(profile, true)}</div><div><h4>${escapeHtml(profile.displayName)}</h4>${caregiverPublicRatingMarkup(profile)}<p>${escapeHtml(profile.biography || "가족의 돌봄 필요를 세심하게 살피는 ProMoms 관리사입니다.")}</p><div class="caregiver-public-facts"><span>경력 ${Number(profile.careerYears || 0).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}년</span>${profile.serviceArea ? `<span>${escapeHtml(profile.serviceArea)}</span>` : ""}</div></div></div><div class="caregiver-public-detail-grid"><section><h4>전문분야</h4><div class="caregiver-public-tags">${(profile.specialties || []).length ? profile.specialties.map((item) => `<span>${escapeHtml(item)}</span>`).join("") : "<span>등록 준비 중</span>"}</div><h4>자격·교육</h4><ul class="caregiver-credential-list">${(profile.credentials || []).length ? profile.credentials.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : "<li>등록 준비 중</li>"}</ul><h4>사용 언어</h4><p>${escapeHtml((profile.languages || []).join(" · ") || "등록 준비 중")}</p></section><section><h4>별점 분포</h4><div class="rating-distribution">${distribution}</div></section></div><section class="caregiver-public-reviews"><div class="section-header"><div><h4>관리자 선정 공개 후기</h4><p>관리자가 공개 대상으로 선정한 후기만 표시합니다. 평균에는 실제 서비스가 확인된 유효 고객 후기와 원본 사진·확인 기록이 있는 외부 경로 후기가 함께 반영되며, 각 후기의 경로는 투명하게 표시됩니다.</p></div></div>${reviewsMarkup}</section></div><div class="modal-footer"><button type="button" class="primary-button" data-close-modal>확인</button></div></section></div>`;
     bindModalFrame();
   }
 
@@ -4279,6 +4333,7 @@ import {
     document.querySelectorAll("[data-caregiver-assignment-detail]").forEach((button) => button.addEventListener("click", () => openCaregiverAssignmentDetailModal(button.dataset.caregiverAssignmentDetail)));
     document.querySelectorAll("[data-open-retrospective-report]").forEach((button) => button.addEventListener("click", () => openRetrospectiveCareReportModal(button.dataset.assignmentId || null)));
     document.querySelectorAll("[data-open-review]").forEach((button) => button.addEventListener("click", () => openServiceReviewModal(button.dataset.openReview)));
+    document.querySelectorAll("[data-add-review-photos]").forEach((button) => button.addEventListener("click", () => openServiceReviewPhotoModal(button.dataset.addReviewPhotos, Number(button.dataset.photoSlots || 1))));
 
     document.querySelectorAll("[data-start-care]").forEach((button) => {
       button.addEventListener("click", async () => {
@@ -4763,6 +4818,51 @@ import {
     bindModalFrame();
   }
 
+  function openServiceReviewPhotoModal(reviewId, availableSlots = 1) {
+    const user = authUser();
+    const client = state.role === "client" ? clientForUser(user?.id) : null;
+    const review = state.reviews.find((item) => item.id === reviewId && item.clientId === client?.id && item.source === "CLIENT");
+    if (!review || !review.publicConsent) return showToast("공개 동의가 있는 본인 후기만 사진을 추가할 수 있습니다.", "error");
+    const slots = Math.max(0, Math.min(3, Number(availableSlots || 0)));
+    if (!slots) return showToast("후기 사진은 최대 3장까지 등록할 수 있습니다.", "info");
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal review-modal" role="dialog" aria-modal="true" aria-labelledby="review-photo-title"><header class="modal-header"><div><p class="eyebrow">REVIEW PHOTOS</p><h3 id="review-photo-title">후기 사진 추가</h3><p>이 후기에는 사진을 ${slots}장 더 추가할 수 있습니다.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-add-review-photos-form data-review-id="${review.id}" data-photo-slots="${slots}"><div class="field"><label for="additional-review-photos">후기 사진</label><input id="additional-review-photos" name="reviewPhotos" type="file" accept="image/jpeg,image/png,image/webp" multiple required/><small>JPG·PNG·WebP, 장당 최대 5MB. 아이 얼굴·이름·연락처·주소·의료정보가 보이는 사진은 올리지 마세요.</small><div class="review-photo-preview" data-review-photo-preview></div></div><div class="privacy-boundary-note"><strong>홈페이지 공개 사진</strong><span>관리자가 후기 원문과 사진의 개인정보를 확인한 뒤 공개 대상으로 선정합니다. 이미 연결된 사진은 후기의 진정성을 위해 고객이 직접 삭제하거나 교체할 수 없습니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">사진 추가</button></div></form></section></div>`;
+    bindModalFrame();
+    const form = modalRoot.querySelector("[data-add-review-photos-form]");
+    bindReviewPhotoPreview(form);
+    form.addEventListener("submit", saveAdditionalServiceReviewPhotos);
+  }
+
+  async function saveAdditionalServiceReviewPhotos(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const review = state.reviews.find((item) => item.id === form.dataset.reviewId && item.source === "CLIENT");
+    const files = selectedReviewPhotoFiles(form);
+    const slots = Number(form.dataset.photoSlots || 0);
+    const error = validateReviewPhotoSelection(files);
+    if (!review || !review.publicConsent) return showToast("후기 공개 상태를 다시 확인해 주세요.", "error");
+    if (error) return showToast(error, "error");
+    if (!files.length || files.length > slots) return showToast(`사진을 1장 이상 ${slots}장 이하로 선택해 주세요.`, "error");
+    const submitButton = form.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+    try {
+      if (usingCloudData()) {
+        await addServiceReviewPhotosCloud(review.id, files);
+        closeModal();
+        await refreshCloudState();
+      } else {
+        const photoUrls = await reviewFilesToDataUrls(files);
+        review.photoUrls = [...(review.photoUrls || []), ...photoUrls].slice(0, 3);
+        saveState();
+        closeModal();
+        render();
+      }
+      showToast("후기 사진을 추가했습니다. 관리자 확인 후 후기와 함께 공개됩니다.");
+    } catch (uploadError) {
+      showToast(friendlyErrorMessage(uploadError, "후기 사진을 추가하지 못했습니다."), "error");
+      submitButton.disabled = false;
+    }
+  }
+
   function openServiceReviewModal(assignmentId) {
     const user = authUser();
     const client = state.role === "client" ? clientForUser(user?.id) : null;
@@ -4770,9 +4870,20 @@ import {
     if (!assignment || !assignmentHasCompletedCare(assignment)) return showToast("실제 케어 제공 기록이 확인된 종료 서비스에만 후기를 작성할 수 있습니다.");
     if (state.reviews.some((review) => review.assignmentId === assignment.id)) return showToast("이 배정에는 이미 후기를 작성했습니다.");
     const caregiver = state.users.find((item) => item.id === assignment.caregiverUserId);
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal review-modal" role="dialog" aria-modal="true" aria-labelledby="service-review-title"><header class="modal-header"><div><p class="eyebrow">SERVICE REVIEW</p><h3 id="service-review-title">${escapeHtml(caregiver?.fullName || "담당 관리사")} 관리사 후기</h3><p>실제 제공이 확인된 종료 서비스 배치마다 한 번 작성할 수 있습니다.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-service-review-form data-assignment-id="${assignment.id}"><div class="field"><span class="field-label">서비스 만족도 <small>별을 선택해 주세요.</small></span><div class="rating-options star-rating-options" role="radiogroup" aria-label="서비스 만족도">${[1, 2, 3, 4, 5].map((rating) => `<label title="${rating}점"><input type="radio" name="rating" value="${rating}" required/><span><b aria-hidden="true">★</b><em>${rating}점</em></span></label>`).join("")}</div></div><div class="field"><span class="field-label">좋았던 점</span><div class="review-tag-options">${["세심한 케어", "정확한 기록", "친절한 소통", "시간 준수", "전문적인 지원"].map((tag) => `<label><input type="checkbox" name="tags" value="${tag}"/><span>${tag}</span></label>`).join("")}</div></div><div class="field"><label for="review-comment">후기</label><textarea id="review-comment" name="comment" maxlength="500" placeholder="서비스에서 좋았던 점이나 개선 의견을 남겨주세요." required></textarea><small>제출한 원문은 관리사와 운영 관리자에게 서비스 개선 목적으로 공유됩니다.</small></div><label class="review-public-consent"><input type="checkbox" name="publicConsent"/><span><strong>홈페이지 익명 후기 공개에 동의합니다.</strong><small>고객 이름은 표시하지 않으며, 관리자가 개인정보를 확인한 뒤 공개합니다. 선택하지 않아도 별점은 익명 평균에 반영됩니다.</small></span></label><div class="privacy-boundary-note"><strong>한 번만 제출 가능</strong><span>공정한 후기 관리를 위해 제출 후에는 추가 작성이나 수정이 불가능합니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">후기 제출</button></div></form></section></div>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal review-modal" role="dialog" aria-modal="true" aria-labelledby="service-review-title"><header class="modal-header"><div><p class="eyebrow">SERVICE REVIEW</p><h3 id="service-review-title">${escapeHtml(caregiver?.fullName || "담당 관리사")} 관리사 후기</h3><p>실제 제공이 확인된 종료 서비스 배치마다 한 번 작성할 수 있습니다.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-service-review-form data-assignment-id="${assignment.id}"><div class="field"><span class="field-label">서비스 만족도 <small>별을 선택해 주세요.</small></span><div class="rating-options star-rating-options" role="radiogroup" aria-label="서비스 만족도">${[1, 2, 3, 4, 5].map((rating) => `<label title="${rating}점"><input type="radio" name="rating" value="${rating}" required/><span><b aria-hidden="true">★</b><em>${rating}점</em></span></label>`).join("")}</div></div><div class="field"><span class="field-label">좋았던 점</span><div class="review-tag-options">${["세심한 케어", "정확한 기록", "친절한 소통", "시간 준수", "전문적인 지원"].map((tag) => `<label><input type="checkbox" name="tags" value="${tag}"/><span>${tag}</span></label>`).join("")}</div></div><div class="field"><label for="review-comment">후기</label><textarea id="review-comment" name="comment" maxlength="500" placeholder="서비스에서 좋았던 점이나 개선 의견을 남겨주세요." required></textarea><small>제출한 원문은 관리사와 운영 관리자에게 서비스 개선 목적으로 공유됩니다.</small></div><div class="field"><label for="review-photos">후기 사진 <small>선택 · 최대 3장</small></label><input id="review-photos" name="reviewPhotos" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled/><small>홈페이지 공개에 동의한 경우에만 첨부할 수 있습니다. 아이 얼굴·이름·연락처·주소·의료정보가 보이는 사진은 올리지 마세요.</small><div class="review-photo-preview" data-review-photo-preview></div></div><label class="review-public-consent"><input type="checkbox" name="publicConsent"/><span><strong>홈페이지 익명 후기와 첨부 사진 공개에 동의합니다.</strong><small>고객 이름은 표시하지 않으며, 관리자가 개인정보를 확인한 뒤 공개합니다. 선택하지 않아도 별점은 익명 평균에 반영됩니다.</small></span></label><div class="privacy-boundary-note"><strong>원문은 한 번만 제출 가능</strong><span>공정한 후기 관리를 위해 별점과 후기 원문은 제출 후 수정할 수 없습니다. 공개 동의가 있는 후기에는 사진을 최대 3장까지 추가할 수 있습니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">후기 제출</button></div></form></section></div>`;
     bindModalFrame();
-    modalRoot.querySelector("[data-service-review-form]").addEventListener("submit", saveServiceReview);
+    const form = modalRoot.querySelector("[data-service-review-form]");
+    const consent = form.querySelector('[name="publicConsent"]');
+    const photoInput = form.querySelector('[name="reviewPhotos"]');
+    consent.addEventListener("change", () => {
+      photoInput.disabled = !consent.checked;
+      if (!consent.checked) {
+        photoInput.value = "";
+        form.querySelector("[data-review-photo-preview]").innerHTML = "";
+      }
+    });
+    bindReviewPhotoPreview(form);
+    form.addEventListener("submit", saveServiceReview);
   }
 
   async function saveServiceReview(event) {
@@ -4789,16 +4900,20 @@ import {
     if (!Number.isInteger(rating) || rating < 1 || rating > 5 || !comment) return showToast("별점과 후기를 모두 입력해 주세요.", "error");
     const tags = formData.getAll("tags");
     const publicConsent = formData.get("publicConsent") === "on";
+    const photoFiles = selectedReviewPhotoFiles(form);
+    const photoError = validateReviewPhotoSelection(photoFiles);
+    if (photoError) return showToast(photoError, "error");
+    if (photoFiles.length && !publicConsent) return showToast("사진을 첨부하려면 홈페이지 익명 공개에 동의해 주세요.", "error");
     if (usingCloudData()) {
       const submitButton = form.querySelector('button[type="submit"]');
       if (!assignment.caregiverId) return showToast("담당 관리사 정보를 확인할 수 없습니다.", "error");
       submitButton.disabled = true;
       submitButton.textContent = "후기 저장 중…";
       try {
-        await saveServiceReviewCloud({ assignmentId: assignment.id, rating, tags, comment, publicConsent });
+        const result = await saveServiceReviewCloud({ assignmentId: assignment.id, rating, tags, comment, publicConsent, photoFiles });
         closeModal();
         await refreshCloudState();
-        showToast("관리사 후기가 등록되었습니다. 소중한 의견 감사합니다.");
+        showToast(result.photo_upload_error ? `후기는 등록했지만 사진은 연결하지 못했습니다. 완료 서비스 후기에서 다시 추가해 주세요. (${result.photo_upload_error})` : "관리사 후기와 사진이 등록되었습니다. 소중한 의견 감사합니다.", result.photo_upload_error ? "error" : "success");
       } catch (error) {
         showToast(friendlyErrorMessage(error, "후기를 저장하지 못했습니다."), "error");
         submitButton.disabled = false;
@@ -4806,7 +4921,8 @@ import {
       }
       return;
     }
-    state.reviews.push({ id: `review-${Date.now()}`, assignmentId: assignment.id, clientId: client.id, caregiverUserId: assignment.caregiverUserId, rating, tags, comment, createdAt: new Date().toISOString(), createdBy: user.id, source: "CLIENT", publicConsent, publicationStatus: publicConsent ? "PENDING" : "PRIVATE", validityStatus: "VALID", moderationHistory: [] });
+    const photoUrls = await reviewFilesToDataUrls(photoFiles);
+    state.reviews.push({ id: `review-${Date.now()}`, assignmentId: assignment.id, clientId: client.id, caregiverUserId: assignment.caregiverUserId, rating, tags, comment, photoUrls, photoPaths: [], createdAt: new Date().toISOString(), createdBy: user.id, source: "CLIENT", publicConsent, publicationStatus: publicConsent ? "PENDING" : "PRIVATE", validityStatus: "VALID", moderationHistory: [] });
     saveState();
     closeModal();
     render();
@@ -4901,31 +5017,38 @@ import {
     const employmentValue = user.status === "pending" ? "APPLICANT" : user.employmentStatus || (usingCloudData() ? "INACTIVE" : "ACTIVE");
     const publicProfile = user.publicProfile || (state.publicCaregivers || []).find((item) => item.caregiverUserId === user.id || item.caregiverId === user.caregiverId) || {};
     const caregiverReviews = state.reviews.filter((review) => review.caregiverUserId === user.id).sort((a, b) => new Date(b.serviceDate || b.createdAt) - new Date(a.serviceDate || a.createdAt));
-    const activeReviews = caregiverReviews.filter((review) => review.source === "CLIENT" && !review.archived && review.validityStatus !== "INVALID");
+    const activeReviews = caregiverReviews.filter((review) => !review.archived && (
+      (review.source === "CLIENT" && review.validityStatus !== "INVALID")
+      || (review.source === "VERIFIED_EXTERNAL" && review.verificationStatus === "VERIFIED")
+    ));
     const reviewAverage = publicProfile.averageRating != null ? Number(publicProfile.averageRating).toFixed(1) : activeReviews.length ? (activeReviews.reduce((sum, review) => sum + Number(review.rating), 0) / activeReviews.length).toFixed(1) : null;
     const reviewCount = publicProfile.averageRating != null ? Number(publicProfile.reviewCount || 0) : activeReviews.length;
     const reviewManagementMarkup = caregiverReviews.length ? caregiverReviews.map((review) => {
-      const isLegacy = review.source === "ADMIN_LEGACY";
+      const isLegacy = review.source !== "CLIENT";
+      const verifiedExternal = review.source === "VERIFIED_EXTERNAL" && review.verificationStatus === "VERIFIED";
       const invalid = !isLegacy && review.validityStatus === "INVALID";
       const status = invalid ? "INVALID" : review.archived ? "ARCHIVED" : review.publicationStatus || "PRIVATE";
-      const statusLabel = status === "INVALID" ? "평점 제외" : status === "PUBLISHED" ? "홈페이지 공개" : status === "PENDING" ? "공개 검토 대기" : status === "ARCHIVED" ? "보관됨" : "비공개";
+      const statusLabel = isLegacy && !verifiedExternal && !review.archived
+        ? "증빙 확인 대기"
+        : status === "INVALID" ? "평점 제외" : status === "PUBLISHED" ? "홈페이지 공개" : status === "PENDING" ? "공개 검토 대기" : status === "ARCHIVED" ? "보관됨" : "비공개";
       const publicationAction = review.publicConsent
         ? `<button type="button" class="text-button" data-client-review-publication="${review.id}" data-next-status="${status === "PUBLISHED" ? "HIDDEN" : "PUBLISHED"}">${status === "PUBLISHED" ? "홈페이지에서 숨기기" : "홈페이지 공개 선정"}</button>`
         : `<small>고객 공개 동의 없음</small>`;
       const action = isLegacy
-        ? `<button type="button" class="text-button" data-toggle-historical-review="${review.id}" data-next-published="${status !== "PUBLISHED"}">${status === "PUBLISHED" ? "숨기기" : "공개"}</button>${review.archived ? "" : `<button type="button" class="text-button danger-text" data-archive-historical-review="${review.id}">보관</button>`}`
+        ? `${verifiedExternal || review.archived ? "" : `<button type="button" class="text-button" data-verify-historical-review="${review.id}">증빙 사진 추가·확인</button>`}<button type="button" class="text-button" data-toggle-historical-review="${review.id}" data-next-published="${status !== "PUBLISHED"}">${status === "PUBLISHED" ? "숨기기" : "공개"}</button>${review.archived ? "" : `<button type="button" class="text-button danger-text" data-archive-historical-review="${review.id}">보관</button>`}`
         : invalid
           ? `<button type="button" class="text-button" data-restore-client-review="${review.id}">유효 후기 복원</button>`
           : `${publicationAction}<button type="button" class="text-button danger-text" data-invalidate-client-review="${review.id}">무효 후기 평점 제외</button>`;
       const moderationNote = invalid ? `<small class="review-moderation-reason"><strong>${escapeHtml(reviewInvalidReasonLabel(review.invalidReasonCode))}</strong>${review.invalidReasonNote ? ` · ${escapeHtml(review.invalidReasonNote)}` : ""}</small>` : "";
-      return `<article class="caregiver-review-admin-row ${invalid ? "invalidated" : ""}"><div><span class="review-stars" aria-label="${review.rating}점">${"★".repeat(Number(review.rating))}${"☆".repeat(5 - Number(review.rating))}</span><strong>${isLegacy ? escapeHtml(review.reviewerAlias || "이전 서비스 고객") : "ProMoms 서비스 이용 고객"}</strong><small>${isLegacy ? "이전 후기 · 관리자 등록" : "실제 서비스 후기"} · ${review.serviceDate ? formatDate(review.serviceDate) : new Date(review.createdAt).toLocaleDateString("ko-KR")}</small>${moderationNote}</div><p>${escapeHtml(review.comment)}</p><div class="caregiver-review-admin-actions"><span class="status-chip ${status === "INVALID" ? "coral" : status === "PUBLISHED" ? "" : "gold"}">${statusLabel}</span>${action}</div></article>`;
+      const sourceLabel = verifiedExternal ? "외부 경로 확인 후기 · 통합 평점 반영" : isLegacy ? "외부 후기 자료 · 증빙 확인 전" : "ProMoms 실제 서비스 후기";
+      return `<article class="caregiver-review-admin-row ${invalid ? "invalidated" : ""}"><div><span class="review-stars" aria-label="${review.rating}점">${"★".repeat(Number(review.rating))}${"☆".repeat(5 - Number(review.rating))}</span><strong>${isLegacy ? escapeHtml(review.reviewerAlias || "이전 서비스 고객") : "ProMoms 서비스 이용 고객"}</strong><small>${sourceLabel} · ${review.serviceDate ? formatDate(review.serviceDate) : new Date(review.createdAt).toLocaleDateString("ko-KR")}</small>${moderationNote}</div><div><p>${escapeHtml(review.comment)}</p>${reviewPhotoGalleryMarkup(review, verifiedExternal ? "외부 후기 원본 사진" : "후기 첨부 사진")}</div><div class="caregiver-review-admin-actions"><span class="status-chip ${status === "INVALID" ? "coral" : status === "PUBLISHED" ? "" : "gold"}">${statusLabel}</span>${action}</div></article>`;
     }).join("") : `<div class="empty-state"><strong>등록된 후기가 없습니다.</strong><span>실제 서비스 완료 후기 또는 이전 후기 자료를 추가할 수 있습니다.</span></div>`;
     modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal profile-modal" role="dialog" aria-modal="true" aria-labelledby="caregiver-management-title"><header class="modal-header"><div><p class="eyebrow">CAREGIVER HR</p><h3 id="caregiver-management-title">관리사 프로필·인사관리</h3><p>관리자 전용 인사 및 배정 기준 정보</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-caregiver-management-form>
       <div class="profile-summary"><div class="profile-summary-person"><div class="profile-avatar">${escapeHtml(user.initials)}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email)} · ${escapeHtml(user.phone || "전화 미등록")}</span></div></div><div class="profile-summary-tags"><span>${user.status === "approved" ? "계정 승인" : "승인 대기"}</span><span>${currentClient ? `현재 ${escapeHtml(currentClient.motherName)} 담당` : "현재 배정 없음"}</span><span>총 ${assignments.length}건 배정</span></div></div>${hrSetupRequired ? '<div class="status-banner warning"><strong>인사정보 설정이 필요합니다.</strong><span>계정 승인만으로는 일정에 배정되지 않습니다. 아래 정보를 저장하고 근무상태를 ‘재직’으로 설정하세요.</span></div>' : ""}
       <section class="profile-form-section"><div class="profile-section-title"><strong>계정·재직 정보</strong><span>근무상태와 입사 이력</span></div><div class="form-grid two"><div class="field"><label for="caregiver-full-name">이름</label><input id="caregiver-full-name" name="fullName" value="${escapeHtml(user.fullName)}" required /></div><div class="field"><label for="managed-caregiver-phone">전화번호</label><input id="managed-caregiver-phone" name="phone" value="${escapeHtml(user.phone || "")}" /></div></div><div class="form-grid two"><div class="field"><label for="managed-caregiver-email">로그인 이메일</label><input id="managed-caregiver-email" value="${escapeHtml(user.email)}" readonly /></div><div class="field"><label for="employment-status">근무상태</label><select id="employment-status" name="employmentStatus">${employmentOptions.map(([value, label]) => `<option value="${value}" ${value === employmentValue ? "selected" : ""}>${label}</option>`).join("")}</select></div></div><div class="form-grid two"><div class="field"><label for="caregiver-hire-date">입사일자</label><input id="caregiver-hire-date" name="hireDate" type="date" value="${user.hireDate ? dateInputValue(user.hireDate) : ""}" /></div><div class="field"><label for="career-years">총 경력연수</label><input id="career-years" name="careerYears" type="number" min="0" max="60" step="0.5" value="${Number(user.careerYears || 0)}" /></div></div></section>
       <section class="profile-form-section"><div class="profile-section-title"><strong>경력·배정 역량</strong><span>배정 시 참고하는 전문 정보</span></div><div class="field"><label for="managed-certification">자격·경력 요약</label><textarea id="managed-certification" name="certification" placeholder="보유 자격, 근무기관, 주요 경력을 입력하세요.">${escapeHtml(user.certification || "")}</textarea></div><div class="form-grid two"><div class="field"><label for="caregiver-residential-area">거주지역</label><input id="caregiver-residential-area" name="residentialArea" value="${escapeHtml(user.residentialArea || "")}" placeholder="Duluth, GA" /></div><div class="field"><label for="caregiver-service-area">담당 가능지역</label><input id="caregiver-service-area" name="serviceArea" value="${escapeHtml(user.serviceArea || "")}" placeholder="Atlanta · Duluth · Marietta" /></div></div><div class="field"><label for="caregiver-specialties">전문분야</label><input id="caregiver-specialties" name="specialties" value="${escapeHtml(user.specialties || "")}" placeholder="신생아 수면, 모유수유 지원" /></div></section>
       <section class="profile-form-section caregiver-public-profile-admin"><div class="profile-section-title"><strong>홈페이지 공개 프로필</strong><span>고객에게 공개되는 홍보 정보 · 내부 인사정보와 분리</span></div><div class="caregiver-public-admin-preview"><div class="caregiver-public-photo-preview" data-caregiver-photo-preview>${caregiverPublicPortraitMarkup({ ...publicProfile, displayName: publicProfile.displayName || user.fullName })}</div><div><strong>${escapeHtml(publicProfile.displayName || user.fullName)}</strong><span>${escapeHtml(publicProfile.headline || "한 줄 소개를 입력해 주세요.")}</span><small>${reviewAverage ? `★ ${reviewAverage} · 후기 ${reviewCount}건` : "첫 후기를 기다리고 있어요"}</small></div></div><input type="hidden" name="existingPhotoPath" value="${escapeHtml(publicProfile.photoPath || "")}"/><div class="field"><label for="caregiver-public-photo">프로필 사진</label><input id="caregiver-public-photo" name="publicPhoto" type="file" accept="image/jpeg,image/png,image/webp" ${user.caregiverId ? "" : "disabled"}/><small>JPG·PNG·WebP, 최대 5MB. 홈페이지에 공개되는 사진입니다.</small></div><div class="form-grid two"><div class="field"><label for="public-display-name">공개 표시명</label><input id="public-display-name" name="publicDisplayName" value="${escapeHtml(publicProfile.displayName || user.fullName)}" maxlength="80" required /></div><div class="field"><label for="public-headline">한 줄 소개</label><input id="public-headline" name="publicHeadline" value="${escapeHtml(publicProfile.headline || "")}" maxlength="120" placeholder="전문성과 돌봄 철학을 한 문장으로 소개하세요." /></div></div><div class="field"><label for="public-biography">공개 약력</label><textarea id="public-biography" name="publicBiography" maxlength="1500" placeholder="고객이 이해하기 쉬운 경력, 케어 철학과 강점을 입력하세요.">${escapeHtml(publicProfile.biography || user.certification || "")}</textarea></div><div class="form-grid two"><div class="field"><label for="public-career-years">공개 경력연수</label><input id="public-career-years" name="publicCareerYears" type="number" min="0" max="60" step="0.5" value="${Number(publicProfile.careerYears ?? user.careerYears ?? 0)}" /></div><div class="field"><label for="public-service-area">공개 활동지역</label><input id="public-service-area" name="publicServiceArea" value="${escapeHtml(publicProfile.serviceArea || user.serviceArea || "")}" placeholder="Atlanta · Duluth · Marietta" /></div></div><div class="form-grid two"><div class="field"><label for="public-specialties">전문분야</label><input id="public-specialties" name="publicSpecialties" value="${escapeHtml((publicProfile.specialties || []).join(", ") || user.specialties || "")}" placeholder="신생아 수면, 산모 회복" /></div><div class="field"><label for="public-credentials">자격·교육</label><input id="public-credentials" name="publicCredentials" value="${escapeHtml((publicProfile.credentials || []).join(", ") || user.certification || "")}" placeholder="Postpartum Doula, Infant CPR" /></div></div><div class="form-grid two"><div class="field"><label for="public-languages">사용 언어</label><input id="public-languages" name="publicLanguages" value="${escapeHtml((publicProfile.languages || []).join(", ") || user.preferredLanguage || "")}" placeholder="한국어, English" /></div><div class="field"><label for="public-photo-alt">사진 대체 설명</label><input id="public-photo-alt" name="publicPhotoAlt" value="${escapeHtml(publicProfile.photoAlt || `${publicProfile.displayName || user.fullName} 관리사 프로필 사진`)}" maxlength="160" /></div></div><div class="form-grid two"><div class="field"><label for="public-sort-order">홈페이지 표시 순서</label><input id="public-sort-order" name="publicSortOrder" type="number" min="0" max="9999" value="${Number(publicProfile.sortOrder || 0)}" /></div><div class="public-profile-switches"><label><input type="checkbox" name="publicFeatured" ${publicProfile.featured ? "checked" : ""}/><span>추천 관리사 강조</span></label><label><input type="checkbox" name="publicPublished" ${publicProfile.isPublished === true ? "checked" : ""}/><span>홈페이지 공개</span></label></div></div><small>신규 관리사는 기본 비공개입니다. 소개 정보를 검토한 뒤 ‘홈페이지 공개’를 선택하세요.</small></section>
-      <section class="profile-form-section caregiver-review-management"><div class="profile-section-title"><strong>평점·후기 관리</strong><span>${reviewAverage ? `검증 고객 평균 ${reviewAverage}점 · ${reviewCount}건` : "검증 고객 후기 없음"}</span></div><div class="privacy-boundary-note"><strong>홈페이지 선정과 평점 집계는 서로 분리됩니다.</strong><span>고객이 공개에 동의한 후기 중 관리자가 선정한 원문만 홈페이지에 표시합니다. 욕설이나 개인정보가 포함된 원문은 ‘홈페이지에서 숨기기’로 처리하되 별점은 유지합니다. 평점 제외는 객관적으로 무효인 스팸·사칭·중복 등록에만 감사기록과 함께 허용됩니다. 이전 후기 자료는 출처를 표시하며 검증 고객 평점에는 포함하지 않습니다.</span></div><div class="caregiver-review-admin-list">${reviewManagementMarkup}</div><button type="button" class="secondary-button" data-add-historical-review="${user.id}" ${user.caregiverId ? "" : "disabled"}>이전 후기 자료 추가</button></section>
+      <section class="profile-form-section caregiver-review-management"><div class="profile-section-title"><strong>평점·후기 관리</strong><span>${reviewAverage ? `통합 확인 평균 ${reviewAverage}점 · ${reviewCount}건` : "확인된 후기 없음"}</span></div><div class="privacy-boundary-note"><strong>공개 선정과 평점 검증을 분리합니다.</strong><span>ProMoms 완료 서비스의 유효 고객 후기와 원본 사진·확인 기록이 있는 외부 경로 후기를 통합 평균에 반영합니다. 관리자는 공개할 후기 원문을 별도로 선정할 수 있지만, 낮은 별점만을 이유로 집계에서 제외할 수 없습니다.</span></div><div class="caregiver-review-admin-list">${reviewManagementMarkup}</div><button type="button" class="secondary-button" data-add-historical-review="${user.id}" ${user.caregiverId ? "" : "disabled"}>외부 경로 후기 등록</button></section>
       <section class="profile-form-section internal-note-section"><div class="profile-section-title"><strong>인사 특이사항</strong><span>관리사 본인에게는 표시되지 않습니다.</span></div><div class="field"><label for="caregiver-hr-notes">근무조건·상담·평가 메모</label><textarea id="caregiver-hr-notes" name="hrNotes" placeholder="근무 가능시간, 휴직, 면담, 평가 등 관리자 메모를 입력하세요.">${escapeHtml(user.hrNotes || "")}</textarea></div><div class="record-meta-grid"><small>가입일 ${user.createdAt ? new Date(user.createdAt).toLocaleDateString("ko-KR") : "미등록"}</small><small>승인일 ${user.approvedAt ? new Date(user.approvedAt).toLocaleDateString("ko-KR") : "승인 전"}</small><small>마지막 수정 ${user.hrUpdatedAt ? new Date(user.hrUpdatedAt).toLocaleString("ko-KR") : "기록 전"}</small></div></section>
       <div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">인사정보 저장</button></div>
     </form></section></div>`;
@@ -4949,6 +5072,7 @@ import {
     modalRoot.querySelectorAll("[data-restore-client-review]").forEach((button) => button.addEventListener("click", () => updateClientReviewValidity(button.dataset.restoreClientReview, true, {}, user.id, button)));
     modalRoot.querySelectorAll("[data-toggle-historical-review]").forEach((button) => button.addEventListener("click", () => updateHistoricalReviewPublication(button.dataset.toggleHistoricalReview, button.dataset.nextPublished === "true", false, user.id, button)));
     modalRoot.querySelectorAll("[data-archive-historical-review]").forEach((button) => button.addEventListener("click", () => updateHistoricalReviewPublication(button.dataset.archiveHistoricalReview, false, true, user.id, button)));
+    modalRoot.querySelectorAll("[data-verify-historical-review]").forEach((button) => button.addEventListener("click", () => openHistoricalReviewEvidenceModal(button.dataset.verifyHistoricalReview, user.id)));
   }
 
   async function saveCaregiverManagement(event, userId) {
@@ -5031,9 +5155,11 @@ import {
     const user = state.users.find((item) => item.id === userId && item.caregiverId);
     if (!user) return showToast("승인된 관리사 정보를 찾을 수 없습니다.", "error");
     const easternToday = easternDateKey();
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal review-modal" role="dialog" aria-modal="true" aria-labelledby="historical-review-title"><header class="modal-header"><div><p class="eyebrow">ADMIN IMPORTED REVIEW</p><h3 id="historical-review-title">${escapeHtml(user.fullName)} 관리사 이전 후기</h3><p>초기 셋업을 위한 이전 서비스 후기입니다. 홈페이지에는 ‘이전 서비스 후기 · 관리자 등록’으로 출처가 표시됩니다.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-historical-review-form data-user-id="${user.id}"><div class="field"><span class="field-label">별점</span><div class="rating-options star-rating-options" role="radiogroup" aria-label="이전 후기 별점">${[1, 2, 3, 4, 5].map((rating) => `<label title="${rating}점"><input type="radio" name="rating" value="${rating}" required/><span><b aria-hidden="true">★</b><em>${rating}점</em></span></label>`).join("")}</div></div><div class="form-grid two"><div class="field"><label for="historical-service-type">서비스 종류</label><select id="historical-service-type" name="serviceType"><option value="POSTPARTUM">산후조리</option><option value="BABYSITTING">베이비시팅</option></select></div><div class="field"><label for="historical-service-date">서비스 날짜</label><input id="historical-service-date" name="serviceDate" type="date" max="${easternToday}" value="${easternToday}" required /><small>미국 동부시간 기준 오늘 또는 이전 날짜를 선택하세요.</small></div></div><div class="field"><label for="historical-reviewer-alias">후기 표시명</label><input id="historical-reviewer-alias" name="reviewerAlias" value="이전 서비스 고객" maxlength="80" required/><small>실제 고객 이름이나 연락처는 입력하지 마세요.</small></div><div class="field"><label for="historical-review-tags">태그</label><input id="historical-review-tags" name="tags" maxlength="300" placeholder="세심한 케어, 친절한 소통" /></div><div class="field"><label for="historical-review-comment">후기 원문</label><textarea id="historical-review-comment" name="comment" minlength="1" maxlength="500" required placeholder="보유한 이전 후기 내용을 개인정보 없이 입력하세요."></textarea></div><label class="review-public-consent admin"><input type="checkbox" name="isPublished" checked/><span><strong>홈페이지에 공개</strong><small>공개 전 고객 식별정보가 포함되지 않았는지 확인하세요.</small></span></label><div class="privacy-boundary-note"><strong>감사 기록 보존</strong><span>등록 관리자와 시각이 기록되며, 실서비스 고객 후기와 구분해 표시됩니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">이전 후기 저장</button></div></form></section></div>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal review-modal" role="dialog" aria-modal="true" aria-labelledby="historical-review-title"><header class="modal-header"><div><p class="eyebrow">VERIFIED EXTERNAL REVIEW</p><h3 id="historical-review-title">${escapeHtml(user.fullName)} 관리사 외부 경로 후기</h3><p>한국 활동 중 받은 손편지·메시지 등 실제 후기 자료를 원본 사진과 함께 등록합니다.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-historical-review-form data-user-id="${user.id}"><div class="field"><span class="field-label">별점</span><div class="rating-options star-rating-options" role="radiogroup" aria-label="외부 후기 별점">${[1, 2, 3, 4, 5].map((rating) => `<label title="${rating}점"><input type="radio" name="rating" value="${rating}" required/><span><b aria-hidden="true">★</b><em>${rating}점</em></span></label>`).join("")}</div></div><div class="form-grid two"><div class="field"><label for="historical-service-type">서비스 종류</label><select id="historical-service-type" name="serviceType"><option value="POSTPARTUM">산후조리</option><option value="BABYSITTING">베이비시팅</option></select></div><div class="field"><label for="historical-service-date">서비스 날짜</label><input id="historical-service-date" name="serviceDate" type="date" max="${easternToday}" value="${easternToday}" required /><small>미국 동부시간 기준 오늘 또는 이전 날짜를 선택하세요.</small></div></div><div class="field"><label for="historical-reviewer-alias">후기 표시명</label><input id="historical-reviewer-alias" name="reviewerAlias" value="외부 경로 이용 고객" maxlength="80" required/><small>실제 고객 이름이나 연락처는 입력하지 마세요.</small></div><div class="field"><label for="historical-review-tags">태그</label><input id="historical-review-tags" name="tags" maxlength="300" placeholder="세심한 케어, 친절한 소통" /></div><div class="field"><label for="historical-review-comment">후기 내용</label><textarea id="historical-review-comment" name="comment" minlength="1" maxlength="500" required placeholder="원본의 의미를 바꾸지 않고 개인정보를 제외해 입력하세요."></textarea></div><div class="field"><label for="historical-review-photos">원본·증빙 사진 <small>필수 · 최대 3장</small></label><input id="historical-review-photos" name="reviewPhotos" type="file" accept="image/jpeg,image/png,image/webp" multiple required/><small>손편지나 메시지 캡처에서 이름·연락처·주소·아이 얼굴·의료정보는 가린 뒤 등록하세요.</small><div class="review-photo-preview" data-review-photo-preview></div></div><div class="field"><label for="historical-verification-note">확인 기록</label><textarea id="historical-verification-note" name="verificationNote" minlength="10" maxlength="500" required placeholder="원본 보유 형태와 실제 후기임을 확인한 근거를 10자 이상 입력하세요."></textarea></div><label class="review-public-consent admin"><input type="checkbox" name="verificationAttested" required/><span><strong>실제 서비스 이용자가 남긴 후기 원본임을 확인했습니다.</strong><small>확인 관리자와 시각이 감사 기록에 저장되며, 확인된 별점은 통합 평균에 반영됩니다.</small></span></label><label class="review-public-consent admin"><input type="checkbox" name="isPublished" checked/><span><strong>홈페이지에 공개</strong><small>공개 화면에는 ‘외부 경로 확인 후기’로 표시됩니다.</small></span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">외부 후기 저장·확인</button></div></form></section></div>`;
     bindModalFrame();
-    modalRoot.querySelector("[data-historical-review-form]").addEventListener("submit", saveHistoricalCaregiverReview);
+    const form = modalRoot.querySelector("[data-historical-review-form]");
+    bindReviewPhotoPreview(form);
+    form.addEventListener("submit", saveHistoricalCaregiverReview);
   }
 
   async function saveHistoricalCaregiverReview(event) {
@@ -5041,27 +5167,78 @@ import {
     const form = event.currentTarget;
     const user = state.users.find((item) => item.id === form.dataset.userId && item.caregiverId);
     if (!user) return showToast("관리사 정보를 다시 확인해 주세요.", "error");
-    const values = Object.fromEntries(new FormData(form).entries());
+    const formData = new FormData(form);
+    const values = Object.fromEntries(formData.entries());
     const rating = Number(values.rating);
     if (!Number.isInteger(rating) || rating < 1 || rating > 5 || !String(values.comment || "").trim()) return showToast("1~5점 별점과 후기 내용을 입력해 주세요.", "error");
     if (!values.serviceDate || values.serviceDate > easternDateKey()) return showToast("이전 후기 날짜는 미국 동부시간 기준 오늘 또는 과거만 선택할 수 있습니다.", "error");
+    const photoFiles = selectedReviewPhotoFiles(form);
+    const photoError = validateReviewPhotoSelection(photoFiles);
+    if (photoError) return showToast(photoError, "error");
+    if (!photoFiles.length) return showToast("외부 경로 후기를 확인하려면 원본·증빙 사진을 1장 이상 등록해 주세요.", "error");
+    if (values.verificationAttested !== "on" || String(values.verificationNote || "").trim().length < 10) return showToast("실제 후기 확인 동의와 10자 이상의 확인 기록이 필요합니다.", "error");
     const submitButton = form.querySelector('button[type="submit"]');
     submitButton.disabled = true;
     try {
       if (usingCloudData()) {
-        await createHistoricalCaregiverReviewCloud(user.caregiverId, values);
+        const result = await createHistoricalCaregiverReviewCloud(user.caregiverId, values, photoFiles);
         closeModal();
         await refreshCloudState();
+        showToast(result.photo_upload_error ? `외부 후기 원문은 저장했지만 증빙 사진 확인은 완료하지 못했습니다. 관리 화면에서 다시 등록해 주세요. (${result.photo_upload_error})` : "외부 경로 후기와 증빙을 확인했습니다. 별점이 통합 평균에 반영됩니다.", result.photo_upload_error ? "error" : "success");
       } else {
-        state.reviews.push({ id: `historical-review-${Date.now()}`, assignmentId: null, clientId: null, caregiverId: user.caregiverId, caregiverUserId: user.id, rating, tags: String(values.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean), comment: values.comment.trim(), serviceDate: values.serviceDate, serviceType: values.serviceType, reviewerAlias: values.reviewerAlias.trim(), source: "ADMIN_LEGACY", publicationStatus: values.isPublished === "on" ? "PUBLISHED" : "HIDDEN", archived: false, createdAt: new Date().toISOString() });
+        const photoUrls = await reviewFilesToDataUrls(photoFiles);
+        state.reviews.push({ id: `historical-review-${Date.now()}`, assignmentId: null, clientId: null, caregiverId: user.caregiverId, caregiverUserId: user.id, rating, tags: String(values.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean), comment: values.comment.trim(), serviceDate: values.serviceDate, serviceType: values.serviceType, reviewerAlias: values.reviewerAlias.trim(), source: "VERIFIED_EXTERNAL", verificationStatus: "VERIFIED", verificationNote: String(values.verificationNote || "").trim(), photoUrls, photoPaths: [], publicationStatus: values.isPublished === "on" ? "PUBLISHED" : "HIDDEN", archived: false, createdAt: new Date().toISOString() });
         saveState();
         closeModal();
         render();
+        showToast("외부 경로 후기와 증빙을 확인했습니다. 별점이 통합 평균에 반영됩니다.");
       }
-      showToast("이전 후기와 별점을 출처 표시와 함께 저장했습니다.");
     } catch (error) {
-      showToast(friendlyErrorMessage(error, "이전 후기를 저장하지 못했습니다."), "error");
+      showToast(friendlyErrorMessage(error, "외부 경로 후기를 저장하지 못했습니다."), "error");
       submitButton.disabled = false;
+    }
+  }
+
+  function openHistoricalReviewEvidenceModal(reviewId, userId) {
+    if (state.role !== "admin" || !canManageCaregiverHr()) return showToast("관리자 권한이 필요합니다.", "error");
+    const review = state.reviews.find((item) => item.id === reviewId && item.source !== "CLIENT" && !item.archived);
+    const user = state.users.find((item) => item.id === userId && item.caregiverId === review?.caregiverId);
+    if (!review || !user) return showToast("외부 후기 자료를 찾을 수 없습니다.", "error");
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal review-modal" role="dialog" aria-modal="true" aria-labelledby="historical-evidence-title"><header class="modal-header"><div><p class="eyebrow">EXTERNAL REVIEW EVIDENCE</p><h3 id="historical-evidence-title">외부 후기 증빙 확인</h3><p>${escapeHtml(user.fullName)} 관리사 · ${review.rating}점 · ${escapeHtml(review.comment)}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-historical-evidence-form data-review-id="${review.id}" data-user-id="${user.id}" data-caregiver-id="${user.caregiverId}"><div class="field"><label for="historical-evidence-photos">원본·증빙 사진 <small>필수 · 최대 3장</small></label><input id="historical-evidence-photos" name="reviewPhotos" type="file" accept="image/jpeg,image/png,image/webp" multiple required/><small>고객 이름·연락처·주소·아이 얼굴·의료정보는 가린 뒤 등록하세요.</small><div class="review-photo-preview" data-review-photo-preview></div></div><div class="field"><label for="historical-evidence-note">확인 기록</label><textarea id="historical-evidence-note" name="verificationNote" minlength="10" maxlength="500" required placeholder="원본 보유 형태와 실제 후기임을 확인한 근거를 입력하세요."></textarea></div><label class="review-public-consent admin"><input type="checkbox" name="verificationAttested" required/><span><strong>실제 서비스 이용자가 남긴 후기 원본임을 확인했습니다.</strong><small>확인 기록은 감사 로그에 남으며 이 별점이 통합 평균에 반영됩니다.</small></span></label><div class="form-actions"><button type="button" class="secondary-button" data-evidence-back>취소</button><button type="submit" class="primary-button">증빙 확인 완료</button></div></form></section></div>`;
+    bindModalFrame();
+    const form = modalRoot.querySelector("[data-historical-evidence-form]");
+    bindReviewPhotoPreview(form);
+    modalRoot.querySelector("[data-evidence-back]").addEventListener("click", () => openCaregiverManagementModal(userId));
+    form.addEventListener("submit", saveHistoricalReviewEvidence);
+  }
+
+  async function saveHistoricalReviewEvidence(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const files = selectedReviewPhotoFiles(form);
+    const note = String(formData.get("verificationNote") || "").trim();
+    const error = validateReviewPhotoSelection(files);
+    if (error) return showToast(error, "error");
+    if (!files.length || formData.get("verificationAttested") !== "on" || note.length < 10) return showToast("증빙 사진과 10자 이상의 확인 기록, 확인 동의가 모두 필요합니다.", "error");
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      if (usingCloudData()) {
+        await addHistoricalReviewEvidenceCloud(form.dataset.caregiverId, form.dataset.reviewId, files, note);
+        await refreshCloudState();
+      } else {
+        const review = state.reviews.find((item) => item.id === form.dataset.reviewId);
+        const photoUrls = await reviewFilesToDataUrls(files);
+        Object.assign(review, { source: "VERIFIED_EXTERNAL", verificationStatus: "VERIFIED", verificationNote: note, photoUrls, verifiedAt: new Date().toISOString() });
+        saveState();
+        render();
+      }
+      showToast("외부 후기 증빙을 확인했습니다. 별점이 통합 평균에 반영됩니다.");
+      openCaregiverManagementModal(form.dataset.userId);
+    } catch (errorValue) {
+      showToast(friendlyErrorMessage(errorValue, "외부 후기 증빙을 확인하지 못했습니다."), "error");
+      button.disabled = false;
     }
   }
 
