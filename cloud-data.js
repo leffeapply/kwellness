@@ -274,7 +274,11 @@ async function loadCloudStateOnce(session) {
     requestsByClient.get(request.client_id).push(request);
   });
   const contractById = new Map(contracts.map((item) => [item.id, item]));
+  const rawAssignmentById = new Map(assignments.map((item) => [item.id, item]));
   const requestByAssignment = new Map(serviceRequests.filter((item) => item.approved_assignment_id).map((item) => [item.approved_assignment_id, item]));
+  const requestByContract = new Map(serviceRequests
+    .map((request) => [rawAssignmentById.get(request.approved_assignment_id)?.contract_id, request])
+    .filter(([contractId]) => Boolean(contractId)));
   const sessionsByAssignment = new Map();
   careSessions.forEach((item) => {
     if (!sessionsByAssignment.has(item.assignment_id)) sessionsByAssignment.set(item.assignment_id, []);
@@ -384,10 +388,41 @@ async function loadCloudStateOnce(session) {
     };
   });
 
+  assignmentBriefs.forEach((brief) => {
+    if (!brief.client_id || appClients.some((client) => client.id === brief.client_id)) return;
+    const reportBaby = brief.baby_id || brief.baby_name
+      ? { id: brief.baby_id || null, name: brief.baby_name || "아이", birthDate: null, adminNotes: "" }
+      : null;
+    appClients.push({
+      id: brief.client_id,
+      userId: null,
+      memberUserIds: [],
+      motherName: brief.client_display_name || "이전 서비스 고객",
+      maternalStatus: "과거 서비스 리포트",
+      clientStatus: "HISTORICAL_REPORT_ONLY",
+      approvalStatus: "HISTORICAL_REPORT_ONLY",
+      preferredLanguage: "",
+      emergencyContact: "",
+      nextContactDate: null,
+      internalMemo: "",
+      babyAdminNotes: "",
+      babyId: reportBaby?.id || null,
+      babyName: reportBaby?.name || "",
+      babyBirthDate: null,
+      babies: reportBaby ? [reportBaby] : [],
+      address: "",
+      allergies: "",
+      extraHouseholdMembers: 0,
+      requestNote: "",
+      managementUpdatedAt: null,
+      restrictedReportProfile: true,
+    });
+  });
+
   const appAssignments = assignments.map((assignment) => {
     const contract = contractById.get(assignment.contract_id);
     const caregiver = caregiverById.get(assignment.caregiver_id);
-    const request = requestByAssignment.get(assignment.id);
+    const request = requestByAssignment.get(assignment.id) || requestByContract.get(assignment.contract_id);
     const brief = briefByAssignment.get(assignment.id);
     const todaySession = todaySessionForAssignment(assignment.id);
     const latestCompletedSession = latestCompletedSessionForAssignment(assignment.id);
@@ -396,10 +431,11 @@ async function loadCloudStateOnce(session) {
     return {
       id: assignment.id,
       serviceRequestId: request?.id || null,
+      administrativelyRemovedAt: request?.administratively_removed_at || null,
       serviceType: assignment.service_type,
       clientId: contract?.client_id || brief?.client_id || null,
       babyId: contract?.baby_id || brief?.baby_id || null,
-      babyName: assignmentBaby?.first_name || request?.baby_name || "",
+      babyName: assignmentBaby?.first_name || brief?.baby_name || request?.baby_name || "",
       caregiverUserId: caregiver?.user_id || brief?.caregiver_user_id || null,
       caregiverName: brief?.caregiver_display_name || "",
       caregiverCertification: brief?.caregiver_certification_summary || "",

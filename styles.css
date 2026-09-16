@@ -4916,6 +4916,51 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   min-width: 0;
 }
 
+.objective-report-customer-search {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--mint-soft);
+}
+
+.objective-report-customer-search .field {
+  gap: 7px;
+}
+
+.objective-report-search-control {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.objective-report-search-control input {
+  min-width: 0;
+}
+
+.report-batch-summary {
+  display: flex;
+  min-height: 48px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--cream);
+}
+
+.report-batch-summary strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.report-batch-summary span {
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
 .report-builder-actions {
   display: flex;
   flex-wrap: wrap;
@@ -4924,7 +4969,6 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   gap: 8px;
 }
 
-.report-range-tabs,
 .report-density-tabs {
   display: inline-flex;
   max-width: 100%;
@@ -4937,7 +4981,6 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   scrollbar-width: thin;
 }
 
-.report-range-tabs button,
 .report-density-tabs button {
   min-width: 76px;
   min-height: 40px;
@@ -4952,9 +4995,7 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   white-space: nowrap;
 }
 
-.report-range-tabs button.active,
 .report-density-tabs button.active,
-.report-range-tabs button[aria-pressed="true"],
 .report-density-tabs button[aria-pressed="true"] {
   color: var(--white);
   background: var(--green);
@@ -5291,18 +5332,25 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
     flex-direction: column;
   }
 
+  .objective-report-search-control {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .objective-report-search-control .text-button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
   .report-builder-actions > button,
   .report-builder-actions > a {
     width: 100%;
   }
 
-  .report-range-tabs,
   .report-density-tabs {
     display: flex;
     width: 100%;
   }
 
-  .report-range-tabs button,
   .report-density-tabs button {
     min-width: 82px;
     flex: 1 0 auto;

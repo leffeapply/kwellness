@@ -2,7 +2,6 @@ import { backendStatus, supabase } from "./supabase-client.js";
 import proMomsLogoUrl from "./assets/promoms-logo.png";
 import {
   buildObjectiveReportModel,
-  OBJECTIVE_REPORT_RANGES,
   OBJECTIVE_REPORT_TIME_ZONE,
   objectiveDateKey,
   objectiveDateLabel,
@@ -248,9 +247,9 @@ import {
       },
       chartRangeByRole: { admin: "week", caregiver: "week", client: "week" },
       objectiveReportByRole: {
-        admin: { range: "week", anchorDate: "", granularity: "both", assignmentId: null },
-        caregiver: { range: "week", anchorDate: "", granularity: "both", assignmentId: null },
-        client: { range: "week", anchorDate: "", granularity: "both", assignmentId: null },
+        admin: { granularity: "both", assignmentId: null, customerQuery: "" },
+        caregiver: { granularity: "both", assignmentId: null, customerQuery: "" },
+        client: { granularity: "both", assignmentId: null, customerQuery: "" },
       },
       adminSelectedReportSessionId: null,
       shiftChecklists: {},
@@ -301,9 +300,9 @@ import {
       },
       chartRangeByRole: { admin: "week", caregiver: "week", client: "week" },
       objectiveReportByRole: {
-        admin: { range: "week", anchorDate: "", granularity: "both", assignmentId: null },
-        caregiver: { range: "week", anchorDate: "", granularity: "both", assignmentId: null },
-        client: { range: "week", anchorDate: "", granularity: "both", assignmentId: null },
+        admin: { granularity: "both", assignmentId: null, customerQuery: "" },
+        caregiver: { granularity: "both", assignmentId: null, customerQuery: "" },
+        client: { granularity: "both", assignmentId: null, customerQuery: "" },
       },
       adminSelectedReportSessionId: null,
       shiftChecklists: {},
@@ -3127,15 +3126,42 @@ import {
 
   function objectiveReportPreferences(role = state.role) {
     state.objectiveReportByRole ||= {};
-    state.objectiveReportByRole[role] ||= { range: "week", anchorDate: "", granularity: "both", assignmentId: null };
+    const current = state.objectiveReportByRole[role] || {};
+    state.objectiveReportByRole[role] = {
+      granularity: ["daily", "hourly", "both"].includes(current.granularity) ? current.granularity : "both",
+      assignmentId: current.assignmentId || null,
+      customerQuery: role === "admin" ? String(current.customerQuery || "") : "",
+    };
     return state.objectiveReportByRole[role];
   }
 
   function assignmentHasReportHistory(assignment) {
     if (!assignment?.id) return false;
-    return assignmentHasCareHistory(assignment)
+    const hasProvidedSession = (state.careSessions || []).some((session) => session.assignmentId === assignment.id
+      && (["IN_PROGRESS", "COMPLETED"].includes(String(session.status || "").toUpperCase()) || Boolean(session.startedAt)));
+    return hasProvidedSession
       || state.events.some((event) => event.assignmentId === assignment.id)
       || state.reports.some((report) => report.assignmentId === assignment.id);
+  }
+
+  function assignmentReportPeriodHasStarted(assignment, referenceDate = new Date()) {
+    const startsAt = new Date(adjustmentTargetStart(assignment));
+    return !Number.isNaN(startsAt.getTime()) && startsAt.getTime() <= referenceDate.getTime();
+  }
+
+  function assignmentCanProduceObjectiveReport(assignment, role) {
+    const hasHistory = assignmentHasReportHistory(assignment);
+    const removed = Boolean(assignmentAdministrativeRemovalDate(assignment));
+    if (removed) return role === "admin" && hasHistory;
+    if (String(assignment?.status || "").toUpperCase() === "CANCELLED") return hasHistory;
+    return hasHistory || assignmentReportPeriodHasStarted(assignment);
+  }
+
+  function assignmentAdministrativeRemovalDate(assignment) {
+    if (!assignment) return null;
+    return assignment.administrativelyRemovedAt
+      || state.serviceRequests.find((request) => request.id === assignment.serviceRequestId)?.administrativelyRemovedAt
+      || null;
   }
 
   function objectiveReportAssignments(role, serviceType = null) {
@@ -3144,12 +3170,11 @@ import {
     return state.assignments
       .filter((assignment) => {
         if (!clientById(assignment.clientId)) return false;
-        if (assignment.status === "CANCELLED" && !assignmentHasReportHistory(assignment)) return false;
+        if (!assignmentCanProduceObjectiveReport(assignment, role)) return false;
         if (serviceType && assignmentServiceType(assignment) !== serviceType) return false;
         if (role === "admin") return true;
         if (role === "caregiver") {
-          return assignment.status !== "CANCELLED"
-            && assignment.caregiverUserId === user.id
+          return assignment.caregiverUserId === user.id
             && caregiverCanViewClientBrief(assignment);
         }
         if (role === "client") {
@@ -3161,8 +3186,26 @@ import {
       .sort((first, second) => new Date(second.startAt) - new Date(first.startAt));
   }
 
-  function objectiveReportAssignment(role, serviceType = null) {
-    const assignments = objectiveReportAssignments(role, serviceType);
+  function objectiveReportSearchAssignments(assignments, query = "") {
+    const normalizedQuery = normalizeDirectorySearch(query);
+    if (!normalizedQuery) return assignments;
+    return assignments.filter((assignment) => {
+      const client = clientById(assignment.clientId);
+      const account = client ? state.users.find((user) => user.id === client.userId || client.memberUserIds?.includes(user.id)) : null;
+      const searchable = [
+        client?.motherName,
+        babyNameFor(assignment, client),
+        account?.email,
+        assignment.caregiverName,
+        serviceMetaFor(assignmentServiceType(assignment)).label,
+        assignment.id,
+      ].filter(Boolean).join(" ");
+      return normalizeDirectorySearch(searchable).includes(normalizedQuery);
+    });
+  }
+
+  function objectiveReportAssignment(role, serviceType = null, candidateAssignments = null) {
+    const assignments = candidateAssignments || objectiveReportAssignments(role, serviceType);
     const preferences = objectiveReportPreferences(role);
     const preferredId = role === "admin" ? (preferences.assignmentId || state.adminSelectedAssignmentId) : preferences.assignmentId;
     if (preferredId) {
@@ -3267,10 +3310,11 @@ import {
 
   function objectiveReportKpisMarkup(model) {
     const totals = model.totals;
+    const exceptionDays = Math.max(0, Number(totals.serviceDays || 0) - Number(totals.scheduledServiceDays || 0));
     const common = [
-      ["관리 기간", `${model.dateKeys.length}일 중 ${totals.recordedDays}일 기록`, "관리사가 기록을 남긴 날짜"],
-      ["관리사의 기록 횟수", `${totals.eventCount}건`, "선택한 서비스와 기간의 전체 기록"],
-      ["완료된 근무시간", reportDurationValue(totals.careMinutes), totals.sessionDays ? `완료된 근무 ${totals.sessionDays}일 기준` : "시작·종료 시간이 모두 입력된 근무 없음"],
+      ["리포트 표시일", `${model.dateKeys.length}일`, `예정 서비스일 ${totals.scheduledServiceDays || 0}일 · 추가·소급 ${exceptionDays}일`],
+      ["관리사의 기록 횟수", `${totals.eventCount}건`, "선택한 서비스 배치의 전체 기록"],
+      ["완료된 근무시간", reportDurationValue(totals.careMinutes), totals.sessionDays ? `완료된 근무 ${totals.sessionDays}일 기준 · 케어 확인 ${totals.providedSessionDays || 0}일` : `완료 시간 없음 · 케어 확인 ${totals.providedSessionDays || 0}일`],
     ];
     const serviceKpis = model.serviceType === "BABYSITTING"
       ? [["식사·간식 기록", `${totals.mealCount}건`, "관리사가 입력한 횟수"], ["놀이·생활 기록", `${totals.activityCount}건`, "놀이·산책·안전 확인 등"]]
@@ -3278,16 +3322,24 @@ import {
     return `<div class="objective-report-kpis">${[...common, ...serviceKpis].map(([label, value, note]) => `<div class="objective-report-kpi"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(note)}</small></div>`).join("")}</div>`;
   }
 
+  function objectiveServiceDayStatus(day) {
+    if (day.sessionCount > 0 && day.eventCount > 0) return day.isExceptionServiceDay ? "추가 케어·기록" : "케어·기록 확인";
+    if (day.sessionCount > 0) return day.isExceptionServiceDay ? "추가 케어 · 기록 0건" : "케어 확인 · 기록 0건";
+    if (day.eventCount > 0) return day.isExceptionServiceDay ? "추가·소급 기록" : "기록만 확인";
+    return "예정 서비스일 · 기록 0건";
+  }
+
   function objectiveReportDailyTableMarkup(model) {
     const babysitting = model.serviceType === "BABYSITTING";
     const table = (header, rows, ariaLabel) => `<div class="objective-report-table-wrap"><table class="objective-report-table" aria-label="${escapeHtml(ariaLabel)}"><thead><tr>${header.map((label) => `<th scope="col">${escapeHtml(label)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((value, index) => `<td${index === 0 ? ' data-label="날짜"' : ""}>${escapeHtml(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
     if (babysitting) {
-      const header = ["날짜", "근무시간", "식사", "섭취 상태", "놀이·생활", "기록 종류", "안전 확인", "관리사 기록 횟수"];
-      const rows = model.daily.map((day) => [day.dateLabel, reportDurationValue(day.careMinutes), `${day.mealCount}건`, objectiveDistributionLabel(day.appetiteDistribution), `${day.activityCount}건`, objectiveDistributionLabel(day.activityDistribution), `${day.safetyCount}건`, `${day.eventCount}건`]);
+      const header = ["날짜", "서비스 확인", "근무시간", "식사", "섭취 상태", "놀이·생활", "기록 종류", "안전 확인", "관리사 기록 횟수"];
+      const rows = model.daily.map((day) => [day.dateLabel, objectiveServiceDayStatus(day), reportDurationValue(day.careMinutes), `${day.mealCount}건`, objectiveDistributionLabel(day.appetiteDistribution), `${day.activityCount}건`, objectiveDistributionLabel(day.activityDistribution), `${day.safetyCount}건`, `${day.eventCount}건`]);
       return table(header, rows, "베이비시팅 날짜별 케어 기록");
     }
     const activityRows = model.daily.map((day) => [
       day.dateLabel,
+      objectiveServiceDayStatus(day),
       reportDurationValue(day.careMinutes),
       `${day.feedingCount}건`,
       day.feedingMl === null ? "기록 없음" : `${day.feedingMl} ml`,
@@ -3303,11 +3355,11 @@ import {
       `${day.motherCareCount}건`,
       `${day.eventCount}건`,
     ]);
-    return `<div class="objective-report-table-group"><h3>케어 활동</h3>${table(["날짜", "근무시간", "수유", "입력된 수유량", "수유량 미입력", "기저귀(소변/대변)", "수면"], activityRows, "산후조리 날짜별 케어 활동")}<h3>측정·지원 기록</h3>${table(["날짜", "체온 최저/평균/최고", "마지막 체중", "목욕", "산모 케어", "관리사 기록 횟수"], measurementRows, "산후조리 날짜별 측정 및 지원 기록")}</div>`;
+    return `<div class="objective-report-table-group"><h3>케어 활동</h3>${table(["날짜", "서비스 확인", "근무시간", "수유", "입력된 수유량", "수유량 미입력", "기저귀(소변/대변)", "수면"], activityRows, "산후조리 날짜별 케어 활동")}<h3>측정·지원 기록</h3>${table(["날짜", "체온 최저/평균/최고", "마지막 체중", "목욕", "산모 케어", "관리사 기록 횟수"], measurementRows, "산후조리 날짜별 측정 및 지원 기록")}</div>`;
   }
 
   function objectiveReportHourlyTableMarkup(model) {
-    if (!model.events.length) return '<div class="objective-report-empty">선택 기간에 표시할 시간별 기록이 없습니다.</div>';
+    if (!model.events.length) return '<div class="objective-report-empty">선택한 서비스 배치에 표시할 시간별 기록이 없습니다.</div>';
     const rows = model.events.map((event) => {
       const meta = EVENT_META[event.type] || EVENT_META.note;
       const eventTimeZone = objectiveEventTimeZone(event);
@@ -3348,41 +3400,66 @@ import {
     return `<div class="objective-report-charts">${charts.map((chart) => `<article class="objective-report-chart"><h3>${escapeHtml(chart.title)}</h3><p class="objective-report-legend">${escapeHtml(chart.subtitle)} · 표시 없음은 기록 없음</p>${chart.type === "line" ? objectiveLineChartSvg(model.daily, chart.accessor, { ariaLabel: chart.title, valueFormat: chart.formatter, axisFormat: chart.axisFormat, minimumPadding: chart.minimumPadding, color: chart.color, empty: chart.empty }) : objectiveBarChartSvg(model.daily, chart.accessor, { ariaLabel: chart.title, valueFormat: chart.formatter, color: chart.color, empty: chart.empty })}</article>`).join("")}</div>`;
   }
 
-  function objectiveReportBuilderMarkup(role, serviceType, assignment, assignments, model) {
+  function objectiveReportCustomerSearchMarkup(preferences, resultCount, totalCount) {
+    const query = String(preferences.customerQuery || "");
+    return `<form class="objective-report-customer-search" data-objective-report-customer-search><div class="field"><label for="objective-report-customer-query">고객 검색</label><div class="objective-report-search-control"><input id="objective-report-customer-query" name="customerQuery" type="search" value="${escapeHtml(query)}" placeholder="고객명·아기 이름·이메일 검색" autocomplete="off"/><button type="submit" class="secondary-button mini-button">검색</button>${query ? '<button type="button" class="text-button" data-clear-objective-report-search>초기화</button>' : ""}</div><small>${query ? `검색 결과 ${resultCount}개 배치 · 전체 ${totalCount}개` : `조회 가능한 전체 서비스 배치 ${totalCount}개`}</small></div></form>`;
+  }
+
+  function objectiveReportSearchEmptyMarkup(preferences, totalCount) {
+    return `<section class="objective-report-builder report-screen-only" aria-label="케어 리포트 고객 검색"><div class="section-header"><div><p class="eyebrow">CARE REPORT</p><h3>고객별 서비스 배치 찾기</h3><p>고객명, 아기 이름 또는 이메일로 서비스 기록을 빠르게 찾을 수 있습니다.</p></div><span class="status-chip">관리자 전체 조회</span></div>${objectiveReportCustomerSearchMarkup(preferences, 0, totalCount)}<div class="empty-state compact"><strong>검색 조건에 맞는 서비스 배치가 없습니다.</strong><span>검색어를 바꾸거나 초기화한 뒤 다시 확인해 주세요.</span></div></section>`;
+  }
+
+  function objectiveReportAssignmentPeriod(assignment) {
+    const startDate = objectiveDateKey(assignment.startAt, OBJECTIVE_REPORT_TIME_ZONE) || assignment.contractStartDate;
+    const endDate = objectiveDateKey(assignment.endAt, OBJECTIVE_REPORT_TIME_ZONE) || assignment.contractEndDate;
+    return `${objectiveDateLabel(startDate)}–${objectiveDateLabel(endDate)}`;
+  }
+
+  function objectiveReportBuilderMarkup(role, serviceType, assignment, assignments, model, options = {}) {
     const preferences = objectiveReportPreferences(role);
+    const totalCount = Number(options.totalCount ?? assignments.length);
     const assignmentOptions = assignments.map((item) => {
       const itemClient = clientById(item.clientId);
       const itemBaby = babyNameFor(item, itemClient) || "아이";
-      return `<option value="${item.id}" ${item.id === assignment.id ? "selected" : ""}>${escapeHtml(serviceMetaFor(item.serviceType).label)} · ${escapeHtml(itemClient?.motherName || "고객")} / ${escapeHtml(itemBaby)} · ${formatDate(item.startAt)}</option>`;
+      const period = objectiveReportAssignmentPeriod(item);
+      const auditLabel = assignmentAdministrativeRemovalDate(item) ? " · 삭제 이력" : "";
+      return `<option value="${item.id}" ${item.id === assignment.id ? "selected" : ""}>${escapeHtml(itemClient?.motherName || "고객")} / ${escapeHtml(itemBaby)} · ${escapeHtml(serviceMetaFor(item.serviceType).label)} · ${escapeHtml(period)}${auditLabel}</option>`;
     }).join("");
-    return `<section class="objective-report-builder report-screen-only" aria-label="케어 리포트 설정"><div class="section-header"><div><p class="eyebrow">CARE REPORT</p><h3>기간별 케어 리포트 보기</h3><p>관리사가 입력한 내용만 계산하며, 직접 작성한 메모에서 수치나 원인을 임의로 판단하지 않습니다.</p></div><span class="status-chip">${escapeHtml(serviceMetaFor(serviceType).label)}</span></div><div class="report-builder-fields"><div class="field"><label for="objective-report-assignment">서비스 선택</label><select id="objective-report-assignment" data-objective-report-assignment>${assignmentOptions}</select></div><div class="field"><label for="objective-report-anchor">조회 종료일</label><input id="objective-report-anchor" type="date" value="${escapeHtml(model.anchorDate)}" data-objective-report-anchor/></div><div class="field"><label>보고 싶은 기간</label><div class="report-range-tabs" role="group" aria-label="보고 싶은 기간">${Object.entries(OBJECTIVE_REPORT_RANGES).map(([id, info]) => `<button type="button" data-objective-report-range="${id}" class="${model.range === id ? "active" : ""}" aria-pressed="${model.range === id}">${escapeHtml(info.label)}</button>`).join("")}</div></div></div><div class="report-builder-fields"><div class="field"><label>기록 시간 기준</label><div class="status-chip">${escapeHtml(objectiveReportTimeBasisLabel(model))}</div></div><div class="field"><label>보고서 보기</label><div class="report-density-tabs" role="group" aria-label="보고서 보기">${[["daily", "날짜별"], ["hourly", "시간별"], ["both", "모두"]].map(([id, label]) => `<button type="button" data-objective-report-granularity="${id}" class="${preferences.granularity === id ? "active" : ""}" aria-pressed="${preferences.granularity === id}">${label}</button>`).join("")}</div></div><div class="report-builder-actions"><button type="button" class="primary-button" data-print-objective-report>PDF로 저장·인쇄</button></div></div></section>`;
+    const batchPeriod = objectiveReportAssignmentPeriod(assignment);
+    const administrativeRemovalDate = assignmentAdministrativeRemovalDate(assignment);
+    const auditNotice = role === "admin" && administrativeRemovalDate
+      ? `<div class="status-banner warning"><strong>삭제 이력 배치</strong><span>${formatDateTime(administrativeRemovalDate)} 관리자 삭제 처리 후 감사 목적으로 보존된 리포트입니다.</span></div>`
+      : "";
+    const adminSearch = role === "admin" ? objectiveReportCustomerSearchMarkup(preferences, assignments.length, totalCount) : "";
+    return `<section class="objective-report-builder report-screen-only" aria-label="케어 리포트 설정"><div class="section-header"><div><p class="eyebrow">CARE REPORT</p><h3>서비스 배치별 케어 리포트</h3><p>선택한 배치의 서비스 요일과 실제 케어·기록이 있는 날짜만 정리합니다. 비서비스일은 표시하지 않습니다.</p></div><span class="status-chip">${escapeHtml(serviceMetaFor(serviceType).label)}</span></div>${adminSearch}${auditNotice}<div class="report-builder-fields"><div class="field report-batch-selector"><label for="objective-report-assignment">서비스 배치 선택</label><select id="objective-report-assignment" data-objective-report-assignment>${assignmentOptions}</select><small>고객과 관리사는 본인에게 연결된 배치만 볼 수 있습니다.</small></div><div class="field"><label>배치 서비스 기간</label><div class="report-batch-summary"><strong>${escapeHtml(batchPeriod)}</strong><span>배치 ${escapeHtml(String(assignment.id).slice(0, 8).toUpperCase())}</span></div></div><div class="field"><label>리포트 표시일</label><div class="report-batch-summary"><strong>${model.dateKeys.length}일</strong><span>서비스 요일·실제 케어 기록 기준</span></div></div></div><div class="report-builder-fields"><div class="field"><label>기록 시간 기준</label><div class="status-chip">${escapeHtml(objectiveReportTimeBasisLabel(model))}</div></div><div class="field"><label>보고서 보기</label><div class="report-density-tabs" role="group" aria-label="보고서 보기">${[["daily", "날짜별"], ["hourly", "시간별"], ["both", "모두"]].map(([id, label]) => `<button type="button" data-objective-report-granularity="${id}" class="${preferences.granularity === id ? "active" : ""}" aria-pressed="${preferences.granularity === id}">${label}</button>`).join("")}</div></div><div class="report-builder-actions"><button type="button" class="primary-button" data-print-objective-report="${escapeHtml(assignment.id)}">PDF로 저장·인쇄</button></div></div></section>`;
   }
 
   function objectiveReportMarkup(assignment, client, model, role = state.role) {
     const preferences = objectiveReportPreferences(role);
     const babyName = babyNameFor(assignment, client) || "아이";
     const generatedAtDate = new Date();
-    const reportId = `LIVE-${String(assignment.id).slice(0, 8).toUpperCase()}-${model.fromDate.replaceAll("-", "")}-${model.toDate.replaceAll("-", "")}-${generatedAtDate.getTime().toString(36).toUpperCase()}`;
+    const reportFrom = model.fromDate || objectiveDateKey(assignment.startAt);
+    const reportTo = model.toDate || objectiveDateKey(assignment.endAt);
+    const reportId = `BATCH-${String(assignment.id).slice(0, 8).toUpperCase()}-${String(reportFrom).replaceAll("-", "")}-${String(reportTo).replaceAll("-", "")}-${generatedAtDate.getTime().toString(36).toUpperCase()}`;
     const generatedAtTimeZone = deviceTimeZone();
     const generatedAt = generatedAtDate.toLocaleString("ko-KR", { timeZone: generatedAtTimeZone });
     const reportTimeBasis = objectiveReportTimeBasisLabel(model);
     const showDaily = preferences.granularity === "daily" || preferences.granularity === "both";
     const showHourly = preferences.granularity === "hourly" || preferences.granularity === "both";
-    return `<article class="objective-report" aria-labelledby="objective-report-title"><header class="objective-report-banner"><div class="report-print-only">${brandLogoMarkup(true)}</div><p class="eyebrow">PROMOMS CARE REPORT</p><h1 id="objective-report-title">${escapeHtml(serviceMetaFor(model.serviceType).label)} 기간별 케어 리포트</h1><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyName)} · ${escapeHtml(objectiveDateLabel(model.fromDate))}–${escapeHtml(objectiveDateLabel(model.toDate))}</p><small>리포트 번호 ${escapeHtml(reportId)} · 기록 시간 ${escapeHtml(reportTimeBasis)} · 생성 ${escapeHtml(generatedAt)} (${escapeHtml(serviceTimeZoneLabel(generatedAtTimeZone))})</small></header><div class="objective-report-banner"><strong>조회한 기간과 기록</strong><p>${model.dateKeys.length}일 중 ${model.totals.recordedDays}일 기록 · 관리사 기록 ${model.totals.eventCount}건 · 완료된 근무시간 ${model.totals.careMinutes === null ? "기록 없음" : reportDurationValue(model.totals.careMinutes)}</p><small>날짜와 시간은 각 기록을 입력한 기기의 현지시간을 기준으로 표시합니다. ‘기록 없음’은 실제 숫자 0과 다릅니다. 메모가 포함된 ${model.dataQuality.freeTextExcludedFromMetrics}건은 아래 상세 기록에 그대로 표시했습니다. 메모 속 숫자는 합계·평균 계산에 사용하지 않았습니다. 숫자로 읽을 수 없는 입력 ${model.dataQuality.invalidMetricCount}건.</small></div>${objectiveReportKpisMarkup(model)}<section class="objective-report-section"><h2>기간별 기록 요약</h2><div class="objective-report-facts">${model.facts.map((fact) => `<p class="objective-report-fact">${escapeHtml(fact)}</p>`).join("")}</div></section><section class="objective-report-section"><h2>날짜별 변화</h2><p class="objective-report-legend">각 기록을 입력한 기기의 현지날짜별로 값을 표시합니다. 정상·위험·호전·악화 여부를 판단하지 않습니다.</p>${objectiveReportChartsMarkup(model)}</section>${showDaily ? `<section class="objective-report-section"><h2>날짜별 기록</h2><p class="objective-report-legend">각 기록의 현지날짜를 기준으로 측정 단위와 횟수를 표시하며, 입력된 값이 없는 항목은 ‘기록 없음’으로 표시합니다.</p>${objectiveReportDailyTableMarkup(model)}</section>` : ""}${showHourly ? `<section class="objective-report-section"><h2>시간별 상세 기록</h2><p class="objective-report-legend">관리사가 입력한 내용과 직접 작성한 메모에 각 기록 기기의 현지시간과 시간대를 함께 표시합니다.</p>${objectiveReportHourlyTableMarkup(model)}</section>` : ""}<p class="objective-report-disclaimer"><strong>중요:</strong> 이 문서는 관리사가 입력한 내용을 합계·평균으로 정리한 리포트입니다. 의료 진단, 성장 판정, 건강 상태 평가 또는 원인 추정을 제공하지 않습니다. 판단이 필요한 경우 해당 분야의 자격을 갖춘 전문가에게 문의하세요.</p><footer class="objective-report-footer"><p>ProMoms · 엄마 곁의 전문가</p><p>${escapeHtml(reportId)} · 계산 기준 1.0 · ${escapeHtml(model.fromDate)}–${escapeHtml(model.toDate)}</p></footer></article>`;
+    return `<article class="objective-report" aria-labelledby="objective-report-title"><header class="objective-report-banner"><div class="report-print-only">${brandLogoMarkup(true)}</div><p class="eyebrow">PROMOMS CARE REPORT</p><h1 id="objective-report-title">${escapeHtml(serviceMetaFor(model.serviceType).label)} 서비스 배치 리포트</h1><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyName)} · ${escapeHtml(objectiveDateLabel(reportFrom))}–${escapeHtml(objectiveDateLabel(reportTo))}</p><small>배치 ${escapeHtml(String(assignment.id).slice(0, 8).toUpperCase())} · 리포트 번호 ${escapeHtml(reportId)} · 기록 시간 ${escapeHtml(reportTimeBasis)} · 생성 ${escapeHtml(generatedAt)} (${escapeHtml(serviceTimeZoneLabel(generatedAtTimeZone))})</small></header><div class="objective-report-banner"><strong>선택한 서비스 배치와 기록</strong><p>표시된 서비스일 ${model.dateKeys.length}일 · 기록이 있는 날 ${model.totals.recordedDays}일 · 관리사 기록 ${model.totals.eventCount}건 · 완료된 근무시간 ${model.totals.careMinutes === null ? "기록 없음" : reportDurationValue(model.totals.careMinutes)}</p><small>배치 안의 서비스 요일과 실제 케어·기록 날짜만 표시하며 비서비스일은 제외합니다. 날짜와 시간은 각 기록을 입력한 기기의 현지시간 기준입니다. ‘기록 없음’은 숫자 0과 다릅니다. 메모가 포함된 ${model.dataQuality.freeTextExcludedFromMetrics}건은 아래 상세 기록에 그대로 표시했고, 메모 속 숫자는 합계·평균에 사용하지 않았습니다. 숫자로 읽을 수 없는 입력 ${model.dataQuality.invalidMetricCount}건.</small></div>${objectiveReportKpisMarkup(model)}<section class="objective-report-section"><h2>서비스 배치 기록 요약</h2><div class="objective-report-facts">${model.facts.map((fact) => `<p class="objective-report-fact">${escapeHtml(fact)}</p>`).join("")}</div></section><section class="objective-report-section"><h2>서비스일별 변화</h2><p class="objective-report-legend">선택한 배치의 서비스일만 각 기록 기기의 현지날짜 기준으로 표시합니다. 정상·위험·호전·악화 여부를 판단하지 않습니다.</p>${objectiveReportChartsMarkup(model)}</section>${showDaily ? `<section class="objective-report-section"><h2>서비스일별 기록</h2><p class="objective-report-legend">비서비스일은 제외합니다. 포함된 서비스일에 입력값이 없는 항목은 ‘기록 없음’ 또는 0건으로 구분해 표시합니다.</p>${objectiveReportDailyTableMarkup(model)}</section>` : ""}${showHourly ? `<section class="objective-report-section"><h2>시간별 상세 기록</h2><p class="objective-report-legend">관리사가 입력한 내용과 직접 작성한 메모에 각 기록 기기의 현지시간과 시간대를 함께 표시합니다.</p>${objectiveReportHourlyTableMarkup(model)}</section>` : ""}<p class="objective-report-disclaimer"><strong>중요:</strong> 이 문서는 관리사가 입력한 내용을 합계·평균으로 정리한 리포트입니다. 의료 진단, 성장 판정, 건강 상태 평가 또는 원인 추정을 제공하지 않습니다. 판단이 필요한 경우 해당 분야의 자격을 갖춘 전문가에게 문의하세요.</p><footer class="objective-report-footer"><p>ProMoms · 엄마 곁의 전문가</p><p>${escapeHtml(reportId)} · 계산 기준 1.1 · ${escapeHtml(reportFrom)}–${escapeHtml(reportTo)}</p></footer></article>`;
   }
 
   function objectiveReportPage(role, serviceType, workspaceNav = "") {
     const assignments = objectiveReportAssignments(role, serviceType);
-    const assignment = objectiveReportAssignment(role, serviceType);
+    const assignment = objectiveReportAssignment(role, serviceType, assignments);
     if (!assignment) {
       const client = role === "client" ? clientForUser(authUser()?.id) : null;
-      return `<section class="page">${demoBanner()}${workspaceNav}${pageHeading("CARE REPORT", "기간별 케어 리포트", "확인할 수 있는 서비스 기록을 날짜별·시간별로 정리합니다.")}<article class="card card-pad"><div class="empty-state"><strong>리포트를 만들 수 있는 서비스가 없습니다.</strong><span>서비스가 배정되고 관리사가 기록을 남기면 이곳에서 확인할 수 있습니다.</span></div></article>${client ? clientPublishedReportsMarkup(client.id, serviceType) : ""}</section>`;
+      return `<section class="page">${demoBanner()}${workspaceNav}${pageHeading("CARE REPORT", "서비스 배치별 케어 리포트", "본인에게 연결된 서비스 배치의 기록을 날짜별·시간별로 정리합니다.")}<article class="card card-pad"><div class="empty-state"><strong>리포트를 만들 수 있는 서비스 배치가 없습니다.</strong><span>서비스 기간이 시작되면 이곳에서 배치를 선택할 수 있습니다.</span></div></article>${client ? clientPublishedReportsMarkup(client.id, serviceType) : ""}</section>`;
     }
     const client = clientById(assignment.clientId);
     if (!client || !objectiveReportAssignments(role, serviceType).some((item) => item.id === assignment.id)) return `<section class="page">${demoBanner()}${workspaceNav}<div class="access-denied"><strong>접근 권한이 없습니다.</strong><span>본인 또는 권한이 확인된 배정의 기록만 볼 수 있습니다.</span></div></section>`;
-    const preferences = objectiveReportPreferences(role);
-    const model = buildObjectiveReportModel({ assignment, events: state.events, sessions: state.careSessions || [], range: preferences.range, anchorDate: preferences.anchorDate });
-    return `<section class="page report-page">${demoBanner()}${workspaceNav}${pageHeading("CARE REPORT", "기간별 케어 기록", "관리사가 남긴 기록을 날짜별·시간별 표와 변화 그래프로 정리합니다.")}${objectiveReportBuilderMarkup(role, assignmentServiceType(assignment), assignment, assignments, model)}${objectiveReportMarkup(assignment, client, model, role)}${role === "client" ? clientPublishedReportsMarkup(client.id, serviceType) : ""}</section>`;
+    const model = buildObjectiveReportModel({ assignment, events: state.events, sessions: state.careSessions || [] });
+    return `<section class="page report-page">${demoBanner()}${workspaceNav}${pageHeading("CARE REPORT", "서비스 배치별 케어 기록", "선택한 서비스 배치의 서비스일만 날짜별·시간별 표와 변화 그래프로 정리합니다.")}${objectiveReportBuilderMarkup(role, assignmentServiceType(assignment), assignment, assignments, model)}${objectiveReportMarkup(assignment, client, model, role)}${role === "client" ? clientPublishedReportsMarkup(client.id, serviceType) : ""}</section>`;
   }
 
   function careSessionReportPreviewMarkup(client, assignment, session) {
@@ -3403,14 +3480,18 @@ import {
   }
 
   function adminReports() {
-    const reportAssignments = objectiveReportAssignments("admin");
     const reportPreferences = objectiveReportPreferences("admin");
+    const allReportAssignments = objectiveReportAssignments("admin");
+    const reportAssignments = objectiveReportSearchAssignments(allReportAssignments, reportPreferences.customerQuery);
     const assignment = reportAssignments.find((item) => item.id === (reportPreferences.assignmentId || state.adminSelectedAssignmentId))
       || reportAssignments.find((item) => item.clientId === state.adminSelectedClientId)
       || reportAssignments[0];
     const client = assignment ? clientById(assignment.clientId) : null;
+    if (allReportAssignments.length && !reportAssignments.length) {
+      return `<section class="page report-page">${demoBanner()}${pageHeading("CARE REPORTS", "전체 고객 서비스 배치 리포트", "고객을 검색해 서비스 배치를 선택하고 해당 배치의 서비스일 기록을 확인합니다.")}${objectiveReportSearchEmptyMarkup(reportPreferences, allReportAssignments.length)}</section>`;
+    }
     if (!assignment || !client) {
-      return `<section class="page report-page">${demoBanner()}${pageHeading("CARE REPORTS", "전체 산모·아기 차트와 리포트", "서비스 고객과 케어 기록이 생성되면 리포트를 검토하고 전달할 수 있습니다.")}<article class="card card-pad"><div class="empty-state"><span class="empty-icon">◇</span><strong>리포트를 생성할 고객이 없습니다.</strong><span>회원 관리에서 고객 가입 상태를 확인하고, 승인된 서비스를 일정에 배치해 주세요.</span></div></article></section>`;
+      return `<section class="page report-page">${demoBanner()}${pageHeading("CARE REPORTS", "전체 고객 서비스 배치 리포트", "서비스 고객과 케어 기록이 생성되면 배치별 리포트를 검토하고 전달할 수 있습니다.")}<article class="card card-pad"><div class="empty-state"><span class="empty-icon">◇</span><strong>리포트를 생성할 서비스 배치가 없습니다.</strong><span>서비스 기간이 시작된 배치가 이곳에 표시됩니다.</span></div></article></section>`;
     }
     const babysitting = assignmentServiceType(assignment) === "BABYSITTING";
     const reportBabyName = babyNameFor(assignment, client) || "아이";
@@ -3430,9 +3511,9 @@ import {
       : reportSession
         ? `<button class="primary-button" data-publish-report="${assignment.id}" data-care-session-id="${reportSession.id}">리포트 생성·고객에게 보내기</button>`
         : '<span class="status-chip gold">완료된 케어 세션에서만 발행 가능</span>';
-    const objectiveModel = buildObjectiveReportModel({ assignment, events: state.events, sessions: state.careSessions || [], range: reportPreferences.range, anchorDate: reportPreferences.anchorDate });
-    return `<section class="page report-page">${demoBanner()}${pageHeading("CARE REPORTS", "기간별 케어 기록과 방문별 보관본", "기간별 기록을 확인·PDF로 저장하고, 완료된 근무 1건은 수정되지 않는 보관본으로 고객에게 발행합니다.")}
-      ${objectiveReportBuilderMarkup("admin", assignmentServiceType(assignment), assignment, reportAssignments, objectiveModel)}
+    const objectiveModel = buildObjectiveReportModel({ assignment, events: state.events, sessions: state.careSessions || [] });
+    return `<section class="page report-page">${demoBanner()}${pageHeading("CARE REPORTS", "서비스 배치 기록과 방문별 보관본", "고객을 검색해 배치별 기록을 확인·PDF로 저장하고, 완료된 근무 1건은 수정되지 않는 보관본으로 발행합니다.")}
+      ${objectiveReportBuilderMarkup("admin", assignmentServiceType(assignment), assignment, reportAssignments, objectiveModel, { totalCount: allReportAssignments.length })}
       ${objectiveReportMarkup(assignment, client, objectiveModel, "admin")}
       <section class="card card-pad visit-report-panel report-screen-only" style="margin-top:22px"><div class="section-header"><div><p class="eyebrow">WORKDAY CARE REPORT</p><h3>근무일별 보관본 확인·발행</h3><p>기간별 리포트와 별도로, 완료된 근무일 1건의 기록을 고객에게 전달합니다. 발행 후 내용은 바뀌지 않습니다.</p></div>${serviceBadgeMarkup(assignmentServiceType(assignment))}</div><div class="report-toolbar">${reportSessionOptions}<div class="report-actions">${reportAction}</div></div>
       <header class="print-report-header"><div class="brand-mark">${brandLogoMarkup()}</div><div><strong>ProMoms CARE REPORT</strong><span>${reportSession?.serviceDate ? formatDate(`${reportSession.serviceDate}T12:00:00`) : "완료된 근무일 선택 필요"} · ${escapeHtml(client.motherName)} / ${escapeHtml(reportBabyName)}</span></div></header>
@@ -4030,7 +4111,6 @@ import {
     document.querySelectorAll("[data-objective-report-assignment]").forEach((select) => select.addEventListener("change", () => {
       const preferences = objectiveReportPreferences(state.role);
       preferences.assignmentId = select.value;
-      preferences.anchorDate = "";
       if (state.role === "admin") {
         state.adminSelectedAssignmentId = select.value;
         state.adminSelectedReportSessionId = null;
@@ -4042,8 +4122,20 @@ import {
       render();
     }));
 
-    document.querySelectorAll("[data-objective-report-range]").forEach((button) => button.addEventListener("click", () => {
-      objectiveReportPreferences(state.role).range = button.dataset.objectiveReportRange;
+    document.querySelectorAll("[data-objective-report-customer-search]").forEach((form) => form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const preferences = objectiveReportPreferences("admin");
+      preferences.customerQuery = String(new FormData(form).get("customerQuery") || "").trim();
+      preferences.assignmentId = null;
+      state.adminSelectedAssignmentId = null;
+      state.adminSelectedClientId = null;
+      saveState();
+      render();
+    }));
+
+    document.querySelectorAll("[data-clear-objective-report-search]").forEach((button) => button.addEventListener("click", () => {
+      const preferences = objectiveReportPreferences("admin");
+      preferences.customerQuery = "";
       saveState();
       render();
     }));
@@ -4054,15 +4146,9 @@ import {
       render();
     }));
 
-    document.querySelectorAll("[data-objective-report-anchor]").forEach((input) => input.addEventListener("change", () => {
-      objectiveReportPreferences(state.role).anchorDate = input.value;
-      saveState();
-      render();
-    }));
-
     document.querySelectorAll("[data-print-objective-report]").forEach((button) => button.addEventListener("click", () => {
       const previousTitle = document.title;
-      document.title = `ProMoms-Objective-Care-Report-${objectiveReportPreferences(state.role).anchorDate || localDateKey(new Date())}`;
+      document.title = `ProMoms-Care-Report-${button.dataset.printObjectiveReport || localDateKey(new Date())}`;
       window.print();
       window.setTimeout(() => { document.title = previousTitle; }, 500);
     }));

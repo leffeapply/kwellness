@@ -1,11 +1,5 @@
 export const OBJECTIVE_REPORT_TIME_ZONE = "America/New_York";
 
-export const OBJECTIVE_REPORT_RANGES = Object.freeze({
-  day: { days: 1, label: "1일" },
-  week: { days: 7, label: "7일" },
-  month: { days: 30, label: "30일" },
-});
-
 const DATE_LABEL_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "UTC",
   year: "numeric",
@@ -112,21 +106,101 @@ export function objectiveEventDateKey(event) {
     : objectiveDateKey(event?.at, objectiveEventTimeZone(event));
 }
 
-function normalizedAnchorDate(anchorDate, events = []) {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(anchorDate || ""))) return anchorDate;
-  const latestEvent = [...events]
-    .filter((event) => event?.at && !Number.isNaN(new Date(event.at).getTime()))
-    .sort((first, second) => new Date(second.at) - new Date(first.at))[0];
-  return latestEvent ? objectiveEventDateKey(latestEvent) : objectiveDateKey(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone);
+function normalizedDateKey(value, timeZone = OBJECTIVE_REPORT_TIME_ZONE) {
+  if (value === null || value === undefined || String(value).trim() === "") return "";
+  const candidate = String(value || "");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return candidate;
+  return objectiveDateKey(value, timeZone);
 }
 
-function dateKeysEndingAt(anchorDate, days) {
-  const anchor = new Date(`${anchorDate}T12:00:00Z`);
-  return Array.from({ length: days }, (_, index) => {
-    const date = new Date(anchor);
-    date.setUTCDate(anchor.getUTCDate() - (days - 1 - index));
-    return date.toISOString().slice(0, 10);
-  });
+function assignmentBoundaryDate(assignment, boundary) {
+  const isStart = boundary === "start";
+  const directValue = isStart ? assignment?.contractStartDate : assignment?.contractEndDate;
+  const timestampValue = isStart ? assignment?.startAt : assignment?.endAt;
+  // A contract can be split into multiple assignments during caregiver
+  // reassignment. The assignment timestamps therefore define this report
+  // batch; contract dates are only a legacy fallback.
+  return normalizedDateKey(timestampValue, assignment?.serviceTimeZone)
+    || normalizedDateKey(directValue);
+}
+
+const KOREAN_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+const DEFAULT_SERVICE_DAYS = ["월", "화", "수", "목", "금"];
+
+function clockMinutes(value) {
+  const match = /^(\d{2}):(\d{2})/.exec(String(value || ""));
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function timestampClockMinutes(value, timeZone = OBJECTIVE_REPORT_TIME_ZONE) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: normalizedReportTimeZone(timeZone),
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  const minutes = clockMinutes(`${values.hour}:${values.minute}`);
+  return minutes === null ? null : minutes + Number(values.second || 0) / 60;
+}
+
+function assignmentBoundaryAllowsScheduledDate(assignment, dateKey, startDate, endDate) {
+  const timeZone = assignment?.serviceTimeZone || OBJECTIVE_REPORT_TIME_ZONE;
+  if (dateKey === startDate && assignment?.startAt) {
+    const assignmentStartMinutes = timestampClockMinutes(assignment.startAt, timeZone);
+    const dailyEndMinutes = clockMinutes(assignment.dailyEnd);
+    if (assignmentStartMinutes !== null && dailyEndMinutes !== null && assignmentStartMinutes > dailyEndMinutes) return false;
+  }
+  if (dateKey === endDate && assignment?.endAt) {
+    const assignmentEndMinutes = timestampClockMinutes(assignment.endAt, timeZone);
+    const dailyStartMinutes = clockMinutes(assignment.dailyStart);
+    if (assignmentEndMinutes !== null && dailyStartMinutes !== null && assignmentEndMinutes < dailyStartMinutes) return false;
+  }
+  return true;
+}
+
+function scheduledServiceDateKeys(assignment) {
+  const startDate = assignmentBoundaryDate(assignment, "start");
+  const assignmentEndDate = assignmentBoundaryDate(assignment, "end");
+  const serviceTimeZone = normalizedReportTimeZone(assignment?.serviceTimeZone);
+  const todayDate = objectiveDateKey(new Date(), serviceTimeZone);
+  const endDate = assignmentEndDate && assignmentEndDate < todayDate ? assignmentEndDate : todayDate;
+  if (!startDate || !endDate || startDate > endDate) return [];
+  const configuredDays = Array.isArray(assignment?.daysOfWeek) && assignment.daysOfWeek.length
+    ? assignment.daysOfWeek
+    : DEFAULT_SERVICE_DAYS;
+  const allowedDays = new Set(configuredDays);
+  const cursor = new Date(`${startDate}T12:00:00Z`);
+  const end = new Date(`${endDate}T12:00:00Z`);
+  const dateKeys = [];
+  while (cursor <= end) {
+    const dateKey = cursor.toISOString().slice(0, 10);
+    if (allowedDays.has(KOREAN_WEEKDAYS[cursor.getUTCDay()]) && assignmentBoundaryAllowsScheduledDate(assignment, dateKey, startDate, assignmentEndDate)) dateKeys.push(dateKey);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dateKeys;
+}
+
+function sessionRepresentsProvidedCare(session) {
+  const status = String(session?.status || "").toUpperCase();
+  if (status === "CANCELLED") return false;
+  if (status === "IN_PROGRESS" || status === "COMPLETED") return true;
+  // A legacy row can retain SCHEDULED while still having a real start stamp.
+  // Only those started rows count; untouched future schedule rows do not.
+  return Boolean(session?.startedAt && !Number.isNaN(new Date(session.startedAt).getTime()));
+}
+
+function sessionServiceDateKey(session) {
+  return normalizedDateKey(session?.serviceDate)
+    || normalizedDateKey(session?.startedAt, session?.serviceTimeZone);
 }
 
 function countBy(values) {
@@ -144,7 +218,7 @@ export function objectiveDistributionLabel(distribution) {
 
 function sessionMinutesForDate(sessions, assignmentId, dateKey) {
   const durations = sessions
-    .filter((session) => session.assignmentId === assignmentId && session.serviceDate === dateKey && session.status === "COMPLETED" && session.startedAt && session.endedAt)
+    .filter((session) => session.assignmentId === assignmentId && sessionServiceDateKey(session) === dateKey && session.status === "COMPLETED" && session.startedAt && session.endedAt)
     .map((session) => Math.round((new Date(session.endedAt) - new Date(session.startedAt)) / 60000))
     .filter((minutes) => Number.isFinite(minutes) && minutes >= 0);
   return durations.length ? durations.reduce((sum, minutes) => sum + minutes, 0) : null;
@@ -167,8 +241,9 @@ function invalidMetricCount(events) {
   }, 0);
 }
 
-function aggregateDay(dateKey, events, sessions, assignmentId, serviceType) {
+function aggregateDay(dateKey, events, sessions, assignmentId, serviceType, scheduledDateKeySet) {
   const dayEvents = events.filter((event) => objectiveEventDateKey(event) === dateKey);
+  const daySessions = sessions.filter((session) => session.assignmentId === assignmentId && sessionRepresentsProvidedCare(session) && sessionServiceDateKey(session) === dateKey);
   const feeding = dayEvents.filter((event) => event.type === "feeding");
   const measuredFeeding = feeding.map((event) => measuredFeedingAmount(event)).filter((value) => value !== null);
   const diapers = dayEvents.filter((event) => event.type === "diaper");
@@ -180,6 +255,11 @@ function aggregateDay(dateKey, events, sessions, assignmentId, serviceType) {
   return {
     dateKey,
     dateLabel: objectiveDateLabel(dateKey),
+    isServiceDay: true,
+    isScheduledServiceDay: scheduledDateKeySet.has(dateKey),
+    isExceptionServiceDay: !scheduledDateKeySet.has(dateKey),
+    sessionCount: daySessions.length,
+    completedSessionCount: daySessions.filter((session) => session.status === "COMPLETED").length,
     events: dayEvents,
     eventCount: dayEvents.length,
     careMinutes: sessionMinutesForDate(sessions, assignmentId, dateKey),
@@ -223,6 +303,11 @@ function metricTotals(daily, events, serviceType) {
   const sleepValues = events.filter((event) => event.type === "sleep").map((event) => numericValue(event.data?.duration)).filter((value) => value !== null && value >= 0);
   return {
     serviceType,
+    serviceDays: daily.length,
+    scheduledServiceDays: daily.filter((day) => day.isScheduledServiceDay).length,
+    providedSessionDays: daily.filter((day) => day.sessionCount > 0).length,
+    recordOnlyDays: daily.filter((day) => day.sessionCount === 0 && day.eventCount > 0).length,
+    unrecordedScheduledDays: daily.filter((day) => day.isScheduledServiceDay && day.sessionCount === 0 && day.eventCount === 0).length,
     eventCount: events.length,
     recordedDays: daily.filter((day) => day.eventCount > 0).length,
     sessionDays: careMinuteValues.length,
@@ -259,20 +344,21 @@ function metricTotals(daily, events, serviceType) {
 
 function buildPostpartumFacts(totals) {
   const facts = [
-    `선택한 기간 중 ${totals.recordedDays}일에 관리사가 총 ${totals.eventCount}건의 케어 기록을 남겼습니다.`,
+    `선택한 서비스 배치의 서비스일 ${totals.serviceDays}일 중 ${totals.recordedDays}일에 관리사가 총 ${totals.eventCount}건의 케어 기록을 남겼습니다.`,
   ];
+  if (totals.unrecordedScheduledDays) facts.push(`기록이 없는 예정 서비스일은 ${totals.unrecordedScheduledDays}일이며, 해당 날짜는 관리사 기록 0건으로 표시했습니다.`);
   if (totals.careMinutes !== null) facts.push(`완료된 근무 ${totals.sessionDays}일의 시작·종료 시간을 더하면 총 ${totals.careMinutes}분입니다.`);
-  else facts.push("선택한 기간에는 시작 시간과 종료 시간이 모두 입력된 완료 근무가 없어 총 근무시간을 계산하지 않았습니다.");
+  else facts.push("선택한 서비스 배치에는 시작 시간과 종료 시간이 모두 입력된 완료 근무가 없어 총 근무시간을 계산하지 않았습니다.");
   if (totals.feedingCount) {
     facts.push(`수유 기록 ${totals.feedingCount}건 중 수유량이 입력된 ${totals.feedingMeasuredCount}건의 합계는 ${totals.feedingMl ?? 0}ml입니다. 수유량이 없는 ${totals.feedingUnmeasuredCount}건은 합계에 넣지 않았습니다.`);
-  } else facts.push("선택 기간에 수유 기록이 없습니다.");
+  } else facts.push("선택한 서비스 배치에 수유 기록이 없습니다.");
   if (totals.sleepCount) facts.push(`수면 기록 ${totals.sleepCount}건을 더하면 총 ${totals.sleepMinutes}분이며, 기록 1건당 평균은 ${totals.sleepAverage}분입니다.`);
-  else facts.push("선택 기간에 수면시간 기록이 없습니다.");
+  else facts.push("선택한 서비스 배치에 수면시간 기록이 없습니다.");
   if (totals.temperatureCount) facts.push(`체온은 ${totals.temperatureCount}회 측정했으며, 가장 낮은 값은 ${totals.temperatureMin.toFixed(1)}℃, 가장 높은 값은 ${totals.temperatureMax.toFixed(1)}℃, 측정값 평균은 ${totals.temperatureAverage.toFixed(1)}℃입니다.`);
-  else facts.push("선택 기간에 체온 측정 기록이 없습니다.");
+  else facts.push("선택한 서비스 배치에 체온 측정 기록이 없습니다.");
   if (totals.weightCount >= 2) facts.push(`체중은 ${totals.weightCount}회 측정했으며, 첫 측정값은 ${totals.firstWeight.toFixed(2)}kg, 마지막 측정값은 ${totals.lastWeight.toFixed(2)}kg입니다. 두 값의 차이는 ${totals.weightDelta > 0 ? "+" : ""}${totals.weightDelta.toFixed(2)}kg입니다.`);
   else if (totals.weightCount === 1) facts.push(`체중은 ${totals.lastWeight.toFixed(2)}kg으로 1회 측정되어 변화량을 계산하지 않았습니다.`);
-  else facts.push("선택 기간에 체중 기록이 없습니다.");
+  else facts.push("선택한 서비스 배치에 체중 기록이 없습니다.");
   facts.push(`기저귀 확인 ${totals.diaperCount}건 중 소변 표시 ${totals.urineCount}건, 대변 표시 ${totals.stoolCount}건이 입력되었습니다.`);
   facts.push(`목욕 ${totals.bathCount}건, 산모 케어 ${totals.motherCareCount}건, 일반 메모 ${totals.noteCount}건이 기록되었습니다.`);
   return facts;
@@ -280,42 +366,86 @@ function buildPostpartumFacts(totals) {
 
 function buildBabysittingFacts(totals) {
   const facts = [
-    `선택한 기간 중 ${totals.recordedDays}일에 관리사가 총 ${totals.eventCount}건의 시팅 기록을 남겼습니다.`,
+    `선택한 서비스 배치의 서비스일 ${totals.serviceDays}일 중 ${totals.recordedDays}일에 관리사가 총 ${totals.eventCount}건의 시팅 기록을 남겼습니다.`,
   ];
+  if (totals.unrecordedScheduledDays) facts.push(`기록이 없는 예정 서비스일은 ${totals.unrecordedScheduledDays}일이며, 해당 날짜는 관리사 기록 0건으로 표시했습니다.`);
   if (totals.careMinutes !== null) facts.push(`완료된 근무 ${totals.sessionDays}일의 시작·종료 시간을 더하면 총 ${totals.careMinutes}분입니다.`);
-  else facts.push("선택한 기간에는 시작 시간과 종료 시간이 모두 입력된 완료 근무가 없어 총 근무시간을 계산하지 않았습니다.");
+  else facts.push("선택한 서비스 배치에는 시작 시간과 종료 시간이 모두 입력된 완료 근무가 없어 총 근무시간을 계산하지 않았습니다.");
   facts.push(totals.mealCount
     ? `식사·간식 기록은 ${totals.mealCount}건이며, 관리사가 입력한 섭취량은 ${objectiveDistributionLabel(totals.appetiteDistribution)}입니다.`
-    : "선택 기간에 식사·간식 기록이 없습니다.");
+    : "선택한 서비스 배치에 식사·간식 기록이 없습니다.");
   facts.push(totals.activityCount
     ? `놀이·산책 등 생활 기록은 ${totals.activityCount}건이며, 기록 종류는 ${objectiveDistributionLabel(totals.activityDistribution)}입니다.`
-    : "선택 기간에 놀이·산책 등 생활 기록이 없습니다.");
+    : "선택한 서비스 배치에 놀이·산책 등 생활 기록이 없습니다.");
   facts.push(`‘안전 확인’으로 입력된 기록은 ${totals.safetyCount}건입니다. 관리사가 직접 작성한 메모에서 횟수·시간·양을 임의로 계산하지 않았습니다.`);
   return facts;
 }
 
-export function buildObjectiveReportModel({ assignment, events = [], sessions = [], range = "week", anchorDate = "" }) {
+function dateFallsWithinBatch(dateKey, batchFromDate, batchToDate) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ""))) return false;
+  if (batchFromDate && dateKey < batchFromDate) return false;
+  if (batchToDate && dateKey > batchToDate) return false;
+  return true;
+}
+
+function eventFallsWithinBatch(event, assignment, batchFromDate, batchToDate) {
+  if (!batchFromDate && !batchToDate) return true;
+  const recordedLocalDate = objectiveEventDateKey(event);
+  const assignmentDate = normalizedDateKey(event?.at, assignment?.serviceTimeZone || OBJECTIVE_REPORT_TIME_ZONE);
+  return dateFallsWithinBatch(recordedLocalDate, batchFromDate, batchToDate)
+    || dateFallsWithinBatch(assignmentDate, batchFromDate, batchToDate);
+}
+
+function sessionFallsWithinBatch(session, assignment, batchFromDate, batchToDate) {
+  if (!batchFromDate && !batchToDate) return true;
+  const serviceDate = sessionServiceDateKey(session);
+  const assignmentDate = normalizedDateKey(session?.startedAt, assignment?.serviceTimeZone || OBJECTIVE_REPORT_TIME_ZONE);
+  return dateFallsWithinBatch(serviceDate, batchFromDate, batchToDate)
+    || dateFallsWithinBatch(assignmentDate, batchFromDate, batchToDate);
+}
+
+export function buildObjectiveReportModel({ assignment, events = [], sessions = [] }) {
   const serviceType = assignment?.serviceType === "BABYSITTING" ? "BABYSITTING" : "POSTPARTUM";
   const allowedTypes = serviceType === "BABYSITTING"
     ? new Set(["meal", "sitter_note"])
     : new Set(["feeding", "diaper", "sleep", "temperature", "bath", "weight", "mother", "note"]);
-  const assignmentEvents = events.filter((event) => event.assignmentId === assignment?.id && allowedTypes.has(event.type));
-  const normalizedRange = OBJECTIVE_REPORT_RANGES[range] ? range : "week";
-  const normalizedAnchor = normalizedAnchorDate(anchorDate, assignmentEvents);
-  const dateKeys = dateKeysEndingAt(normalizedAnchor, OBJECTIVE_REPORT_RANGES[normalizedRange].days);
+  const boundaryFromDate = assignmentBoundaryDate(assignment, "start");
+  const boundaryToDate = assignmentBoundaryDate(assignment, "end");
+  const assignmentEvents = events.filter((event) => event.assignmentId === assignment?.id
+    && allowedTypes.has(event.type)
+    && eventFallsWithinBatch(event, assignment, boundaryFromDate, boundaryToDate));
+  const assignmentSessions = sessions.filter((session) => session.assignmentId === assignment?.id
+    && sessionRepresentsProvidedCare(session)
+    && sessionFallsWithinBatch(session, assignment, boundaryFromDate, boundaryToDate));
+  const scheduledDateKeys = scheduledServiceDateKeys(assignment);
+  const scheduledDateKeySet = new Set(scheduledDateKeys);
+  const dateKeys = [...new Set([
+    ...scheduledDateKeys,
+    ...assignmentSessions.map(sessionServiceDateKey),
+    ...assignmentEvents.map(objectiveEventDateKey),
+  ].filter((dateKey) => /^\d{4}-\d{2}-\d{2}$/.test(dateKey)))].sort();
   const dateKeySet = new Set(dateKeys);
-  const periodEvents = assignmentEvents.filter((event) => dateKeySet.has(objectiveEventDateKey(event))).sort((first, second) => new Date(first.at) - new Date(second.at));
-  const daily = dateKeys.map((dateKey) => aggregateDay(dateKey, periodEvents, sessions, assignment?.id, serviceType));
+  const periodEvents = assignmentEvents
+    .filter((event) => dateKeySet.has(objectiveEventDateKey(event)))
+    .sort((first, second) => objectiveEventDateKey(first).localeCompare(objectiveEventDateKey(second)) || (new Date(first.at).getTime() || 0) - (new Date(second.at).getTime() || 0));
+  const daily = dateKeys.map((dateKey) => aggregateDay(dateKey, periodEvents, assignmentSessions, assignment?.id, serviceType, scheduledDateKeySet));
   const totals = metricTotals(daily, periodEvents, serviceType);
+  const serviceTimeZones = [
+    ...periodEvents.map(objectiveEventTimeZone),
+    ...assignmentSessions.map((session) => normalizedReportTimeZone(session.serviceTimeZone)),
+  ];
+  const batchFromDate = boundaryFromDate || dateKeys[0] || objectiveDateKey(new Date());
+  const batchToDate = boundaryToDate || dateKeys.at(-1) || batchFromDate;
   return {
-    version: "objective-v1",
-    timeZone: [...new Set(periodEvents.map(objectiveEventTimeZone))].join(", ") || OBJECTIVE_REPORT_TIME_ZONE,
+    version: "objective-batch-v1",
+    timeZone: [...new Set(serviceTimeZones)].join(", ") || OBJECTIVE_REPORT_TIME_ZONE,
     serviceType,
-    range: normalizedRange,
-    rangeLabel: OBJECTIVE_REPORT_RANGES[normalizedRange].label,
-    anchorDate: normalizedAnchor,
-    fromDate: dateKeys[0],
-    toDate: dateKeys.at(-1),
+    range: "batch",
+    rangeLabel: "서비스 배치 전체",
+    fromDate: batchFromDate,
+    toDate: batchToDate,
+    serviceFromDate: dateKeys[0] || null,
+    serviceToDate: dateKeys.at(-1) || null,
     dateKeys,
     daily,
     events: periodEvents,
