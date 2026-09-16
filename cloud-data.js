@@ -1209,19 +1209,26 @@ export async function uploadCaregiverPublicPhotoCloud(caregiverId, file) {
 
 export async function updateCaregiverPublicProfileCloud(caregiverId, values, photoPath = null) {
   await authenticatedUserId();
-  const list = (value) => String(value || "").split(/[,·\n]/).map((item) => item.trim()).filter(Boolean);
+  const list = (value, maxItems, maxLength) => [...new Set(
+    String(value || "").split(/[,·\n]/).map((item) => item.trim()).filter(Boolean),
+  )].slice(0, maxItems).map((item) => item.slice(0, maxLength));
+  const canonicalName = String(values.fullName ?? values.publicDisplayName ?? "").trim().slice(0, 80);
+  const submittedPhotoAlt = String(values.publicPhotoAlt || "").trim();
+  const canonicalPhotoAlt = !submittedPhotoAlt || / 관리사 프로필 사진$/.test(submittedPhotoAlt)
+    ? `${canonicalName} 관리사 프로필 사진`.slice(0, 160)
+    : submittedPhotoAlt.slice(0, 160);
   return throwIfError(await supabase.rpc("admin_upsert_caregiver_public_profile", {
     p_caregiver_id: caregiverId,
-    p_display_name: String(values.publicDisplayName || "").trim(),
+    p_display_name: canonicalName,
     p_headline: String(values.publicHeadline || "").trim(),
     p_biography: String(values.publicBiography || "").trim(),
     p_photo_path: photoPath || String(values.existingPhotoPath || "").trim() || null,
-    p_photo_alt: String(values.publicPhotoAlt || "").trim() || null,
-    p_career_years: Number(values.publicCareerYears || 0),
-    p_specialties: list(values.publicSpecialties),
-    p_credentials: list(values.publicCredentials),
-    p_languages: list(values.publicLanguages),
-    p_service_area: String(values.publicServiceArea || "").trim() || null,
+    p_photo_alt: canonicalPhotoAlt || null,
+    p_career_years: Number(values.careerYears ?? values.publicCareerYears ?? 0),
+    p_specialties: list(values.specialties ?? values.publicSpecialties, 12, 60),
+    p_credentials: list(values.certification ?? values.publicCredentials, 12, 120),
+    p_languages: list(values.publicLanguages, 8, 40),
+    p_service_area: String(values.serviceArea ?? values.publicServiceArea ?? "").trim().slice(0, 240) || null,
     p_featured: values.publicFeatured === "on",
     p_sort_order: Number(values.publicSortOrder || 0),
     p_is_published: values.publicPublished === "on",

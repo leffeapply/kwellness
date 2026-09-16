@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [app, cloud, migration, moderationMigration, photoMigration] = await Promise.all([
+const [app, cloud, migration, moderationMigration, photoMigration, profileSyncMigration] = await Promise.all([
   readFile(new URL("../app.js", import.meta.url), "utf8"),
   readFile(new URL("../cloud-data.js", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/033_caregiver_reputation_marketing.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/034_review_moderation_integrity.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/035_verified_external_reviews_and_photos.sql", import.meta.url), "utf8"),
+  readFile(new URL("../supabase/migrations/036_caregiver_public_profile_sync.sql", import.meta.url), "utf8"),
 ]);
 
 const requiredSql = [
@@ -127,6 +128,26 @@ assert.ok(photoMigration.includes("from public.caregivers caregiver"), "active c
 assert.ok(photoMigration.includes("left join public.caregiver_public_profiles public_profile"), "a missing marketing profile must not hide an active caregiver");
 assert.ok(photoMigration.includes("where coalesce(public_profile.is_published, true)"), "active caregivers without a marketing profile must use the safe public fallback");
 
+[
+  "create or replace function public.sync_caregiver_public_profile_shared_fields()",
+  "create trigger caregiver_public_profile_name_sync",
+  "create trigger caregiver_public_profile_hr_sync",
+  "after update of full_name on public.profiles",
+  "after insert or update of career_years, career_summary, specialties, service_area_notes",
+  "update public.caregiver_public_profiles public_profile",
+].forEach((snippet) => assert.ok(
+  profileSyncMigration.includes(snippet),
+  `caregiver public-profile synchronization migration is missing: ${snippet}`,
+));
+assert.ok(
+  profileSyncMigration.includes("new.display_name := left(trim(canonical_name), 80)"),
+  "homepage names must be sourced from the canonical account profile",
+);
+assert.ok(
+  profileSyncMigration.includes("new.credentials := public.caregiver_profile_text_list(canonical_credentials, 12, 120)"),
+  "homepage qualifications must be sourced from the canonical HR profile",
+);
+
 assert.ok(cloud.includes('supabase.rpc("submit_caregiver_review"'), "customer reviews must use the atomic RPC");
 assert.ok(!cloud.includes('supabase.from("caregiver_reviews").insert'), "browser must not directly insert caregiver reviews");
 assert.ok(cloud.includes('supabase.rpc("public_caregiver_directory"'), "public caregiver directory must be loaded from the sanitized RPC");
@@ -138,6 +159,8 @@ assert.ok(cloud.includes('storage.from("caregiver-review-photos").upload'), "rev
 assert.ok(cloud.includes('supabase.rpc("attach_caregiver_review_photos"'), "customer review photo attachment RPC wrapper is missing");
 assert.ok(cloud.includes('supabase.rpc("admin_verify_historical_caregiver_review"'), "external-review verification RPC wrapper is missing");
 assert.ok(cloud.includes('`customer/${reviewId}`'), "customer review photo paths must use the review ID without exposing the auth user ID");
+assert.ok(cloud.includes("values.fullName ?? values.publicDisplayName"), "public profile saves must prefer the canonical caregiver name");
+assert.ok(cloud.includes("values.certification ?? values.publicCredentials"), "public profile saves must prefer canonical caregiver qualifications");
 
 assert.ok(app.includes("function assignmentHasDeliveredCare"), "delivered-care eligibility guard is missing");
 assert.ok(app.includes("clientCompletedReviewCenterMarkup(client)"), "completed-service review route is missing");
@@ -155,6 +178,7 @@ assert.ok(app.includes('name="reviewPhotos"'), "review photo selection controls 
 assert.ok(app.includes("data-add-review-photos"), "customer review photo follow-up control is missing");
 assert.ok(app.includes("data-verify-historical-review"), "administrator external-review evidence control is missing");
 assert.ok(app.includes("reviewPhotoGalleryMarkup(review)"), "public caregiver reviews must render their attached photos");
+assert.ok(app.includes("syncSharedHomepageFields"), "caregiver HR edits must be mirrored into the homepage profile form");
 
 const average = (ratings) => ratings.length
   ? Number((ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length).toFixed(1))
