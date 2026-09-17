@@ -49,6 +49,7 @@ import {
   submitServiceAdjustmentCloud,
   updateCaregiverManagementCloud,
   updateCaregiverPublicProfileCloud,
+  updateCareEventCloud,
   updateClientManagementCloud,
   updateMyClientProfileCloud,
   updateMyProfileCloud,
@@ -2643,7 +2644,7 @@ import {
       case "note":
         return data.text || "메모가 기록되었습니다.";
       case "meal":
-        return `${data.mealType || "식사"} · ${data.menu || "메뉴 기록"} · ${data.appetite || "식사량 확인"}${data.note ? ` · ${data.note}` : ""}`;
+        return `식사 · ${data.menu || "메뉴 기록"} · ${data.appetite || "식사량 확인"}${data.note ? ` · ${data.note}` : ""}`;
       case "sitter_note":
         return `${data.category || "이벤트"} · ${data.text || "활동 내용을 기록했습니다."}`;
       default:
@@ -2667,10 +2668,19 @@ import {
             <div class="timeline-time">${escapeHtml(recordedTime.time)}<small>${escapeHtml(recordedTime.zone)}</small></div>
             <div class="timeline-icon">${meta.icon}</div>
             <div class="timeline-copy"><strong>${meta.label}</strong><span>${escapeHtml(eventDescription(event))}</span></div>
-            <div class="timeline-author">${escapeHtml(event.author)}</div>
+            <div class="timeline-meta"><span class="timeline-author">${escapeHtml(event.author)}</span>${canEditCareEvent(event) ? `<button type="button" class="timeline-edit-button" data-edit-care-event="${event.id}" aria-label="${escapeHtml(meta.label)} 기록 수정">수정</button>` : ""}</div>
           </div>`;
       })
       .join("")}</div>`;
+  }
+
+  function canEditCareEvent(event) {
+    const user = authUser();
+    if (!user || !event?.id) return false;
+    if (state.role === "admin" && canReviewServiceRequests()) return true;
+    if (state.role !== "caregiver") return false;
+    const assignment = state.assignments.find((item) => item.id === event.assignmentId);
+    return Boolean(assignment && assignment.caregiverUserId === user.id);
   }
 
   function caregiverTimeline(serviceType = "POSTPARTUM", workspaceNav = "") {
@@ -3301,7 +3311,7 @@ import {
     const events = state.events.filter((event) => event.clientId === client.id && (!assignment || event.assignmentId === assignment.id) && ["meal", "sitter_note"].includes(event.type)).sort((a, b) => new Date(b.at) - new Date(a.at));
     const mealCount = events.filter((event) => event.type === "meal").length;
     const noteCount = events.filter((event) => event.type === "sitter_note").length;
-    return `<div class="babysitting-report">${serviceBadgeMarkup("BABYSITTING")}<div class="grid stats sitter-report-stats">${statCard("식사 기록", mealCount, "식사·간식 기록", "🍽️")}${statCard("놀이·생활 기록", noteCount, "놀이·산책·생활", "☆")}${statCard("최근 기록", events.slice(0, 7).length, "최근 7일 요약", "◷")}${statCard("안전 확인", events.filter((event) => event.data?.category === "안전 확인").length, "안전 확인 기록", "✓")}</div><article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>베이비시팅 식사·생활 리포트</h3><p>보호자에게 필요한 식사와 놀이·산책 등 생활 기록을 보여줍니다.</p></div><span class="status-chip">관리사 기록 ${events.length}건</span></div>${events.length ? `<div class="timeline">${events.slice(0, 12).map((event) => { const meta = EVENT_META[event.type]; return `<div class="timeline-item"><div class="timeline-time">${new Date(event.at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}<br/>${timeLabel(event.at)}</div><div class="timeline-icon">${meta.icon}</div><div class="timeline-copy"><strong>${meta.label}</strong><span>${escapeHtml(eventDescription(event))}</span></div><div class="timeline-author">${escapeHtml(event.author)}</div></div>`; }).join("")}</div>` : `<div class="empty-state"><strong>베이비시팅 기록이 아직 없습니다.</strong></div>`}</article></div>`;
+    return `<div class="babysitting-report">${serviceBadgeMarkup("BABYSITTING")}<div class="grid stats sitter-report-stats">${statCard("식사 기록", mealCount, "식사·간식 기록", "🍽️")}${statCard("놀이·생활 기록", noteCount, "놀이·산책·생활", "☆")}${statCard("최근 기록", events.slice(0, 7).length, "최근 7일 요약", "◷")}${statCard("안전 확인", events.filter((event) => event.data?.category === "안전 확인").length, "안전 확인 기록", "✓")}</div><article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>베이비시팅 식사·생활 리포트</h3><p>보호자에게 필요한 식사와 놀이·산책 등 생활 기록을 보여줍니다.</p></div><span class="status-chip">관리사 기록 ${events.length}건</span></div>${events.length ? `<div class="timeline">${events.slice(0, 12).map((event) => { const meta = EVENT_META[event.type]; return `<div class="timeline-item"><div class="timeline-time">${new Date(event.at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}<br/>${timeLabel(event.at)}</div><div class="timeline-icon">${meta.icon}</div><div class="timeline-copy"><strong>${meta.label}</strong><span>${escapeHtml(eventDescription(event))}</span></div><div class="timeline-meta"><span class="timeline-author">${escapeHtml(event.author)}</span>${canEditCareEvent(event) ? `<button type="button" class="timeline-edit-button" data-edit-care-event="${event.id}">수정</button>` : ""}</div></div>`; }).join("")}</div>` : `<div class="empty-state"><strong>베이비시팅 기록이 아직 없습니다.</strong></div>`}</article></div>`;
   }
 
   function objectiveReportPreferences(role = state.role) {
@@ -3541,18 +3551,14 @@ import {
 
   function objectiveReportHourlyTableMarkup(model) {
     if (!model.events.length) return '<div class="objective-report-empty">선택한 서비스 배치에 표시할 시간별 기록이 없습니다.</div>';
+    const showEditAction = state.role === "admin" || state.role === "caregiver";
     const rows = model.events.map((event) => {
       const meta = EVENT_META[event.type] || EVENT_META.note;
       const eventTimeZone = objectiveEventTimeZone(event);
-      return [
-        objectiveDateLabel(objectiveEventDateKey(event)),
-        `${objectiveTimeLabel(event.at, eventTimeZone)} · ${serviceTimeZoneLabel(eventTimeZone)}`,
-        meta.label,
-        objectiveEventValue(event),
-        event.author || "입력자 미등록",
-      ];
+      const values = [objectiveDateLabel(objectiveEventDateKey(event)), `${objectiveTimeLabel(event.at, eventTimeZone)} · ${serviceTimeZoneLabel(eventTimeZone)}`, meta.label, objectiveEventValue(event), event.author || "입력자 미등록"];
+      return `<tr>${values.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}${showEditAction ? `<td class="report-screen-only">${canEditCareEvent(event) ? `<button type="button" class="secondary-button mini-button" data-edit-care-event="${event.id}">수정</button>` : "—"}</td>` : ""}</tr>`;
     });
-    return `<div class="objective-report-table-wrap"><table class="objective-report-table"><thead><tr><th scope="col">날짜</th><th scope="col">기록한 현지시간</th><th scope="col">기록 항목</th><th scope="col">기록 내용</th><th scope="col">입력자</th></tr></thead><tbody>${rows.map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    return `<div class="objective-report-table-wrap"><table class="objective-report-table"><thead><tr><th scope="col">날짜</th><th scope="col">기록한 현지시간</th><th scope="col">기록 항목</th><th scope="col">기록 내용</th><th scope="col">입력자</th>${showEditAction ? '<th scope="col" class="report-screen-only">관리</th>' : ""}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`;
   }
 
   function objectiveReportTimeBasisLabel(model) {
@@ -3653,7 +3659,7 @@ import {
     const serviceDate = session.serviceDate ? formatDate(`${session.serviceDate}T12:00:00`) : "날짜 미등록";
     const babyName = babyNameFor(assignment, client) || "아이";
     const eventList = events.length
-      ? `<div class="timeline">${events.map((event) => { const meta = EVENT_META[event.type] || EVENT_META.note; return `<div class="timeline-item"><div class="timeline-time">${timeLabel(event.at)}</div><div class="timeline-icon">${meta.icon}</div><div class="timeline-copy"><strong>${escapeHtml(meta.label)}</strong><span>${escapeHtml(eventDescription(event))}</span></div><div class="timeline-author">${escapeHtml(event.author || "ProMoms")}</div></div>`; }).join("")}</div>`
+      ? `<div class="timeline">${events.map((event) => { const meta = EVENT_META[event.type] || EVENT_META.note; return `<div class="timeline-item"><div class="timeline-time">${timeLabel(event.at)}</div><div class="timeline-icon">${meta.icon}</div><div class="timeline-copy"><strong>${escapeHtml(meta.label)}</strong><span>${escapeHtml(eventDescription(event))}</span></div><div class="timeline-meta"><span class="timeline-author">${escapeHtml(event.author || "ProMoms")}</span>${canEditCareEvent(event) ? `<button type="button" class="timeline-edit-button" data-edit-care-event="${event.id}">수정</button>` : ""}</div></div>`; }).join("")}</div>`
       : '<div class="empty-state"><strong>선택한 근무일에 저장된 케어 기록이 없습니다.</strong><span>기록이 없는 근무일도 완료 이력은 보관됩니다.</span></div>';
     const summary = serviceType === "BABYSITTING"
       ? `<div class="grid stats sitter-report-stats">${statCard("식사 기록", events.filter((event) => event.type === "meal").length, "식사·간식 기록", "🍽️")}${statCard("놀이·생활 기록", events.filter((event) => event.type === "sitter_note").length, "놀이·산책·생활", "☆")}${statCard("관리사의 기록 횟수", events.length, "선택한 근무일 전체", "◷")}${statCard("안전 확인", events.filter((event) => event.data?.category === "안전 확인").length, "안전 확인 기록", "✓")}</div>`
@@ -4378,6 +4384,9 @@ import {
 
     document.querySelectorAll("[data-log-type]").forEach((button) => {
       button.addEventListener("click", () => openLogModal(button.dataset.logType, button.dataset.logPreset || null));
+    });
+    document.querySelectorAll("[data-edit-care-event]").forEach((button) => {
+      button.addEventListener("click", () => openCareEventEditModal(button.dataset.editCareEvent));
     });
 
     document.querySelectorAll("[data-chart-range]").forEach((button) => button.addEventListener("click", () => {
@@ -6583,14 +6592,14 @@ import {
           <div class="field"><label for="care">케어 항목</label><select id="care" name="care"><option>Light stretching</option><option>Breast care</option><option>Meal support</option><option>Rest support</option><option>Other</option></select></div>
           <div class="field"><label for="mother-note">간단한 메모</label><textarea id="mother-note" name="note" placeholder="산모의 상태와 제공한 케어를 간단히 기록하세요."></textarea></div>`;
       case "meal":
-        return `<div class="form-grid two"><div class="field"><label for="meal-type">식사 구분</label><select id="meal-type" name="mealType"><option>아침</option><option>점심</option><option>저녁</option><option>간식</option><option>분유·우유</option></select></div><div class="field"><label for="meal-appetite">섭취 정도</label><select id="meal-appetite" name="appetite"><option>잘 먹음</option><option>보통</option><option>조금 먹음</option><option>거부함</option></select></div></div><div class="field"><label for="meal-menu">메뉴·양</label><input id="meal-menu" name="menu" placeholder="예: 닭고기 야채죽 1그릇" required /></div><div class="field"><label for="meal-note">식사 메모</label><textarea id="meal-note" name="note" placeholder="알러지 확인, 반응, 보호자에게 전달할 내용을 적어주세요."></textarea></div>`;
+        return `<input type="hidden" name="mealType" value="식사"/><div class="field"><label for="meal-appetite">섭취 정도</label><select id="meal-appetite" name="appetite"><option>잘 먹음</option><option>보통</option><option>조금 먹음</option><option>거부함</option></select></div><div class="field"><label for="meal-menu">메뉴·양</label><input id="meal-menu" name="menu" placeholder="예: 닭고기 야채죽 1그릇" required /></div><div class="field"><label for="meal-note">식사 메모 (선택)</label><textarea id="meal-note" name="note" placeholder="알러지 확인, 반응, 보호자에게 전달할 내용이 있을 때만 적어주세요."></textarea></div>`;
       case "sitter_note": {
         const selectedCategory = ["놀이", "산책", "낮잠", "배변", "등원·하원", "안전 확인", "기타"].includes(preset) ? preset : "놀이";
-        return `<div class="field"><label for="sitter-category">이벤트 구분</label><select id="sitter-category" name="category">${["놀이", "산책", "낮잠", "배변", "등원·하원", "안전 확인", "기타"].map((category) => `<option ${category === selectedCategory ? "selected" : ""}>${category}</option>`).join("")}</select></div><div class="field"><label for="sitter-note-text">활동·특이 이벤트</label><textarea id="sitter-note-text" name="text" placeholder="무엇을 했는지, 아이의 반응과 보호자 인계사항을 사실 중심으로 기록하세요." required></textarea><small>의료적 판단 대신 관찰한 사실과 조치만 기록합니다.</small></div>`;
+        return `<div class="field"><label for="sitter-category">이벤트 구분</label><select id="sitter-category" name="category">${["놀이", "산책", "낮잠", "배변", "등원·하원", "안전 확인", "기타"].map((category) => `<option ${category === selectedCategory ? "selected" : ""}>${category}</option>`).join("")}</select></div><div class="field"><label for="sitter-note-text">활동·특이 이벤트 메모 (선택)</label><textarea id="sitter-note-text" name="text" placeholder="필요한 경우에만 아이의 반응이나 보호자 인계사항을 사실 중심으로 기록하세요."></textarea><small>메모를 입력하지 않아도 선택한 이벤트 구분만으로 저장할 수 있습니다.</small></div>`;
       }
       case "note":
       default:
-        return `<div class="field"><label for="note-text">케어 메모</label><textarea id="note-text" name="text" placeholder="특이사항이나 보호자에게 공유할 내용을 기록하세요." required></textarea><small>진단이나 확정적 의료 판단 대신 관찰한 사실을 기록하세요.</small></div>`;
+        return `<div class="field"><label for="note-text">케어 메모 (선택)</label><textarea id="note-text" name="text" placeholder="특이사항이나 보호자에게 공유할 내용이 있을 때만 기록하세요."></textarea><small>메모 없이도 기록 시각과 항목을 저장할 수 있습니다.</small></div>`;
     }
   }
 
@@ -6619,6 +6628,49 @@ import {
     };
     form.querySelectorAll('input[name="method"]').forEach((input) => input.addEventListener("change", updateMeasurementFields));
     updateMeasurementFields();
+  }
+
+  function populateCareEventForm(form, values = {}) {
+    Object.entries(values).forEach(([name, value]) => {
+      if (name === "mealType" || value === null || value === undefined) return;
+      const controls = [...form.querySelectorAll(`[name="${CSS.escape(name)}"]`)];
+      if (!controls.length) return;
+      if (controls[0].type === "radio") {
+        controls.forEach((control) => { control.checked = control.value === String(value); });
+        return;
+      }
+      if (controls[0].type === "checkbox") {
+        controls[0].checked = Boolean(value);
+        return;
+      }
+      controls[0].value = String(value);
+    });
+  }
+
+  function careEventLocalTime(event) {
+    const stored = String(event?.data?.recordedLocalTime || "");
+    if (/^\d{2}:\d{2}$/.test(stored)) return stored;
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: objectiveEventTimeZone(event),
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(event?.at));
+    const values = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+    return `${values.hour || "00"}:${values.minute || "00"}`;
+  }
+
+  function setCareRecordTimeToNow(input, serviceDate, showDateError = true) {
+    if (!input) return false;
+    const now = new Date();
+    if (localDateKey(now) !== serviceDate) {
+      if (showDateError) showToast("이 기록의 근무일과 오늘 날짜가 달라 현재 시각을 적용할 수 없습니다.", "error");
+      return false;
+    }
+    const value = localDateTimeInputValue(now);
+    input.max = value;
+    input.value = value;
+    return true;
   }
 
   function openRetrospectiveCareReportModal(initialAssignmentId = null) {
@@ -6693,13 +6745,28 @@ import {
     });
   }
 
-  function openLogModal(type, preset = null) {
-    const assignment = activeAssignmentContext();
-    if (!assignment || !state.session.active || state.session.assignmentId !== assignment.id) {
-      showToast("케어 세션을 먼저 시작해 주세요.");
+  function openCareEventEditModal(eventId) {
+    const careEvent = state.events.find((item) => item.id === eventId);
+    if (!careEvent) return showToast("수정할 관리 기록을 찾을 수 없습니다.", "error");
+    if (!canEditCareEvent(careEvent)) return showToast("이 관리 기록을 수정할 권한이 없습니다.", "error");
+    openLogModal(careEvent.type, careEvent.data?.method || careEvent.data?.category || null, careEvent.id);
+  }
+
+  function openLogModal(type, preset = null, eventId = null) {
+    const existingEvent = eventId ? state.events.find((item) => item.id === eventId) : null;
+    const editing = Boolean(existingEvent);
+    const assignment = editing
+      ? state.assignments.find((item) => item.id === existingEvent.assignmentId)
+      : activeAssignmentContext();
+    if (!assignment || (!editing && (!state.session.active || state.session.assignmentId !== assignment.id))) {
+      showToast(editing ? "이 기록에 연결된 서비스 배정을 찾을 수 없습니다." : "케어 세션을 먼저 시작해 주세요.", "error");
       return;
     }
-    if (activeSessionIsStale(assignment)) {
+    if (editing && !canEditCareEvent(existingEvent)) {
+      showToast("이 관리 기록을 수정할 권한이 없습니다.", "error");
+      return;
+    }
+    if (!editing && activeSessionIsStale(assignment)) {
       showToast("이전 근무일의 미종료 세션에는 새 기록을 추가할 수 없습니다. 먼저 케어를 종료해 주세요.", "error");
       return;
     }
@@ -6710,37 +6777,39 @@ import {
     const meta = EVENT_META[type] || EVENT_META.note;
     const babyName = babyNameFor(assignment, client) || "아이";
     const deviceNow = new Date();
-    const sessionDate = state.session.serviceDate || localDateKey(deviceNow);
-    const currentLocalDateTime = localDateTimeInputValue(deviceNow);
-    const sessionTimeZone = state.session.serviceTimeZone || deviceTimeZone();
+    const sessionDate = editing ? objectiveEventDateKey(existingEvent) : state.session.serviceDate || localDateKey(deviceNow);
+    const currentLocalDateTime = editing
+      ? `${sessionDate}T${careEventLocalTime(existingEvent)}`
+      : localDateTimeInputValue(deviceNow);
+    const maximumLocalDateTime = sessionDate === localDateKey(deviceNow)
+      ? localDateTimeInputValue(deviceNow)
+      : `${sessionDate}T23:59`;
+    const sessionTimeZone = editing ? objectiveEventTimeZone(existingEvent) : state.session.serviceTimeZone || deviceTimeZone();
+    const careSessionId = editing ? existingEvent.careSessionId : state.session.id;
     modalRoot.innerHTML = `
       <div class="modal-backdrop" data-modal-backdrop>
         <section class="modal" role="dialog" aria-modal="true" aria-labelledby="log-modal-title">
           <header class="modal-header">
-            <div class="modal-title-wrap"><div class="quick-icon">${meta.icon}</div><div><h3 id="log-modal-title">${meta.label} 기록</h3><p>${meta.subtitle} · ${escapeHtml(babyName)}</p></div></div>
+            <div class="modal-title-wrap"><div class="quick-icon">${meta.icon}</div><div><h3 id="log-modal-title">${meta.label} 기록 ${editing ? "수정" : ""}</h3><p>${meta.subtitle} · ${escapeHtml(babyName)}</p></div></div>
             <button class="close-button" data-close-modal aria-label="닫기">×</button>
           </header>
-          <form class="modal-form" data-log-form data-log-form-type="${type}">
-            <div class="field care-record-time-field"><label for="event-recorded-at">기록 일시</label><div class="care-record-time-control"><input id="event-recorded-at" name="recordedAt" type="datetime-local" min="${sessionDate}T00:00" max="${escapeHtml(currentLocalDateTime)}" value="${escapeHtml(currentLocalDateTime)}" step="60" required /><button type="button" class="secondary-button" data-use-device-now>현재 시각</button></div><small>휴대폰의 현재 시각이 기본으로 입력됩니다. 실제 기록 시각이 다르면 저장 전에 수정하세요. · ${escapeHtml(serviceTimeZoneLabel(sessionTimeZone))} (${escapeHtml(deviceUtcOffsetLabel(deviceNow))})</small></div>
+          <form class="modal-form" data-log-form data-log-form-type="${type}" data-care-event-id="${existingEvent?.id || ""}" data-care-session-id="${careSessionId || ""}" data-assignment-id="${assignment.id}" data-session-date="${sessionDate}" data-service-time-zone="${escapeHtml(sessionTimeZone)}">
+            <div class="field care-record-time-field"><label for="event-recorded-at">기록 일시</label><div class="care-record-time-control"><input id="event-recorded-at" name="recordedAt" type="datetime-local" min="${sessionDate}T00:00" max="${escapeHtml(maximumLocalDateTime)}" value="${escapeHtml(currentLocalDateTime)}" step="60" required />${sessionDate === localDateKey(deviceNow) ? `<button type="button" class="secondary-button" data-use-device-now>현재 시각</button>` : ""}</div><small>${editing ? "기존 기록값을 불러왔습니다. 기억과 다른 항목만 고쳐 저장하세요." : "휴대폰의 현재 시각이 자동으로 입력됩니다. 실제 기록 시각이 다를 때만 수정하세요."} · ${escapeHtml(serviceTimeZoneLabel(sessionTimeZone))} (${escapeHtml(deviceUtcOffsetLabel(deviceNow))})</small></div>
             ${fieldsForType(type, preset)}
-            <div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">기록 저장</button></div>
+            ${editing ? `<div class="status-banner"><strong>기록 정정</strong><span>수정 전·후 내용과 수정자가 감사 기록에 남습니다.</span></div>` : ""}
+            <div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">${editing ? "변경 저장" : "기록 저장"}</button></div>
           </form>
         </section>
       </div>`;
 
     bindModalFrame();
     const logForm = modalRoot.querySelector("[data-log-form]");
+    if (editing) populateCareEventForm(logForm, existingEvent.data);
     bindFeedingEntryForm(logForm);
     modalRoot.querySelector("[data-use-device-now]")?.addEventListener("click", () => {
-      const input = modalRoot.querySelector("#event-recorded-at");
-      const now = new Date();
-      if (localDateKey(now) !== state.session.serviceDate) {
-        showToast("기기 날짜가 바뀌었습니다. 현재 근무를 종료한 뒤 새 날짜로 다시 시작해 주세요.", "error");
-        return;
-      }
-      input.max = localDateTimeInputValue(now);
-      input.value = localDateTimeInputValue(now);
+      setCareRecordTimeToNow(modalRoot.querySelector("#event-recorded-at"), sessionDate);
     });
+    if (!editing) window.requestAnimationFrame(() => setCareRecordTimeToNow(modalRoot.querySelector("#event-recorded-at"), sessionDate, false));
     logForm.addEventListener("submit", saveLogEvent);
   }
 
@@ -6787,10 +6856,32 @@ import {
     modalReturnFocus = null;
   }
 
-  function eventDateFromLocalInput(value) {
-    const selected = new Date(String(value || ""));
-    if (Number.isNaN(selected.getTime())) return null;
-    return selected.toISOString();
+  function eventDateFromLocalInput(value, timeZone = deviceTimeZone()) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(value || ""));
+    if (!match) return null;
+    const [, year, month, day, hour, minute] = match;
+    const desiredWallTime = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
+    let candidate = desiredWallTime;
+    try {
+      const formatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      });
+      for (let iteration = 0; iteration < 3; iteration += 1) {
+        const parts = Object.fromEntries(formatter.formatToParts(new Date(candidate)).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+        const formattedWallTime = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute));
+        candidate += desiredWallTime - formattedWallTime;
+      }
+    } catch {
+      const selected = new Date(String(value || ""));
+      return Number.isNaN(selected.getTime()) ? null : selected.toISOString();
+    }
+    return new Date(candidate).toISOString();
   }
 
   async function saveLogEvent(event) {
@@ -6799,25 +6890,41 @@ import {
     const type = form.dataset.logFormType;
     const values = Object.fromEntries(new FormData(form).entries());
     const data = { ...values };
+    const existingEventId = form.dataset.careEventId || null;
+    const existingEvent = existingEventId ? state.events.find((item) => item.id === existingEventId) : null;
+    const sessionDate = form.dataset.sessionDate;
+    const sessionTimeZone = form.dataset.serviceTimeZone || deviceTimeZone();
     delete data.recordedAt;
 
     const [recordedLocalDate = "", recordedLocalTime = ""] = String(values.recordedAt || "").split("T");
-    const eventAt = eventDateFromLocalInput(values.recordedAt);
+    const eventAt = eventDateFromLocalInput(values.recordedAt, sessionTimeZone);
     const selectedDate = eventAt ? new Date(eventAt) : null;
     if (!eventAt || !/^\d{4}-\d{2}-\d{2}$/.test(recordedLocalDate) || !/^\d{2}:\d{2}$/.test(recordedLocalTime)) {
       return showToast("기록 날짜와 시간을 확인해 주세요.", "error");
     }
-    if (recordedLocalDate !== state.session.serviceDate) {
-      return showToast("현재 진행 중인 근무일과 같은 날짜의 기록만 저장할 수 있습니다.", "error");
+    if (recordedLocalDate !== sessionDate) {
+      return showToast("해당 서비스 근무일과 같은 날짜 안에서 기록 시각을 선택해 주세요.", "error");
     }
     if (selectedDate.getTime() > Date.now() + 15 * 60 * 1000) {
       return showToast("현재 시각보다 15분을 초과한 미래 시간은 기록할 수 없습니다.", "error");
     }
     data.recordedLocalDate = recordedLocalDate;
     data.recordedLocalTime = recordedLocalTime;
-    data.recordedTimeZone = state.session.serviceTimeZone || deviceTimeZone();
-    data.recordedUtcOffsetMinutes = -selectedDate.getTimezoneOffset();
-    data.submittedAt = new Date().toISOString();
+    data.recordedTimeZone = sessionTimeZone;
+    data.recordedUtcOffsetMinutes = Math.round((Date.UTC(
+      Number(recordedLocalDate.slice(0, 4)),
+      Number(recordedLocalDate.slice(5, 7)) - 1,
+      Number(recordedLocalDate.slice(8, 10)),
+      Number(recordedLocalTime.slice(0, 2)),
+      Number(recordedLocalTime.slice(3, 5)),
+    ) - selectedDate.getTime()) / 60000);
+    if (existingEvent) {
+      data.submittedAt = existingEvent.data?.submittedAt || existingEvent.at;
+      data.correctedAt = new Date().toISOString();
+      data.correctionCount = Number(existingEvent.data?.correctionCount || 0) + 1;
+    } else {
+      data.submittedAt = new Date().toISOString();
+    }
 
     ["amount", "duration", "value", "waterTemperature"].forEach((key) => {
       if (key in data) data[key] = data[key] === "" ? null : Number(data[key]);
@@ -6835,45 +6942,53 @@ import {
         return showToast("수유 방법을 선택해 주세요.", "error");
       }
     }
+    if (type === "meal") data.mealType = "식사";
+    if ("note" in data) data.note = String(data.note || "").trim();
+    if ("text" in data) data.text = String(data.text || "").trim();
 
     if (usingCloudData()) {
-      if (!state.session.id || !state.session.active) return showToast("케어를 시작한 뒤 기록할 수 있습니다.");
-      if (activeSessionIsStale()) return showToast("이전 근무일의 미종료 세션에는 기록을 추가할 수 없습니다. 먼저 케어를 종료해 주세요.", "error");
+      if (!existingEvent && (!form.dataset.careSessionId || !state.session.active)) return showToast("케어를 시작한 뒤 기록할 수 있습니다.");
+      if (!existingEvent && activeSessionIsStale()) return showToast("이전 근무일의 미종료 세션에는 기록을 추가할 수 없습니다. 먼저 케어를 종료해 주세요.", "error");
       const submitButton = form.querySelector('button[type="submit"]');
       submitButton.disabled = true;
+      submitButton.textContent = existingEvent ? "변경 저장 중…" : "저장 중…";
       try {
-        await saveCareEventCloud({
-          careSessionId: state.session.id,
-          type,
-          at: eventAt,
-          data,
-          notes: data.note || data.notes || null,
-        });
+        const payload = { at: eventAt, data, notes: data.note || data.notes || data.text || null };
+        if (existingEvent) await updateCareEventCloud({ eventId: existingEvent.id, ...payload });
+        else await saveCareEventCloud({ careSessionId: form.dataset.careSessionId, type, ...payload });
         closeModal();
         await refreshCloudState();
-        showToast(`${EVENT_META[type].label} 기록을 실제 데이터베이스에 저장했습니다.`);
+        showToast(`${EVENT_META[type].label} 기록을 ${existingEvent ? "수정" : "저장"}했습니다.`);
       } catch (error) {
-        showToast(friendlyErrorMessage(error, "케어 기록을 저장하지 못했습니다."), "error");
+        showToast(friendlyErrorMessage(error, `케어 기록을 ${existingEvent ? "수정" : "저장"}하지 못했습니다.`), "error");
         submitButton.disabled = false;
+        submitButton.textContent = existingEvent ? "변경 저장" : "기록 저장";
       }
       return;
     }
 
-    state.events.push({
-      id: `evt-${Date.now()}`,
-      assignmentId: state.session.assignmentId,
-      clientId: state.session.clientId,
-      babyId: state.session.babyId,
-      type,
-      at: eventAt,
-      author: authUser().fullName,
-      serviceTimeZone: state.session.serviceTimeZone || deviceTimeZone(),
-      data,
-    });
+    if (existingEvent) {
+      Object.assign(existingEvent, { at: eventAt, serviceTimeZone: sessionTimeZone, data });
+    } else {
+      const formAssignment = state.assignments.find((item) => item.id === form.dataset.assignmentId);
+      state.events.push({
+        id: `evt-${Date.now()}`,
+        careSessionId: form.dataset.careSessionId,
+        assignmentId: form.dataset.assignmentId,
+        clientId: formAssignment?.clientId || state.session.clientId,
+        babyId: formAssignment?.babyId || state.session.babyId,
+        type,
+        at: eventAt,
+        author: authUser().fullName,
+        createdBy: authUser().id,
+        serviceTimeZone: sessionTimeZone,
+        data,
+      });
+    }
     saveState();
     closeModal();
     render();
-    showToast(`${EVENT_META[type].label} 기록을 저장했습니다.`);
+    showToast(`${EVENT_META[type].label} 기록을 ${existingEvent ? "수정" : "저장"}했습니다.`);
   }
 
   function showToast(message, type = "success") {

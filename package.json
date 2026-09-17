@@ -9,6 +9,7 @@
     "test:interface": "node scripts/check-interface-efficiency.mjs",
     "test:report": "node scripts/check-objective-report.mjs",
     "test:reviews": "node scripts/check-caregiver-reputation.mjs",
+    "test:care-records": "node scripts/check-finance-care-records.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

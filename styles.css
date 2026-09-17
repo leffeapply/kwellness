@@ -1674,6 +1674,32 @@ button:disabled {
   font-size: 9px;
 }
 
+.timeline-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.timeline-edit-button {
+  min-width: 42px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--green-2);
+  background: var(--white);
+  font: inherit;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.timeline-edit-button:hover,
+.timeline-edit-button:focus-visible {
+  border-color: var(--green-2);
+  background: var(--mint-light);
+}
+
 .empty-state {
   padding: 34px 20px;
   color: var(--ink-soft);
@@ -3836,6 +3862,7 @@ body:has(#modal-root:not(:empty)) {
   .service-review-card > button, .service-review-card > .status-chip { grid-column: 1 / -1; justify-self: stretch; text-align: center; }
   .timeline-item { grid-template-columns: 45px 36px 1fr; }
   .timeline-author { display: none; }
+  .timeline-meta { justify-content: flex-end; }
   .archived-report-event { grid-template-columns: 36px minmax(0, 1fr); }
   .archived-report-event time { grid-column: 1 / -1; }
   .client-hero-copy { padding: 27px 21px; }

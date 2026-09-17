@@ -655,6 +655,7 @@ async function loadCloudStateOnce(session) {
       at: event.event_time,
       serviceTimeZone: careSession?.service_time_zone || "America/New_York",
       author: creator?.full_name || "ProMoms",
+      createdBy: event.created_by,
       data: event.payload || {},
     };
   });
@@ -980,6 +981,16 @@ export async function saveCareEventCloud({ careSessionId, type, at, data, notes 
     unusual_observation: false,
     created_by: authData.user.id,
   }).select("id").single(), "케어 기록 저장");
+}
+
+export async function updateCareEventCloud({ eventId, at, data, notes = null }) {
+  await authenticatedUserId();
+  return throwIfError(await supabase.rpc("update_care_event", {
+    p_event_id: eventId,
+    p_event_time: at,
+    p_payload: data,
+    p_notes: notes,
+  }), "케어 기록 수정");
 }
 
 export async function approveCaregiverCloud(userId, note = null) {
