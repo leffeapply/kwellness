@@ -23,6 +23,8 @@ const appRules = [
   "massage-day-summary",
   "therapist-massage-calendar-card",
   "MASSAGE_CHANGE_NOTICE_HOURS = 24",
+  "전문 자격이 부여된 마사지 테라피스트의 산후/산전 마사지 서비스",
+  "LMT(주 정부 라이센스) 보유 테라피스트",
 ];
 appRules.forEach((rule) => assert.ok(app.includes(rule), `app.js is missing: ${rule}`));
 
@@ -69,5 +71,6 @@ assert.ok(css.includes("margin-top: auto; margin-bottom: 25px;"), "service price
 
 assert.ok(enumMigration.includes("alter type public.care_service_type add value if not exists 'MASSAGE'"), "MASSAGE enum migration is missing");
 assert.ok(!app.includes("매주 같은 요일·시간"), "massage packages must not force a recurring weekday and time");
+assert.ok(!app.includes("<span>변경·취소</span><strong>24시간"), "massage card must show therapist licensing instead of the change notice");
 
 console.log("Service packages, therapist weekly availability, buffered slots, dedicated calendars, and approval workflow checks passed.");

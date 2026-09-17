@@ -4343,6 +4343,8 @@ body:has(#modal-root:not(:empty)) {
 .featured .service-price span { color: rgba(255,255,255,.58); }
 .service-price strong { font-family: Georgia, serif; font-size: 32px; }
 .service-price small { margin-left: 4px; font-family: inherit; font-size: 11px; font-weight: 500; }
+.massage-license { justify-content: flex-start; }
+.massage-license strong { font-family: inherit; font-size: 15px; line-height: 1.45; }
 .public-service-card .primary-button { width: 100%; }
 .featured .primary-button { color: var(--green); background: #faf7ef; }
 .public-service-card.live-in { background: linear-gradient(150deg, #fffaf3, #f4e9dc); }
