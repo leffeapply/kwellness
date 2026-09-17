@@ -3838,22 +3838,27 @@ import {
     if (!normalized || Number(reviewCount) <= 0) {
       return compact ? "" : `<div class="caregiver-competency-empty"><strong>전문 역량 평가는 새 후기부터 표시됩니다.</strong><span>식사·세심함·시간준수·전문성·소통·위생안전의 평균을 별도로 제공합니다.</span></div>`;
     }
-    const centerX = 130;
-    const centerY = 108;
-    const radius = 69;
+    const centerX = 180;
+    const centerY = 154;
+    const radius = 100;
     const point = (index, ratio = 1) => {
       const angle = ((-90 + index * 60) * Math.PI) / 180;
       return `${(centerX + Math.cos(angle) * radius * ratio).toFixed(2)},${(centerY + Math.sin(angle) * radius * ratio).toFixed(2)}`;
     };
     const grid = [1, 2, 3, 4, 5].map((level) => `<polygon points="${REVIEW_COMPETENCIES.map((_, index) => point(index, level / 5)).join(" ")}"/>`).join("");
     const axes = REVIEW_COMPETENCIES.map((_, index) => `<line x1="${centerX}" y1="${centerY}" x2="${point(index).split(",")[0]}" y2="${point(index).split(",")[1]}"/>`).join("");
-    const scorePoints = REVIEW_COMPETENCIES.map((competency, index) => point(index, normalized[competency.key] / 5)).join(" ");
+    const scorePointList = REVIEW_COMPETENCIES.map((competency, index) => point(index, normalized[competency.key] / 5));
+    const scorePoints = scorePointList.join(" ");
+    const scoreDots = scorePointList.map((coordinates) => {
+      const [cx, cy] = coordinates.split(",");
+      return `<circle class="competency-radar-point" cx="${cx}" cy="${cy}" r="4"/>`;
+    }).join("");
     const labelPositions = [
-      [130, 19], [226, 66], [225, 171], [130, 213], [35, 171], [35, 66],
+      [180, 22], [316, 91], [316, 239], [180, 309], [44, 239], [44, 91],
     ];
-    const labels = REVIEW_COMPETENCIES.map((competency, index) => `<text x="${labelPositions[index][0]}" y="${labelPositions[index][1]}" text-anchor="middle"><tspan>${competency.label}</tspan><tspan x="${labelPositions[index][0]}" dy="12">${Number(normalized[competency.key]).toFixed(1)}</tspan></text>`).join("");
+    const labels = REVIEW_COMPETENCIES.map((competency, index) => `<text x="${labelPositions[index][0]}" y="${labelPositions[index][1]}" text-anchor="middle"><tspan>${competency.label}</tspan><tspan x="${labelPositions[index][0]}" dy="15">${Number(normalized[competency.key]).toFixed(1)}</tspan></text>`).join("");
     const averageLabel = Number(reviewCount).toLocaleString("ko-KR");
-    return `<figure class="caregiver-competency-radar ${compact ? "compact" : ""}"><figcaption><strong>6개 전문 역량</strong><span>${averageLabel}건의 항목 평가 평균</span></figcaption><svg viewBox="0 0 260 224" role="img" aria-label="식사 ${normalized.meal_preparation.toFixed(1)}점, 세심함 ${normalized.attentiveness.toFixed(1)}점, 시간준수 ${normalized.punctuality.toFixed(1)}점, 전문성 ${normalized.professionalism.toFixed(1)}점, 소통 ${normalized.communication.toFixed(1)}점, 위생안전 ${normalized.hygiene_safety.toFixed(1)}점"><g class="competency-radar-grid">${grid}${axes}</g><polygon class="competency-radar-score" points="${scorePoints}"/>${labels}</svg></figure>`;
+    return `<figure class="caregiver-competency-radar ${compact ? "compact" : ""}"><figcaption><strong>6개 전문 역량</strong><span>${averageLabel}건의 항목 평가 평균</span></figcaption><svg viewBox="0 0 360 330" role="img" aria-label="식사 ${normalized.meal_preparation.toFixed(1)}점, 세심함 ${normalized.attentiveness.toFixed(1)}점, 시간준수 ${normalized.punctuality.toFixed(1)}점, 전문성 ${normalized.professionalism.toFixed(1)}점, 소통 ${normalized.communication.toFixed(1)}점, 위생안전 ${normalized.hygiene_safety.toFixed(1)}점"><g class="competency-radar-grid">${grid}${axes}</g><polygon class="competency-radar-score" points="${scorePoints}"/>${scoreDots}${labels}</svg></figure>`;
   }
 
   function caregiverPublicRatingMarkup(profile, compact = false) {
@@ -3862,6 +3867,15 @@ import {
     }
     const rounded = Math.max(1, Math.min(5, Math.round(Number(profile.averageRating))));
     return `<div class="caregiver-public-rating" aria-label="평균 별점 ${Number(profile.averageRating).toFixed(1)}점, 후기 ${profile.reviewCount}건"><span aria-hidden="true">${"★".repeat(rounded)}${"☆".repeat(5 - rounded)}</span><strong>${Number(profile.averageRating).toFixed(1)}</strong>${compact ? "" : `<small>후기 ${Number(profile.reviewCount)}건</small>`}</div>`;
+  }
+
+  function caregiverReviewScorecardMarkup(profile) {
+    if (!profile.reviewCount || profile.averageRating == null) {
+      return `<div class="caregiver-review-scorecard empty"><p class="eyebrow">OVERALL RATING</p><strong>평점 준비 중</strong><span>첫 전문 역량 후기가 등록되면 종합평점이 표시됩니다.</span></div>`;
+    }
+    const rating = Number(profile.averageRating);
+    const rounded = Math.max(1, Math.min(5, Math.round(rating)));
+    return `<div class="caregiver-review-scorecard" aria-label="6개 전문 역량 종합평점 ${rating.toFixed(1)}점, 후기 ${Number(profile.reviewCount)}건"><p class="eyebrow">OVERALL RATING</p><div class="caregiver-review-score"><span aria-hidden="true">★</span><strong>${rating.toFixed(1)}</strong><small>/ 5.0</small></div><div class="caregiver-review-stars" aria-hidden="true">${"★".repeat(rounded)}${"☆".repeat(5 - rounded)}</div><p>6개 전문 역량의 평균으로 계산한 종합평점</p><span>후기 ${Number(profile.reviewCount).toLocaleString("ko-KR")}건</span></div>`;
   }
 
   function reviewPhotoGalleryMarkup(review, label = "후기 첨부 사진") {
@@ -3954,16 +3968,11 @@ import {
   function openPublicCaregiverDetail(caregiverId) {
     const profile = (state.publicCaregivers || []).find((item) => item.caregiverId === caregiverId && item.isPublished !== false);
     if (!profile) return showToast("공개된 관리사 프로필을 찾을 수 없습니다.", "error");
-    const distribution = [5, 4, 3, 2, 1].map((rating) => {
-      const count = Number(profile.ratingDistribution?.[rating] || profile.ratingDistribution?.[String(rating)] || 0);
-      const width = profile.reviewCount ? Math.round((count / profile.reviewCount) * 100) : 0;
-      return `<div class="rating-distribution-row"><span>${rating}점</span><i><b style="width:${width}%"></b></i><small>${count}</small></div>`;
-    }).join("");
     const reviews = (profile.reviews || []).slice(0, 8);
     const reviewsMarkup = reviews.length
       ? reviews.map((review) => `<article><div>${reviewOverallRatingMarkup(review)}<span>${escapeHtml(review.reviewerLabel || "서비스 이용 고객")} · ${publicReviewSourceLabel(review)}</span></div>${reviewCompetencySummaryMarkup(review.competencyScores)}<p>${escapeHtml(review.comment)}</p>${reviewPhotoGalleryMarkup(review)}${review.tags?.length ? `<div class="caregiver-public-tags">${review.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>` : ""}<small>${review.serviceType ? serviceMetaFor(review.serviceType).label : "돌봄 서비스"}${review.serviceDate ? ` · ${formatDate(review.serviceDate)}` : ""}</small></article>`).join("")
       : `<div class="empty-state"><strong>아직 선정된 공개 후기가 없습니다.</strong><span>유효한 ProMoms 이용 후기와 근거가 확인된 외부 경로 후기는 원문 공개 여부와 별개로 통합 평균에 반영됩니다.</span></div>`;
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal caregiver-public-detail-modal" role="dialog" aria-modal="true" aria-labelledby="caregiver-public-detail-title"><header class="modal-header"><div><p class="eyebrow">CARE PROFESSIONAL</p><h3 id="caregiver-public-detail-title">${escapeHtml(profile.displayName)} 관리사</h3><p>${escapeHtml(profile.headline)}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><div class="caregiver-public-detail-body"><div class="caregiver-public-detail-hero"><div class="caregiver-public-detail-photo">${caregiverPublicPortraitMarkup(profile, true)}</div><div><h4>${escapeHtml(profile.displayName)}</h4>${caregiverPublicRatingMarkup(profile)}<p>${escapeHtml(profile.biography || "가족의 돌봄 필요를 세심하게 살피는 ProMoms 관리사입니다.")}</p><div class="caregiver-public-facts"><span>경력 ${Number(profile.careerYears || 0).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}년</span>${profile.serviceArea ? `<span>${escapeHtml(profile.serviceArea)}</span>` : ""}</div></div></div><section class="caregiver-competency-panel"><div><p class="eyebrow">CARE SKILLS</p><h4>전문 역량 평균</h4><p>전체 평점과 별도로, 6개 항목을 평가한 후기의 평균입니다.</p></div>${caregiverCompetencyRadarMarkup(profile.competencyAverages, profile.competencyReviewCount)}</section><div class="caregiver-public-detail-grid"><section><h4>전문분야</h4><div class="caregiver-public-tags">${(profile.specialties || []).length ? profile.specialties.map((item) => `<span>${escapeHtml(item)}</span>`).join("") : "<span>등록 준비 중</span>"}</div><h4>자격·교육</h4><ul class="caregiver-credential-list">${(profile.credentials || []).length ? profile.credentials.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : "<li>등록 준비 중</li>"}</ul><h4>사용 언어</h4><p>${escapeHtml((profile.languages || []).join(" · ") || "등록 준비 중")}</p></section><section><h4>전체 평점 분포</h4><div class="rating-distribution">${distribution}</div></section></div><section class="caregiver-public-reviews"><div class="section-header"><div><h4>공개 후기</h4></div></div>${reviewsMarkup}</section></div><div class="modal-footer"><button type="button" class="primary-button" data-close-modal>확인</button></div></section></div>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal caregiver-public-detail-modal" role="dialog" aria-modal="true" aria-labelledby="caregiver-public-detail-title"><header class="modal-header"><div><p class="eyebrow">CARE PROFESSIONAL</p><h3 id="caregiver-public-detail-title">${escapeHtml(profile.displayName)} 관리사</h3><p>${escapeHtml(profile.headline)}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><div class="caregiver-public-detail-body"><div class="caregiver-public-detail-hero"><div class="caregiver-public-detail-photo">${caregiverPublicPortraitMarkup(profile, true)}</div><div><h4>${escapeHtml(profile.displayName)}</h4><p>${escapeHtml(profile.biography || "가족의 돌봄 필요를 세심하게 살피는 ProMoms 관리사입니다.")}</p><div class="caregiver-public-facts"><span>경력 ${Number(profile.careerYears || 0).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}년</span>${profile.serviceArea ? `<span>${escapeHtml(profile.serviceArea)}</span>` : ""}</div></div></div><section class="caregiver-review-insights"><div class="caregiver-review-insights-heading"><p class="eyebrow">CARE SKILLS</p><h4>전문 역량</h4><p>후기에 입력된 식사·세심함·시간준수·전문성·소통·위생안전 점수를 한눈에 비교합니다.</p></div><div class="caregiver-review-radar-stage">${caregiverCompetencyRadarMarkup(profile.competencyAverages, profile.competencyReviewCount)}</div>${caregiverReviewScorecardMarkup(profile)}</section><section class="caregiver-public-profile-details"><div><h4>전문분야</h4><div class="caregiver-public-tags">${(profile.specialties || []).length ? profile.specialties.map((item) => `<span>${escapeHtml(item)}</span>`).join("") : "<span>등록 준비 중</span>"}</div></div><div><h4>자격·교육</h4><ul class="caregiver-credential-list">${(profile.credentials || []).length ? profile.credentials.map((item) => `<li>${escapeHtml(item)}</li>`).join("") : "<li>등록 준비 중</li>"}</ul></div><div><h4>사용 언어</h4><p>${escapeHtml((profile.languages || []).join(" · ") || "등록 준비 중")}</p></div></section><section class="caregiver-public-reviews"><div class="section-header"><div><p class="eyebrow">CUSTOMER REVIEWS</p><h4>공개 후기</h4></div></div>${reviewsMarkup}</section></div><div class="modal-footer"><button type="button" class="primary-button" data-close-modal>확인</button></div></section></div>`;
     bindModalFrame();
   }
 

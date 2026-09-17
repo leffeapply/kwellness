@@ -243,6 +243,11 @@ assert.ok(!app.includes("관리자가 공개 대상으로 선정한 후기만 �
 assert.ok(app.includes("const REVIEW_COMPETENCIES = Object.freeze"), "the six caregiver competency definitions are missing");
 assert.ok(app.includes("reviewCompetencySurveyMarkup"), "the six-axis review survey is missing");
 assert.ok(app.includes("caregiverCompetencyRadarMarkup"), "the public six-axis caregiver radar chart is missing");
+assert.ok(app.includes("caregiverReviewScorecardMarkup"), "the overall rating must appear below the six-axis radar chart");
+assert.ok(app.includes('class="caregiver-review-radar-stage"'), "the public review detail must prioritize the radar chart");
+assert.ok(app.includes('class="caregiver-review-scorecard"'), "the radar chart must be followed by a dedicated rating card");
+assert.ok(!app.includes("<h4>전체 평점 분포</h4>"), "the legacy 1-to-5 rating distribution must not compete with the competency radar");
+assert.ok(!app.includes('class="rating-distribution"'), "the legacy rating distribution markup must be removed");
 assert.ok(cloud.includes("await addHistoricalReviewEvidenceCloud(caregiverId, savedReview.review_id, photoFiles, values.verificationNote);"), "photo-free external reviews must still be administrator-verified");
 assert.ok(app.includes("function reviewOverallRating("), "six-axis arithmetic mean helper is missing");
 assert.ok(app.includes("total / REVIEW_COMPETENCIES.length"), "overall rating must be the arithmetic mean of all six competency scores");

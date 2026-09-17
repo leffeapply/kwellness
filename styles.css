@@ -335,22 +335,30 @@
   line-height: 1.75;
 }
 
-.caregiver-public-detail-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 18px;
-}
-
-.caregiver-public-detail-grid > section {
-  padding: 18px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-}
-
-.caregiver-public-detail-grid h4,
+.caregiver-public-profile-details h4,
 .caregiver-public-reviews h4 {
   margin: 0 0 10px;
   color: var(--green);
+}
+
+.caregiver-public-profile-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.caregiver-public-profile-details > div {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fffdf9;
+}
+
+.caregiver-public-profile-details p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.7;
 }
 
 .caregiver-credential-list {
@@ -358,34 +366,6 @@
   padding-left: 20px;
   color: var(--ink-soft);
   line-height: 1.8;
-}
-
-.rating-distribution {
-  display: grid;
-  gap: 9px;
-}
-
-.rating-distribution-row {
-  display: grid;
-  grid-template-columns: 32px 1fr 24px;
-  gap: 9px;
-  align-items: center;
-  color: var(--ink-soft);
-  font-size: 10px;
-}
-
-.rating-distribution-row i {
-  overflow: hidden;
-  height: 8px;
-  border-radius: 999px;
-  background: #edf0ed;
-}
-
-.rating-distribution-row b {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: #d49a49;
 }
 
 .caregiver-public-reviews {
@@ -688,7 +668,7 @@
   .public-caregiver-carousel-controls button { width: 38px; height: 38px; }
   .public-caregiver-carousel-hint { display: flex; }
   .caregiver-public-detail-hero,
-  .caregiver-public-detail-grid { grid-template-columns: 1fr; }
+  .caregiver-public-profile-details { grid-template-columns: 1fr; }
   .caregiver-public-detail-photo { width: min(240px, 72vw); margin: 0 auto; }
   .caregiver-public-detail-body { padding: 18px; }
   .caregiver-public-name { align-items: center; }
@@ -6854,51 +6834,63 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   max-width: 430px;
 }
 
-.caregiver-competency-panel {
+.caregiver-review-insights {
   display: grid;
-  grid-template-columns: minmax(180px, .7fr) minmax(300px, 1.3fr);
-  align-items: center;
-  gap: 24px;
-  padding: 22px;
+  gap: 18px;
+  padding: 28px;
   border: 1px solid #d8e5df;
-  border-radius: 20px;
-  background: linear-gradient(135deg, #f1f8f5, #fffaf4);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 86% 12%, rgba(221, 238, 230, .74), transparent 30%),
+    linear-gradient(145deg, #fffdf9, #f4faf7);
 }
 
-.caregiver-competency-panel h4,
-.caregiver-competency-panel p {
+.caregiver-review-insights-heading {
+  text-align: center;
+}
+
+.caregiver-review-insights-heading h4,
+.caregiver-review-insights-heading p {
   margin: 0;
 }
 
-.caregiver-competency-panel h4 {
+.caregiver-review-insights-heading h4 {
   color: var(--ink);
-  font-size: 20px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 28px;
+  font-weight: 500;
 }
 
-.caregiver-competency-panel p:not(.eyebrow) {
+.caregiver-review-insights-heading p:not(.eyebrow) {
   margin-top: 7px;
   color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.6;
 }
 
+.caregiver-review-radar-stage {
+  display: grid;
+  justify-items: center;
+  padding: 8px 0 0;
+}
+
 .caregiver-competency-radar {
   display: grid;
-  grid-template-columns: minmax(110px, .7fr) minmax(200px, 1.3fr);
-  align-items: center;
-  gap: 10px;
-  width: 100%;
+  justify-items: center;
+  gap: 12px;
+  width: min(100%, 590px);
   margin: 0;
 }
 
 .caregiver-competency-radar figcaption {
   display: grid;
   gap: 4px;
+  text-align: center;
 }
 
 .caregiver-competency-radar figcaption strong {
   color: var(--ink);
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .caregiver-competency-radar figcaption span {
@@ -6910,35 +6902,103 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   display: block;
   width: 100%;
   min-width: 0;
-  max-height: 250px;
+  max-height: 390px;
   overflow: visible;
+  filter: drop-shadow(0 14px 22px rgba(31, 84, 70, .08));
 }
 
 .competency-radar-grid polygon,
 .competency-radar-grid line {
-  fill: none;
-  stroke: #cfddd6;
-  stroke-width: 1;
+  fill: rgba(255, 255, 255, .26);
+  stroke: #c2d4cb;
+  stroke-width: 1.2;
 }
 
 .competency-radar-score {
-  fill: rgba(45, 116, 96, .23);
-  stroke: #286f5d;
-  stroke-width: 2.5;
+  fill: rgba(44, 119, 96, .3);
+  stroke: #216c57;
+  stroke-width: 3;
   stroke-linejoin: round;
+}
+
+.competency-radar-point {
+  fill: #fffdf9;
+  stroke: #216c57;
+  stroke-width: 3;
 }
 
 .caregiver-competency-radar text {
   fill: var(--ink-soft);
   font-family: inherit;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
 }
 
 .caregiver-competency-radar text tspan + tspan {
   fill: var(--green);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 900;
+}
+
+.caregiver-review-scorecard {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  width: min(100%, 520px);
+  margin: 0 auto;
+  padding: 20px 24px;
+  border: 1px solid #ead7ad;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #fffaf0, #fffdf8);
+  text-align: center;
+  box-shadow: 0 10px 26px rgba(106, 76, 29, .07);
+}
+
+.caregiver-review-scorecard > p,
+.caregiver-review-scorecard > span {
+  margin: 0;
+}
+
+.caregiver-review-score {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  color: #d39839;
+}
+
+.caregiver-review-score > span {
+  font-size: 28px;
+}
+
+.caregiver-review-score strong {
+  color: #aa7020;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 46px;
+  line-height: 1;
+}
+
+.caregiver-review-score small {
+  color: #b58c4e;
+  font-size: 15px;
+}
+
+.caregiver-review-stars {
+  color: #d79b3e;
+  font-size: 18px;
+  letter-spacing: 3px;
+}
+
+.caregiver-review-scorecard > p:not(.eyebrow),
+.caregiver-review-scorecard > span {
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.caregiver-review-scorecard.empty > strong {
+  color: var(--green);
+  font-size: 18px;
 }
 
 .caregiver-competency-radar.compact {
@@ -6984,14 +7044,13 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
 
 @media (max-width: 720px) {
   .review-competency-grid,
-  .caregiver-competency-panel,
   .caregiver-competency-radar {
     grid-template-columns: 1fr;
   }
 
-  .caregiver-competency-panel {
+  .caregiver-review-insights {
     gap: 12px;
-    padding: 16px;
+    padding: 20px 14px;
   }
 
   .review-competency-summary {
@@ -7000,6 +7059,14 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
 
   .caregiver-competency-radar figcaption {
     text-align: center;
+  }
+
+  .caregiver-competency-radar svg {
+    max-height: 330px;
+  }
+
+  .caregiver-review-scorecard {
+    padding: 17px 14px;
   }
 }
 
@@ -7023,5 +7090,17 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   .review-competency-summary,
   .review-competency-summary.compact {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .caregiver-review-insights-heading h4 {
+    font-size: 24px;
+  }
+
+  .caregiver-competency-radar text {
+    font-size: 10px;
+  }
+
+  .caregiver-review-score strong {
+    font-size: 40px;
   }
 }
