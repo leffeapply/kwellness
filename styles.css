@@ -3690,6 +3690,20 @@ body:has(#modal-root:not(:empty)) {
 .service-review-card p:not(.eyebrow) { margin: 0; color: var(--ink-soft); font-size: 9px; line-height: 1.6; }
 .service-review-card small { display: block; margin-top: 6px; color: var(--ink-soft); font-size: 8px; }
 .review-stars { margin: 4px 0 6px; color: #d9a44c; font-size: 16px; letter-spacing: 2px; }
+.review-stars.calculated {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  letter-spacing: 0;
+  padding: 5px 9px;
+  border: 1px solid rgba(217, 164, 76, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 248, 231, 0.72);
+}
+.review-stars.calculated b { font-size: 17px; }
+.review-stars.calculated strong { color: var(--deep-green); font-size: 17px; }
+.review-stars.calculated small { color: var(--muted); font-size: 11px; }
+.review-average-note { margin-top: 14px; }
 .review-modal { width: min(600px, 100%); }
 .rating-options, .review-tag-options { display: flex; flex-wrap: wrap; gap: 7px; }
 .rating-options label, .review-tag-options label { cursor: pointer; }

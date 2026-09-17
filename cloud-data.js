@@ -1243,11 +1243,10 @@ export async function addServiceReviewPhotosCloud(reviewId, photoFiles) {
   }
 }
 
-export async function saveServiceReviewCloud({ assignmentId, rating, competencyScores, tags, comment, publicConsent, photoFiles = [] }) {
+export async function saveServiceReviewCloud({ assignmentId, competencyScores, tags, comment, publicConsent, photoFiles = [] }) {
   await authenticatedUserId();
   const savedReview = throwIfError(await supabase.rpc("submit_caregiver_review", {
     p_assignment_id: assignmentId,
-    p_rating: Number(rating),
     p_competency_scores: competencyScores,
     p_tags: Array.isArray(tags) ? tags : [],
     p_comment: String(comment || "").trim(),
@@ -1335,7 +1334,6 @@ export async function createHistoricalCaregiverReviewCloud(caregiverId, values, 
   const tags = String(values.tags || "").split(/[,·\n]/).map((item) => item.trim()).filter(Boolean);
   const savedReview = throwIfError(await supabase.rpc("admin_create_historical_caregiver_review", {
     p_caregiver_id: caregiverId,
-    p_rating: Number(values.rating),
     p_competency_scores: values.competencyScores,
     p_tags: tags,
     p_comment: String(values.comment || "").trim(),
