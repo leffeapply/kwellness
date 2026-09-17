@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [app, cloud, migration, moderationMigration, photoMigration, profileSyncMigration] = await Promise.all([
+const [app, cloud, migration, moderationMigration, photoMigration, profileSyncMigration, competencyMigration] = await Promise.all([
   readFile(new URL("../app.js", import.meta.url), "utf8"),
   readFile(new URL("../cloud-data.js", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/033_caregiver_reputation_marketing.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/034_review_moderation_integrity.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/035_verified_external_reviews_and_photos.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/036_caregiver_public_profile_sync.sql", import.meta.url), "utf8"),
+  readFile(new URL("../supabase/migrations/039_caregiver_competency_reviews.sql", import.meta.url), "utf8"),
 ]);
 
 const requiredSql = [
@@ -148,6 +149,33 @@ assert.ok(
   "homepage qualifications must be sourced from the canonical HR profile",
 );
 
+[
+  "add column if not exists meal_preparation_score smallint",
+  "add column if not exists attentiveness_score smallint",
+  "add column if not exists punctuality_score smallint",
+  "add column if not exists professionalism_score smallint",
+  "add column if not exists communication_score smallint",
+  "add column if not exists hygiene_safety_score smallint",
+  "from jsonb_object_keys(p_competency_scores)",
+  "'competency_scores', p_competency_scores",
+  "'competency_review_count'",
+  "'competencies', jsonb_build_object(",
+  "round(avg(score.communication_score)::numeric, 2)",
+  "'competency_scores', visible_review.competency_scores",
+].forEach((snippet) => assert.ok(
+  competencyMigration.includes(snippet),
+  `caregiver competency migration is missing: ${snippet}`,
+));
+assert.ok(
+  competencyMigration.includes("num_nonnulls(")
+    && competencyMigration.includes("meal_preparation_score between 1 and 5"),
+  "legacy reviews must remain valid while new six-axis scores stay all-or-none",
+);
+assert.ok(
+  competencyMigration.includes("drop function if exists public.submit_caregiver_review(uuid, integer, text[], text, boolean)"),
+  "the legacy review RPC overload must be removed to prevent bypassing competency scores",
+);
+
 assert.ok(cloud.includes('supabase.rpc("submit_caregiver_review"'), "customer reviews must use the atomic RPC");
 assert.ok(!cloud.includes('supabase.from("caregiver_reviews").insert'), "browser must not directly insert caregiver reviews");
 assert.ok(cloud.includes('supabase.rpc("public_caregiver_directory"'), "public caregiver directory must be loaded from the sanitized RPC");
@@ -161,6 +189,9 @@ assert.ok(cloud.includes('supabase.rpc("admin_verify_historical_caregiver_review
 assert.ok(cloud.includes('`customer/${reviewId}`'), "customer review photo paths must use the review ID without exposing the auth user ID");
 assert.ok(cloud.includes("values.fullName ?? values.publicDisplayName"), "public profile saves must prefer the canonical caregiver name");
 assert.ok(cloud.includes("values.certification ?? values.publicCredentials"), "public profile saves must prefer canonical caregiver qualifications");
+assert.ok(cloud.includes("p_competency_scores: competencyScores"), "customer review competency scores must be sent to the atomic RPC");
+assert.ok(cloud.includes("p_competency_scores: values.competencyScores"), "administrator historical review competency scores must be sent to the atomic RPC");
+assert.ok(cloud.includes("competencyReviewCount"), "public caregiver competency review counts must be normalized");
 
 assert.ok(app.includes("function assignmentHasDeliveredCare"), "delivered-care eligibility guard is missing");
 assert.ok(app.includes("clientCompletedReviewCenterMarkup(client)"), "completed-service review route is missing");
@@ -182,6 +213,18 @@ assert.ok(app.includes("syncSharedHomepageFields"), "caregiver HR edits must be 
 assert.ok(app.includes("<h4>공개 후기</h4>"), "public caregiver review heading must use concise customer-facing copy");
 assert.ok(!app.includes("관리자 선정 공개 후기"), "administrator-facing review wording must not appear publicly");
 assert.ok(!app.includes("관리자가 공개 대상으로 선정한 후기만 표시합니다"), "public review selection policy prose must remain hidden from customers");
+assert.ok(app.includes("const REVIEW_COMPETENCIES = Object.freeze"), "the six caregiver competency definitions are missing");
+assert.ok(app.includes("reviewCompetencySurveyMarkup"), "the six-axis review survey is missing");
+assert.ok(app.includes("caregiverCompetencyRadarMarkup"), "the public six-axis caregiver radar chart is missing");
+assert.ok(app.includes("전체 평점, 6개 전문 역량과 후기를 모두 입력해 주세요."), "customer reviews must require the overall score and all six competencies");
+[
+  'key: "meal_preparation"',
+  'key: "attentiveness"',
+  'key: "punctuality"',
+  'key: "professionalism"',
+  'key: "communication"',
+  'key: "hygiene_safety"',
+].forEach((snippet) => assert.ok(app.includes(snippet), `app competency definition is missing: ${snippet}`));
 
 const average = (ratings) => ratings.length
   ? Number((ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length).toFixed(1))

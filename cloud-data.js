@@ -126,11 +126,34 @@ function publicCaregiverReviewPhotoUrl(photoPath) {
   return data?.publicUrl || "";
 }
 
+const REVIEW_COMPETENCY_KEYS = [
+  "meal_preparation",
+  "attentiveness",
+  "punctuality",
+  "professionalism",
+  "communication",
+  "hygiene_safety",
+];
+
+function reviewCompetencyScoresFromRow(row) {
+  const source = row?.competency_scores && typeof row.competency_scores === "object"
+    ? row.competency_scores
+    : Object.fromEntries(REVIEW_COMPETENCY_KEYS.map((key) => [key, row?.[`${key}_score`]]));
+  const normalized = {};
+  for (const key of REVIEW_COMPETENCY_KEYS) {
+    const value = Number(source?.[key]);
+    if (!Number.isFinite(value) || value < 1 || value > 5) return null;
+    normalized[key] = value;
+  }
+  return normalized;
+}
+
 function normalizePublicCaregiver(row) {
   const reviews = Array.isArray(row?.reviews) ? row.reviews : [];
   const distribution = row?.rating_distribution && typeof row.rating_distribution === "object"
     ? row.rating_distribution
     : {};
+  const competencyAverages = reviewCompetencyScoresFromRow({ competency_scores: distribution.competencies });
   return {
     caregiverId: row.caregiver_id,
     caregiverUserId: row.user_id || null,
@@ -151,10 +174,13 @@ function normalizePublicCaregiver(row) {
     averageRating: row.average_rating == null ? null : Number(row.average_rating),
     reviewCount: Number(row.review_count || 0),
     ratingDistribution: distribution,
+    competencyAverages,
+    competencyReviewCount: Number(distribution.competency_review_count || 0),
     reviews: reviews.map((review) => ({
       id: review.id,
       source: review.source || "CLIENT",
       rating: Number(review.rating || 0),
+      competencyScores: reviewCompetencyScoresFromRow(review),
       tags: Array.isArray(review.tags) ? review.tags : [],
       comment: review.comment || "",
       serviceType: review.service_type || null,
@@ -740,6 +766,7 @@ async function loadCloudStateOnce(session) {
         caregiverId: item.caregiver_id,
         caregiverUserId: caregiverById.get(item.caregiver_id)?.user_id || null,
         rating: item.rating,
+        competencyScores: reviewCompetencyScoresFromRow(item),
         tags: item.tags,
         comment: item.comment,
         createdAt: item.created_at,
@@ -761,6 +788,7 @@ async function loadCloudStateOnce(session) {
       caregiverId: item.caregiver_id,
       caregiverUserId: caregiverById.get(item.caregiver_id)?.user_id || null,
       rating: item.rating,
+      competencyScores: reviewCompetencyScoresFromRow(item),
       tags: item.tags || [],
       comment: item.comment,
       createdAt: item.created_at,
@@ -1215,11 +1243,12 @@ export async function addServiceReviewPhotosCloud(reviewId, photoFiles) {
   }
 }
 
-export async function saveServiceReviewCloud({ assignmentId, rating, tags, comment, publicConsent, photoFiles = [] }) {
+export async function saveServiceReviewCloud({ assignmentId, rating, competencyScores, tags, comment, publicConsent, photoFiles = [] }) {
   await authenticatedUserId();
   const savedReview = throwIfError(await supabase.rpc("submit_caregiver_review", {
     p_assignment_id: assignmentId,
     p_rating: Number(rating),
+    p_competency_scores: competencyScores,
     p_tags: Array.isArray(tags) ? tags : [],
     p_comment: String(comment || "").trim(),
     p_public_consent: Boolean(publicConsent),
@@ -1298,6 +1327,7 @@ export async function createHistoricalCaregiverReviewCloud(caregiverId, values, 
   const savedReview = throwIfError(await supabase.rpc("admin_create_historical_caregiver_review", {
     p_caregiver_id: caregiverId,
     p_rating: Number(values.rating),
+    p_competency_scores: values.competencyScores,
     p_tags: tags,
     p_comment: String(values.comment || "").trim(),
     p_service_type: values.serviceType || null,
