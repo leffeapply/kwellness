@@ -3,10 +3,11 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const [app, cloud, migration] = await Promise.all([
+const [app, cloud, migration, settlementMigration] = await Promise.all([
   readFile(path.join(root, "app.js"), "utf8"),
   readFile(path.join(root, "cloud-data.js"), "utf8"),
   readFile(path.join(root, "supabase/migrations/037_finance_and_care_record_corrections.sql"), "utf8"),
+  readFile(path.join(root, "supabase/migrations/038_shift_reports_and_discounted_settlement.sql"), "utf8"),
 ]);
 
 const checks = [
@@ -20,6 +21,12 @@ const checks = [
   ["care record edits call a protected RPC", cloud.includes('supabase.rpc("update_care_event"') && migration.includes("create or replace function public.update_care_event")],
   ["care record corrections retain an audit trail", migration.includes("CORRECT_CARE_EVENT") && migration.includes("before_payload") && migration.includes("after_payload")],
   ["completed-visit records may be corrected", migration.includes("if tg_op in ('INSERT', 'DELETE') and session_row.status <> 'IN_PROGRESS'")],
+  ["pre-shift safety checks save atomically", cloud.includes('supabase.rpc("save_care_shift_checklist"') && settlementMigration.includes("save_care_shift_checklist") && app.includes("안전 체크 한 번에 저장")],
+  ["checked safety items cannot be unchecked accidentally", app.includes('checkbox.disabled = true') && app.includes('checkbox.closest("label")?.classList.add("is-checked")')],
+  ["balance payment hash resolves pgcrypto from extensions", settlementMigration.includes("extensions.digest") && settlementMigration.includes("record_service_balance_payment")],
+  ["owner discount is enforced and audited server-side", settlementMigration.includes("Only an owner can approve a service discount") && settlementMigration.includes("APPLY_OWNER_SERVICE_DISCOUNT")],
+  ["discount settlement is used by the client", cloud.includes('supabase.rpc("settle_service_balance_payment"') && app.includes("오너 할인 적용")],
+  ["reports show caregiver assignment history", app.includes("objectiveReportCaregiverHistoryMarkup") && app.includes("서비스 중 관리사 변경") && cloud.includes("contractId: assignment.contract_id")],
 ];
 
 const failures = checks.filter(([, passed]) => !passed);

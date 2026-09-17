@@ -3527,6 +3527,13 @@ body:has(#modal-root:not(:empty)) {
 .request-review-grid span, .request-review-grid strong { display: block; }
 .request-review-grid span { margin-bottom: 5px; color: var(--ink-soft); font-size: 12px; }
 .request-review-grid strong { font-size: 14px; line-height: 1.5; }
+.owner-discount-panel { display: grid; gap: 13px; padding: 15px; border: 1px solid #e4d2aa; border-radius: 14px; background: #fff9ea; }
+.owner-discount-panel .section-header.compact { align-items: start; margin: 0; }
+.owner-discount-panel h4 { margin: 2px 0 4px; font-size: 16px; }
+.owner-discount-panel p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+.settlement-live-summary { display: grid; grid-template-columns: repeat(4, auto); align-items: center; justify-content: start; gap: 8px 13px; padding: 12px 14px; border-radius: 11px; color: var(--green); background: var(--mint-light); }
+.settlement-live-summary span { color: var(--ink-soft); font-size: 11px; font-weight: 700; }
+.settlement-live-summary strong { font-size: 14px; font-variant-numeric: tabular-nums; }
 
 .calendar-card { overflow: hidden; }
 .calendar-head { margin: 0; padding: 20px 22px; border-bottom: 1px solid var(--line); }
@@ -3887,6 +3894,7 @@ body:has(#modal-root:not(:empty)) {
   .retrospective-entry-card > button { width: 100%; }
   .client-request-row, .request-review-grid { grid-template-columns: 1fr; }
   .request-review-grid > div.wide { grid-column: auto; }
+  .settlement-live-summary { grid-template-columns: 1fr auto; }
   .calendar-head { align-items: stretch; flex-direction: column; }
   .calendar-actions { justify-content: flex-start; }
   .report-actions { grid-template-columns: 1fr; }
@@ -4353,8 +4361,13 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
 .shift-check-list input { width: 17px; height: 17px; accent-color: var(--green); }
 .shift-check-list label > span { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; color: #6f817c; background: #e7ece8; font-size: 12px; }
 .shift-check-list input:checked + span { color: white; background: var(--green); }
+.shift-check-list label.is-checked { border-color: #9ebfb1; background: var(--mint-light); cursor: default; }
+.shift-check-list input:disabled { opacity: 1; cursor: default; }
 .shift-check-list label > div { display: grid; gap: 3px; }
 .shift-check-list small { color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+.shift-checklist-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; }
+.shift-checklist-actions > small { color: var(--ink-soft); font-size: 11px; line-height: 1.5; }
+.shift-checklist-actions .primary-button { flex: 0 0 auto; min-width: 210px; }
 .profile-summary + .status-banner { display: grid; gap: 4px; margin: 0; }
 .profile-summary + .status-banner strong { font-size: 13px; }
 .profile-summary + .status-banner span { font-size: 12px; }
@@ -4406,6 +4419,8 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   .care-journey-steps { grid-template-columns: 1fr; }
   .care-journey-steps > i { display: none; }
   .shift-check-list { grid-template-columns: 1fr; }
+  .shift-checklist-actions { align-items: stretch; flex-direction: column; }
+  .shift-checklist-actions .primary-button { width: 100%; min-width: 0; }
   .premium-addon-card { grid-template-columns: auto 1fr; }
   .premium-addon-card > button { grid-column: 1 / -1; }
 }
@@ -5987,6 +6002,71 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   line-height: 1.65;
 }
 
+.objective-report-caregiver-history {
+  display: grid;
+  grid-template-columns: minmax(190px, .7fr) minmax(0, 1.7fr);
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 15px 18px;
+  border: 1px solid #d7e3dc;
+  border-radius: 14px;
+  background: #fffdf8;
+}
+
+.objective-report-caregiver-history > div,
+.objective-report-caregiver-history li > div {
+  display: grid;
+  gap: 3px;
+}
+
+.objective-report-caregiver-history > div > span,
+.objective-report-caregiver-history small {
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.objective-report-caregiver-history > div > strong {
+  font-family: Georgia, "Noto Serif KR", serif;
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.objective-report-caregiver-history ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.objective-report-caregiver-history li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 180px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--mint-light);
+}
+
+.objective-report-caregiver-history li > span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: var(--green);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.objective-report-caregiver-history li strong { font-size: 12px; }
+
 .objective-report-kpis {
   display: grid;
   min-width: 0;
@@ -6256,6 +6336,8 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .objective-report-caregiver-history { grid-template-columns: minmax(0, 1fr); }
+
   .report-builder-actions {
     align-items: stretch;
     flex-direction: column;
@@ -6394,6 +6476,23 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
     border-radius: 2.5mm;
     background: #eef5f0 !important;
     break-inside: avoid-page;
+  }
+
+  .objective-report-caregiver-history {
+    gap: 3mm;
+    margin-bottom: 4mm;
+    padding: 3mm 4mm;
+    border-radius: 2.5mm;
+    break-inside: avoid-page;
+  }
+
+  .objective-report-caregiver-history > div > strong { font-size: 12pt; }
+
+  .objective-report-caregiver-history li {
+    min-width: 42mm;
+    padding: 2mm 2.5mm;
+    border-radius: 2mm;
+    background: #eef5f0 !important;
   }
 
   .objective-report-kpis {

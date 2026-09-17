@@ -516,6 +516,7 @@ async function loadCloudStateOnce(session) {
     const assignmentBaby = babyById.get(contract?.baby_id || brief?.baby_id);
     return {
       id: assignment.id,
+      contractId: assignment.contract_id,
       serviceRequestId: request?.id || null,
       administrativelyRemovedAt: request?.administratively_removed_at || null,
       serviceType: assignment.service_type,
@@ -611,6 +612,10 @@ async function loadCloudStateOnce(session) {
     weeks: request.requested_weeks,
     weeklyRate: Number(request.weekly_rate || 0) || null,
     estimatedTotal: Number(request.estimated_total || 0) || null,
+    ownerDiscountAmount: Number(request.owner_discount_amount || 0),
+    ownerDiscountReason: request.owner_discount_reason || "",
+    ownerDiscountedBy: request.owner_discounted_by || null,
+    ownerDiscountedAt: request.owner_discounted_at || null,
     depositAmount: Number(request.deposit_amount || 0) || null,
     depositStatus: request.deposit_status,
     depositPaidAt: request.deposit_paid_at,
@@ -892,14 +897,16 @@ export async function recordApprovedRequestDepositEvidenceCloud({ requestId, pay
   }), "기존 예약금 증빙 보완");
 }
 
-export async function recordServiceBalancePaymentCloud({ requestId, amount, paymentMethod, paymentReference, receivedOn }) {
+export async function recordServiceBalancePaymentCloud({ requestId, amount, paymentMethod, paymentReference, receivedOn, discountAmount = 0, discountReason = null }) {
   await authenticatedUserId();
-  return throwIfError(await supabase.rpc("record_service_balance_payment_dated", {
+  return throwIfError(await supabase.rpc("settle_service_balance_payment", {
     p_request_id: requestId,
     p_amount: Number(amount),
     p_payment_method: String(paymentMethod || "").trim(),
     p_payment_reference: String(paymentReference || "").trim(),
     p_received_on: receivedOn,
+    p_discount_amount: Number(discountAmount || 0),
+    p_discount_reason: String(discountReason || "").trim() || null,
   }), "서비스 잔금 수납 기록");
 }
 
@@ -967,6 +974,15 @@ export async function setCareShiftCheckCloud(assignmentId, checkKey, checked, { 
     p_service_date: serviceDate,
     p_time_zone: timeZone,
   }), "근무 전 확인사항 저장");
+}
+
+export async function saveCareShiftChecklistCloud(assignmentId, checks, { serviceDate = null, timeZone = null } = {}) {
+  return throwIfError(await supabase.rpc("save_care_shift_checklist", {
+    p_assignment_id: assignmentId,
+    p_checks: checks,
+    p_service_date: serviceDate,
+    p_time_zone: timeZone,
+  }), "근무 전 안전 체크 저장");
 }
 
 export async function saveCareEventCloud({ careSessionId, type, at, data, notes = null }) {

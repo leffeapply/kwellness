@@ -35,7 +35,7 @@ import {
   saveServiceReviewCloud,
   saveCareEventCloud,
   scheduleServiceRequestCloud,
-  setCareShiftCheckCloud,
+  saveCareShiftChecklistCloud,
   setCareSessionStatusCloud,
   setMemberAccessRolesCloud,
   setMemberStatusCloud,
@@ -1931,6 +1931,10 @@ import {
     return (request?.balanceTransactions || []).reduce((sum, transaction) => sum + transactionNetAmount(transaction), 0);
   }
 
+  function requestOwnerDiscount(request) {
+    return Math.max(0, Number(request?.ownerDiscountAmount ?? request?.owner_discount_amount ?? 0));
+  }
+
   function requestServiceRefundTotal(request) {
     return (request?.refundTransactions || []).reduce((sum, transaction) => {
       if (transaction?.status !== "COMPLETED") return sum;
@@ -1960,7 +1964,7 @@ import {
 
   function requestOutstandingBalance(request) {
     if (request?.status !== "APPROVED") return 0;
-    return Math.max(0, requestServiceTotal(request) - requestDepositNet(request) - requestBalanceNet(request));
+    return Math.max(0, requestServiceTotal(request) - requestOwnerDiscount(request) - requestDepositNet(request) - requestBalanceNet(request));
   }
 
   function memberAccountRowMarkup(user) {
@@ -2171,6 +2175,7 @@ import {
     const total = requestServiceTotal(request);
     const deposit = requestDepositNet(request);
     const balancePaid = requestBalanceNet(request);
+    const ownerDiscount = requestOwnerDiscount(request);
     const outstanding = requestOutstandingBalance(request);
     const depositReference = request.depositTransaction?.externalReference || request.depositTransaction?.external_reference || "";
     const depositReceivedAt = request.depositTransaction?.capturedAt || request.depositTransaction?.captured_at || request.depositPaidAt;
@@ -2196,7 +2201,7 @@ import {
           : outstanding === 0 && request.status === "APPROVED"
             ? '<span class="status-chip">수납 완료</span>'
             : "";
-    return `<div class="finance-ledger-row ${clientLinkIssue ? "has-lifecycle-issue" : ""}"><div class="finance-ledger-primary"><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${formatDate(request.desiredStartDate)} 시작 · ${request.weeks}주</span><small>신청 ${request.createdAt ? formatDate(request.createdAt) : "일자 미등록"}</small></div><div><span>신청 상태</span><strong class="status-chip ${statusTone}">${escapeHtml(serviceRequestStatusLabel(request))}</strong><small>${escapeHtml(clientLinkIssue || (request.approvedAssignmentId ? "일정 배정 연결됨" : ""))}</small></div><div><span>총 예정금액</span><strong>${total > 0 ? money(total) : "계산 필요"}</strong><small>${assignmentServiceType(request) === "POSTPARTUM" ? `주 ${money(Number(request.weeklyRate || POSTPARTUM_WEEKLY_RATE))}` : `시간당 ${money(BABYSITTING_HOURLY_RATE)}`}</small></div><div><span>예약금</span><strong>${depositLabel}</strong><small>${escapeHtml(depositReference ? `거래 ${depositReference}` : "실제 증빙 기준")}${depositReceivedAt ? ` · ${formatDate(depositReceivedAt)}` : ""}</small></div><div><span>잔금</span><strong>${money(balancePaid)} 수납</strong><small>${request.status === "APPROVED" ? `${money(outstanding)} 미수` : "승인 건만 미수 계산"}${latestBalancePayment ? ` · 최근 ${formatDate(latestBalancePayment.capturedAt || latestBalancePayment.captured_at)}` : ""}</small></div><div class="finance-ledger-action">${actionMarkup}</div></div>`;
+    return `<div class="finance-ledger-row ${clientLinkIssue ? "has-lifecycle-issue" : ""}"><div class="finance-ledger-primary"><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${formatDate(request.desiredStartDate)} 시작 · ${request.weeks}주</span><small>신청 ${request.createdAt ? formatDate(request.createdAt) : "일자 미등록"}</small></div><div><span>신청 상태</span><strong class="status-chip ${statusTone}">${escapeHtml(serviceRequestStatusLabel(request))}</strong><small>${escapeHtml(clientLinkIssue || (request.approvedAssignmentId ? "일정 배정 연결됨" : ""))}</small></div><div><span>총 예정금액</span><strong>${total > 0 ? money(total) : "계산 필요"}</strong><small>${ownerDiscount > 0 ? `오너 할인 -${money(ownerDiscount)} · 정산액 ${money(total - ownerDiscount)}` : assignmentServiceType(request) === "POSTPARTUM" ? `주 ${money(Number(request.weeklyRate || POSTPARTUM_WEEKLY_RATE))}` : `시간당 ${money(BABYSITTING_HOURLY_RATE)}`}</small></div><div><span>예약금</span><strong>${depositLabel}</strong><small>${escapeHtml(depositReference ? `거래 ${depositReference}` : "실제 증빙 기준")}${depositReceivedAt ? ` · ${formatDate(depositReceivedAt)}` : ""}</small></div><div><span>잔금</span><strong>${money(balancePaid)} 수납</strong><small>${request.status === "APPROVED" ? `${money(outstanding)} 미수` : "승인 건만 미수 계산"}${latestBalancePayment ? ` · 최근 ${formatDate(latestBalancePayment.capturedAt || latestBalancePayment.captured_at)}` : ""}</small></div><div class="finance-ledger-action">${actionMarkup}</div></div>`;
   }
 
   function financeCollectionQueueItemMarkup(request) {
@@ -2205,11 +2210,13 @@ import {
     const total = requestServiceTotal(request);
     const deposit = requestDepositNet(request);
     const balancePaid = requestBalanceNet(request);
+    const ownerDiscount = requestOwnerDiscount(request);
     const outstanding = requestOutstandingBalance(request);
     const requiredDeposit = Number(request.depositAmount || (assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT));
     const needsDeposit = deposit <= 0;
     const collected = deposit + balancePaid;
-    const progress = total > 0 ? Math.min(100, Math.max(0, collected / total * 100)) : 0;
+    const settled = collected + ownerDiscount;
+    const progress = total > 0 ? Math.min(100, Math.max(0, settled / total * 100)) : 0;
     const actionMarkup = !usingCloudData()
       ? '<span class="status-chip gold">클라우드 연결 필요</span>'
       : clientLinkIssue
@@ -2220,7 +2227,7 @@ import {
     const nextStep = needsDeposit
       ? `예약금 ${money(requiredDeposit)} 수납을 먼저 기록하면 본 금액 입력 단계가 열립니다.`
       : "전액 또는 실제 받은 일부 금액을 입력할 수 있으며, 저장 즉시 해당 수납월에 반영됩니다.";
-    return `<article class="finance-collection-item ${clientLinkIssue ? "has-lifecycle-issue" : ""}"><div class="finance-collection-identity"><div>${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${formatDate(request.desiredStartDate)} 시작 · ${request.weeks}주</span></div><div class="finance-collection-amounts"><div><span>총 예정금액</span><strong>${money(total)}</strong></div><div><span>예약금 수납</span><strong>${money(deposit)}</strong></div><div><span>본 금액 수납</span><strong>${money(balancePaid)}</strong></div><div class="outstanding"><span>현재 미수금</span><strong>${money(outstanding)}</strong></div></div><div class="finance-collection-progress" aria-label="총 예정금액 중 ${Math.round(progress)}% 수납"><span style="width:${progress.toFixed(2)}%"></span></div><div class="finance-collection-footer"><small>${escapeHtml(clientLinkIssue || nextStep)}</small>${actionMarkup}</div></article>`;
+    return `<article class="finance-collection-item ${clientLinkIssue ? "has-lifecycle-issue" : ""}"><div class="finance-collection-identity"><div>${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${formatDate(request.desiredStartDate)} 시작 · ${request.weeks}주</span></div><div class="finance-collection-amounts"><div><span>총액${ownerDiscount > 0 ? " / 오너 할인" : ""}</span><strong>${money(total)}${ownerDiscount > 0 ? ` / -${money(ownerDiscount)}` : ""}</strong></div><div><span>예약금 수납</span><strong>${money(deposit)}</strong></div><div><span>본 금액 수납</span><strong>${money(balancePaid)}</strong></div><div class="outstanding"><span>현재 미수금</span><strong>${money(outstanding)}</strong></div></div><div class="finance-collection-progress" aria-label="총 예정금액 중 수납과 할인으로 ${Math.round(progress)}% 정산"><span style="width:${progress.toFixed(2)}%"></span></div><div class="finance-collection-footer"><small>${escapeHtml(clientLinkIssue || nextStep)}</small>${actionMarkup}</div></article>`;
   }
 
   function financeRefundQueueItemMarkup(request) {
@@ -2505,7 +2512,8 @@ import {
       ["scope", "업무 범위 확인", babysitting ? "의료행위 없이 승인된 베이비시팅 범위만 수행합니다." : "의료행위·무면허 마사지 없이 승인된 산후조리 범위만 수행합니다."],
     ];
     const completed = items.filter(([id]) => saved[id]).length;
-    return `<article class="card card-pad shift-checklist-card" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">PRE-SHIFT CHECK</p><h3>근무 전 안전 체크</h3><p>현재 기기의 현지 날짜(${escapeHtml(formatDate(localDateKey(new Date())))}) 기준으로 저장됩니다.</p></div><span class="status-chip ${completed === items.length ? "" : "gold"}">${completed}/${items.length} 완료</span></div><div class="shift-check-list">${items.map(([id, title, detail]) => `<label><input type="checkbox" data-shift-check="${assignment.id}" data-check-id="${id}" ${saved[id] ? "checked" : ""}/><span>✓</span><div><strong>${title}</strong><small>${detail}</small></div></label>`).join("")}</div></article>`;
+    const allSaved = completed === items.length;
+    return `<article class="card card-pad shift-checklist-card" style="margin-top:18px" data-shift-checklist="${assignment.id}"><div class="section-header"><div><p class="eyebrow">PRE-SHIFT CHECK</p><h3>근무 전 안전 체크</h3><p>네 항목을 모두 확인한 뒤 한 번만 저장합니다. 확인한 항목은 실수로 다시 눌러도 해제되지 않습니다.</p></div><span class="status-chip ${allSaved ? "" : "gold"}" data-shift-check-progress>${completed}/${items.length} 완료</span></div><div class="shift-check-list">${items.map(([id, title, detail]) => `<label class="${saved[id] ? "is-checked" : ""}"><input type="checkbox" data-shift-check="${assignment.id}" data-check-id="${id}" ${saved[id] ? "checked disabled" : ""}/><span>✓</span><div><strong>${title}</strong><small>${detail}</small></div></label>`).join("")}</div><div class="shift-checklist-actions"><small>현재 기기의 현지 날짜(${escapeHtml(formatDate(localDateKey(new Date())))}) 기준으로 저장됩니다.</small><button type="button" class="primary-button" data-save-shift-checks="${assignment.id}" ${allSaved ? "disabled" : "disabled"}>${allSaved ? "오늘 안전 체크 저장 완료" : "4개 항목 확인 후 저장"}</button></div></article>`;
   }
 
   function quickActionEvents(action, events) {
@@ -3622,6 +3630,44 @@ import {
     return `<section class="objective-report-builder report-screen-only" aria-label="케어 리포트 설정"><div class="section-header"><div><p class="eyebrow">CARE REPORT</p><h3>서비스 배치별 케어 리포트</h3><p>선택한 배치의 서비스 요일과 실제 케어·기록이 있는 날짜만 정리합니다. 비서비스일은 표시하지 않습니다.</p></div><span class="status-chip">${escapeHtml(serviceMetaFor(serviceType).label)}</span></div>${adminSearch}${auditNotice}<div class="report-builder-fields"><div class="field report-batch-selector"><label for="objective-report-assignment">서비스 배치 선택</label><select id="objective-report-assignment" data-objective-report-assignment>${assignmentOptions}</select><small>고객과 관리사는 본인에게 연결된 배치만 볼 수 있습니다.</small></div><div class="field"><label>배치 서비스 기간</label><div class="report-batch-summary"><strong>${escapeHtml(batchPeriod)}</strong><span>배치 ${escapeHtml(String(assignment.id).slice(0, 8).toUpperCase())}</span></div></div><div class="field"><label>리포트 표시일</label><div class="report-batch-summary"><strong>${model.dateKeys.length}일</strong><span>서비스 요일·실제 케어 기록 기준</span></div></div></div><div class="report-builder-fields"><div class="field"><label>기록 시간 기준</label><div class="status-chip">${escapeHtml(objectiveReportTimeBasisLabel(model))}</div></div><div class="field"><label>보고서 보기</label><div class="report-density-tabs" role="group" aria-label="보고서 보기">${[["daily", "날짜별"], ["hourly", "시간별"], ["both", "모두"]].map(([id, label]) => `<button type="button" data-objective-report-granularity="${id}" class="${preferences.granularity === id ? "active" : ""}" aria-pressed="${preferences.granularity === id}">${label}</button>`).join("")}</div></div><div class="report-builder-actions"><button type="button" class="primary-button" data-print-objective-report="${escapeHtml(assignment.id)}">PDF로 저장·인쇄</button></div></div></section>`;
   }
 
+  function caregiverDisplayNameForAssignment(assignment) {
+    const caregiver = state.users.find((user) => user.id === assignment?.caregiverUserId);
+    return caregiver?.fullName || assignment?.caregiverName || "담당 관리사";
+  }
+
+  function assignmentCaregiverHistory(assignment) {
+    const relatedAssignments = assignment?.contractId
+      ? state.assignments.filter((item) => item.contractId === assignment.contractId && assignmentServiceType(item) === assignmentServiceType(assignment))
+      : [assignment];
+    return relatedAssignments
+      .filter(Boolean)
+      .sort((first, second) => new Date(first.startAt || 0) - new Date(second.startAt || 0))
+      .map((item) => ({
+        assignmentId: item.id,
+        caregiverId: item.caregiverId || item.caregiverUserId || caregiverDisplayNameForAssignment(item),
+        caregiverName: caregiverDisplayNameForAssignment(item),
+        fromDate: objectiveDateKey(item.startAt, OBJECTIVE_REPORT_TIME_ZONE) || item.contractStartDate || "",
+        toDate: objectiveDateKey(item.endAt, OBJECTIVE_REPORT_TIME_ZONE) || item.contractEndDate || "",
+      }))
+      .reduce((history, segment) => {
+        const previous = history.at(-1);
+        if (previous?.caregiverId === segment.caregiverId && previous?.caregiverName === segment.caregiverName) {
+          previous.toDate = segment.toDate || previous.toDate;
+          previous.assignmentIds.push(segment.assignmentId);
+          return history;
+        }
+        history.push({ ...segment, assignmentIds: [segment.assignmentId] });
+        return history;
+      }, []);
+  }
+
+  function objectiveReportCaregiverHistoryMarkup(assignment) {
+    const history = assignmentCaregiverHistory(assignment);
+    const current = history.find((segment) => segment.assignmentIds.includes(assignment.id)) || history.at(-1);
+    if (!current) return "";
+    return `<section class="objective-report-caregiver-history"><div><span>서비스 담당 관리사</span><strong>${escapeHtml(current.caregiverName)}</strong><small>${history.length > 1 ? `서비스 중 관리사 변경 ${history.length - 1}회` : "해당 서비스 배치 담당"}</small></div><ol>${history.map((segment, index) => `<li><span>${index + 1}</span><div><strong>${escapeHtml(segment.caregiverName)}</strong><small>${escapeHtml(objectiveDateLabel(segment.fromDate))}–${escapeHtml(objectiveDateLabel(segment.toDate))}</small></div></li>`).join("")}</ol></section>`;
+  }
+
   function objectiveReportMarkup(assignment, client, model, role = state.role) {
     const preferences = objectiveReportPreferences(role);
     const babyName = babyNameFor(assignment, client) || "아이";
@@ -3634,7 +3680,7 @@ import {
     const reportTimeBasis = objectiveReportTimeBasisLabel(model);
     const showDaily = preferences.granularity === "daily" || preferences.granularity === "both";
     const showHourly = preferences.granularity === "hourly" || preferences.granularity === "both";
-    return `<article class="objective-report" aria-labelledby="objective-report-title"><header class="objective-report-banner"><div class="report-print-only">${brandLogoMarkup(true)}</div><p class="eyebrow">PROMOMS CARE REPORT</p><h1 id="objective-report-title">${escapeHtml(serviceMetaFor(model.serviceType).label)} 서비스 배치 리포트</h1><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyName)} · ${escapeHtml(objectiveDateLabel(reportFrom))}–${escapeHtml(objectiveDateLabel(reportTo))}</p><small>배치 ${escapeHtml(String(assignment.id).slice(0, 8).toUpperCase())} · 리포트 번호 ${escapeHtml(reportId)} · 기록 시간 ${escapeHtml(reportTimeBasis)} · 생성 ${escapeHtml(generatedAt)} (${escapeHtml(serviceTimeZoneLabel(generatedAtTimeZone))})</small></header><div class="objective-report-banner"><strong>선택한 서비스 배치와 기록</strong><p>표시된 서비스일 ${model.dateKeys.length}일 · 기록이 있는 날 ${model.totals.recordedDays}일 · 관리사 기록 ${model.totals.eventCount}건 · 완료된 근무시간 ${model.totals.careMinutes === null ? "기록 없음" : reportDurationValue(model.totals.careMinutes)}</p><small>배치 안의 서비스 요일과 실제 케어·기록 날짜만 표시하며 비서비스일은 제외합니다. 날짜와 시간은 각 기록을 입력한 기기의 현지시간 기준입니다. ‘기록 없음’은 숫자 0과 다릅니다. 메모가 포함된 ${model.dataQuality.freeTextExcludedFromMetrics}건은 아래 상세 기록에 그대로 표시했고, 메모 속 숫자는 합계·평균에 사용하지 않았습니다. 숫자로 읽을 수 없는 입력 ${model.dataQuality.invalidMetricCount}건.</small></div>${objectiveReportKpisMarkup(model)}<section class="objective-report-section"><h2>서비스 배치 기록 요약</h2><div class="objective-report-facts">${model.facts.map((fact) => `<p class="objective-report-fact">${escapeHtml(fact)}</p>`).join("")}</div></section><section class="objective-report-section"><h2>서비스일별 변화</h2><p class="objective-report-legend">선택한 배치의 서비스일만 각 기록 기기의 현지날짜 기준으로 표시합니다. 정상·위험·호전·악화 여부를 판단하지 않습니다.</p>${objectiveReportChartsMarkup(model)}</section>${showDaily ? `<section class="objective-report-section"><h2>서비스일별 기록</h2><p class="objective-report-legend">비서비스일은 제외합니다. 포함된 서비스일에 입력값이 없는 항목은 ‘기록 없음’ 또는 0건으로 구분해 표시합니다.</p>${objectiveReportDailyTableMarkup(model)}</section>` : ""}${showHourly ? `<section class="objective-report-section"><h2>시간별 상세 기록</h2><p class="objective-report-legend">관리사가 입력한 내용과 직접 작성한 메모에 각 기록 기기의 현지시간과 시간대를 함께 표시합니다.</p>${objectiveReportHourlyTableMarkup(model)}</section>` : ""}<p class="objective-report-disclaimer"><strong>중요:</strong> 이 문서는 관리사가 입력한 내용을 합계·평균으로 정리한 리포트입니다. 의료 진단, 성장 판정, 건강 상태 평가 또는 원인 추정을 제공하지 않습니다. 판단이 필요한 경우 해당 분야의 자격을 갖춘 전문가에게 문의하세요.</p><footer class="objective-report-footer"><p>ProMoms · 엄마 곁의 전문가</p><p>${escapeHtml(reportId)} · 계산 기준 1.1 · ${escapeHtml(reportFrom)}–${escapeHtml(reportTo)}</p></footer></article>`;
+    return `<article class="objective-report" aria-labelledby="objective-report-title"><header class="objective-report-banner"><div class="report-print-only">${brandLogoMarkup(true)}</div><p class="eyebrow">PROMOMS CARE REPORT</p><h1 id="objective-report-title">${escapeHtml(serviceMetaFor(model.serviceType).label)} 서비스 배치 리포트</h1><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyName)} · ${escapeHtml(objectiveDateLabel(reportFrom))}–${escapeHtml(objectiveDateLabel(reportTo))}</p><small>배치 ${escapeHtml(String(assignment.id).slice(0, 8).toUpperCase())} · 리포트 번호 ${escapeHtml(reportId)} · 기록 시간 ${escapeHtml(reportTimeBasis)} · 생성 ${escapeHtml(generatedAt)} (${escapeHtml(serviceTimeZoneLabel(generatedAtTimeZone))})</small></header>${objectiveReportCaregiverHistoryMarkup(assignment)}<div class="objective-report-banner"><strong>선택한 서비스 배치와 기록</strong><p>표시된 서비스일 ${model.dateKeys.length}일 · 기록이 있는 날 ${model.totals.recordedDays}일 · 관리사 기록 ${model.totals.eventCount}건 · 완료된 근무시간 ${model.totals.careMinutes === null ? "기록 없음" : reportDurationValue(model.totals.careMinutes)}</p><small>배치 안의 서비스 요일과 실제 케어·기록 날짜만 표시하며 비서비스일은 제외합니다. 날짜와 시간은 각 기록을 입력한 기기의 현지시간 기준입니다. ‘기록 없음’은 숫자 0과 다릅니다. 메모가 포함된 ${model.dataQuality.freeTextExcludedFromMetrics}건은 아래 상세 기록에 그대로 표시했고, 메모 속 숫자는 합계·평균에 사용하지 않았습니다. 숫자로 읽을 수 없는 입력 ${model.dataQuality.invalidMetricCount}건.</small></div>${objectiveReportKpisMarkup(model)}<section class="objective-report-section"><h2>서비스 배치 기록 요약</h2><div class="objective-report-facts">${model.facts.map((fact) => `<p class="objective-report-fact">${escapeHtml(fact)}</p>`).join("")}</div></section><section class="objective-report-section"><h2>서비스일별 변화</h2><p class="objective-report-legend">선택한 배치의 서비스일만 각 기록 기기의 현지날짜 기준으로 표시합니다. 정상·위험·호전·악화 여부를 판단하지 않습니다.</p>${objectiveReportChartsMarkup(model)}</section>${showDaily ? `<section class="objective-report-section"><h2>서비스일별 기록</h2><p class="objective-report-legend">비서비스일은 제외합니다. 포함된 서비스일에 입력값이 없는 항목은 ‘기록 없음’ 또는 0건으로 구분해 표시합니다.</p>${objectiveReportDailyTableMarkup(model)}</section>` : ""}${showHourly ? `<section class="objective-report-section"><h2>시간별 상세 기록</h2><p class="objective-report-legend">관리사가 입력한 내용과 직접 작성한 메모에 각 기록 기기의 현지시간과 시간대를 함께 표시합니다.</p>${objectiveReportHourlyTableMarkup(model)}</section>` : ""}<p class="objective-report-disclaimer"><strong>중요:</strong> 이 문서는 관리사가 입력한 내용을 합계·평균으로 정리한 리포트입니다. 의료 진단, 성장 판정, 건강 상태 평가 또는 원인 추정을 제공하지 않습니다. 판단이 필요한 경우 해당 분야의 자격을 갖춘 전문가에게 문의하세요.</p><footer class="objective-report-footer"><p>ProMoms · 엄마 곁의 전문가</p><p>${escapeHtml(reportId)} · 계산 기준 1.1 · ${escapeHtml(reportFrom)}–${escapeHtml(reportTo)}</p></footer></article>`;
   }
 
   function objectiveReportPage(role, serviceType, workspaceNav = "") {
@@ -3664,7 +3710,7 @@ import {
     const summary = serviceType === "BABYSITTING"
       ? `<div class="grid stats sitter-report-stats">${statCard("식사 기록", events.filter((event) => event.type === "meal").length, "식사·간식 기록", "🍽️")}${statCard("놀이·생활 기록", events.filter((event) => event.type === "sitter_note").length, "놀이·산책·생활", "☆")}${statCard("관리사의 기록 횟수", events.length, "선택한 근무일 전체", "◷")}${statCard("안전 확인", events.filter((event) => event.data?.category === "안전 확인").length, "안전 확인 기록", "✓")}</div>`
       : careChartSummaryMarkup(events);
-    return `<div class="care-session-report-preview">${serviceBadgeMarkup(serviceType)}<article class="card card-pad"><div class="section-header"><div><p class="eyebrow">WORKDAY REPORT</p><h3>${escapeHtml(babyName)} · ${serviceDate}</h3><p>선택한 근무일의 기록만 보여줍니다. 고객에게 발행되는 보관본에도 같은 내용이 들어갑니다.</p></div><span class="status-chip">관리사 기록 ${events.length}건</span></div>${summary}<div class="section-header session-event-header"><div><h3>근무일 상세 기록</h3><p>${session.startedAt ? `${new Date(session.startedAt).toLocaleString("ko-KR")} 시작` : "시작시간 기록 없음"}${session.endedAt ? ` · ${new Date(session.endedAt).toLocaleString("ko-KR")} 종료` : ""}</p></div></div>${eventList}</article></div>`;
+    return `<div class="care-session-report-preview">${serviceBadgeMarkup(serviceType)}<article class="card card-pad"><div class="section-header"><div><p class="eyebrow">WORKDAY REPORT</p><h3>${escapeHtml(babyName)} · ${serviceDate}</h3><p>담당 관리사 ${escapeHtml(caregiverDisplayNameForAssignment(assignment))} · 선택한 근무일의 기록만 보여줍니다. 고객에게 발행되는 보관본에도 같은 내용이 들어갑니다.</p></div><span class="status-chip">관리사 기록 ${events.length}건</span></div>${summary}<div class="section-header session-event-header"><div><h3>근무일 상세 기록</h3><p>${session.startedAt ? `${new Date(session.startedAt).toLocaleString("ko-KR")} 시작` : "시작시간 기록 없음"}${session.endedAt ? ` · ${new Date(session.endedAt).toLocaleString("ko-KR")} 종료` : ""}</p></div></div>${eventList}</article></div>`;
   }
 
   function adminReports() {
@@ -4350,31 +4396,63 @@ import {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }));
 
-    document.querySelectorAll("[data-shift-check]").forEach((checkbox) => checkbox.addEventListener("change", async () => {
+    document.querySelectorAll("[data-shift-check]").forEach((checkbox) => checkbox.addEventListener("change", () => {
       const assignmentId = checkbox.dataset.shiftCheck;
       const checkId = checkbox.dataset.checkId;
-      const previousValue = !checkbox.checked;
+      if (!checkbox.checked) {
+        checkbox.checked = true;
+        return;
+      }
       state.shiftChecklists[assignmentId] = state.shiftChecklists[assignmentId] || {};
-      state.shiftChecklists[assignmentId][checkId] = checkbox.checked;
-      if (usingCloudData()) {
-        checkbox.disabled = true;
-        try {
-          await setCareShiftCheckCloud(assignmentId, checkId, checkbox.checked, {
+      state.shiftChecklists[assignmentId][checkId] = true;
+      checkbox.disabled = true;
+      checkbox.closest("label")?.classList.add("is-checked");
+      const card = checkbox.closest("[data-shift-checklist]");
+      const checkboxes = [...(card?.querySelectorAll("[data-shift-check]") || [])];
+      const completed = checkboxes.filter((item) => item.checked).length;
+      const progress = card?.querySelector("[data-shift-check-progress]");
+      const saveButton = card?.querySelector("[data-save-shift-checks]");
+      if (progress) {
+        progress.textContent = `${completed}/${checkboxes.length} 완료`;
+        progress.classList.toggle("gold", completed !== checkboxes.length);
+      }
+      if (saveButton) {
+        saveButton.disabled = completed !== checkboxes.length;
+        saveButton.textContent = completed === checkboxes.length ? "안전 체크 한 번에 저장" : "4개 항목 확인 후 저장";
+      }
+    }));
+
+    document.querySelectorAll("[data-save-shift-checks]").forEach((button) => button.addEventListener("click", async () => {
+      const assignmentId = button.dataset.saveShiftChecks;
+      const requiredCheckIds = ["arrival", "safety", "request", "scope"];
+      const checks = state.shiftChecklists[assignmentId] || {};
+      if (!requiredCheckIds.every((checkId) => checks[checkId] === true)) {
+        return showToast("네 가지 안전 항목을 모두 확인해 주세요.", "error");
+      }
+      button.disabled = true;
+      button.textContent = "안전 체크 저장 중…";
+      try {
+        if (usingCloudData()) {
+          await saveCareShiftChecklistCloud(assignmentId, {
+            arrival: true,
+            safety: true,
+            request: true,
+            scope: true,
+          }, {
             serviceDate: localDateKey(new Date()),
             timeZone: deviceTimeZone(),
           });
           await refreshCloudState();
-          showToast(checkbox.checked ? "오늘의 근무 전 확인사항을 저장했습니다." : "오늘의 확인 상태를 해제했습니다.");
-        } catch (error) {
-          state.shiftChecklists[assignmentId][checkId] = previousValue;
-          showToast(friendlyErrorMessage(error, "확인사항을 저장하지 못했습니다."), "error");
+        } else {
+          saveState();
           render();
         }
-        return;
+        showToast("오늘의 근무 전 안전 체크 4개 항목을 한 번에 저장했습니다.");
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = "안전 체크 다시 저장";
+        showToast(friendlyErrorMessage(error, "근무 전 안전 체크를 저장하지 못했습니다."), "error");
       }
-      saveState();
-      render();
-      showToast(checkbox.checked ? "근무 전 확인 항목을 저장했습니다." : "확인 상태를 해제했습니다.");
     }));
 
     document.querySelectorAll("[data-public-home]").forEach((button) => button.addEventListener("click", () => { state.auth.screen = "public"; saveState(); render(); window.scrollTo({ top: 0, behavior: "smooth" }); }));
@@ -6278,27 +6356,70 @@ import {
     if (outstanding <= 0) return showToast("이 신청은 미수 잔금이 없습니다.", "info");
     const total = requestServiceTotal(request);
     const alreadyPaid = requestDepositNet(request) + requestBalanceNet(request);
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal" role="dialog" aria-modal="true" aria-labelledby="balance-payment-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<p class="eyebrow">BALANCE PAYMENT</p><h3 id="balance-payment-title">잔금 수납 확인·기록</h3><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-balance-payment-form><div class="request-review-grid"><div><span>총 예정금액</span><strong>${money(total)}</strong></div><div><span>기수납액</span><strong>${money(alreadyPaid)}</strong></div><div class="wide"><span>현재 미수 잔금</span><strong>${money(outstanding)}</strong></div></div><div class="status-banner warning"><strong>실제 수납 내역만 기록하세요.</strong><span>이 화면은 결제를 실행하지 않습니다. 누락분은 실제 받은 날짜를 선택하면 해당 월·연도 수입에 소급 반영됩니다.</span></div><div class="form-grid three"><div class="field"><label for="balance-payment-date">실제 수납일</label><input id="balance-payment-date" name="paymentDate" type="date" value="${localDateKey(new Date())}" max="${localDateKey(new Date())}" required/></div><div class="field"><label for="balance-payment-amount">수납액</label><input id="balance-payment-amount" name="amount" type="number" min="0.01" max="${outstanding.toFixed(2)}" step="0.01" value="${outstanding.toFixed(2)}" required/><small>최대 ${money(outstanding)}</small></div><div class="field"><label for="balance-payment-method">결제 수단</label><select id="balance-payment-method" name="paymentMethod" required><option value="CARD">카드</option><option value="BANK_TRANSFER">계좌이체</option><option value="CHECK">수표</option><option value="CASH">현금</option><option value="OTHER">기타</option></select></div></div><div class="field"><label for="balance-payment-reference">거래·영수증 번호</label><input id="balance-payment-reference" name="paymentReference" minlength="3" maxlength="255" autocomplete="off" placeholder="결제사·은행의 고유 거래번호" required/><small>중복 사용할 수 없는 실제 외부 거래번호를 입력합니다.</small></div><label class="consent-line"><input type="checkbox" name="paymentConfirmed" required/><span>위 금액의 실제 잔금 수납 내역과 일치함을 확인합니다.</span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">잔금 수납 저장</button></div></form></section></div>`;
+    const existingDiscount = requestOwnerDiscount(request);
+    const canApplyOwnerDiscount = !usingCloudData() || hasDatabaseRole("OWNER");
+    const ownerDiscountFields = canApplyOwnerDiscount
+      ? `<section class="owner-discount-panel"><div class="section-header compact"><div><p class="eyebrow">OWNER DISCOUNT</p><h4>오너 할인 적용</h4><p>실제 현금 수납이 아닌 계약 할인입니다. 할인액만큼 미수금이 줄고 수입에는 포함되지 않습니다.</p></div><span class="status-chip gold">소유자 전용</span></div><div class="form-grid two"><div class="field"><label for="balance-discount-amount">추가 할인액</label><input id="balance-discount-amount" name="discountAmount" type="number" min="0" max="${outstanding.toFixed(2)}" step="0.01" value="0.00"/><small>최대 ${money(outstanding)}</small></div><div class="field"><label for="balance-discount-reason">할인 사유</label><input id="balance-discount-reason" name="discountReason" maxlength="500" autocomplete="off" placeholder="예: 장기 이용 고객 오너 승인 할인"/><small>할인액을 입력하면 3자 이상 사유가 필요합니다.</small></div></div></section>`
+      : "";
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal" role="dialog" aria-modal="true" aria-labelledby="balance-payment-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<p class="eyebrow">BALANCE SETTLEMENT</p><h3 id="balance-payment-title">잔금 수납·할인 정산</h3><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-balance-payment-form><div class="request-review-grid"><div><span>총 예정금액</span><strong>${money(total)}</strong></div><div><span>현금 기수납액</span><strong>${money(alreadyPaid)}</strong></div><div><span>기존 오너 할인</span><strong>${money(existingDiscount)}</strong></div><div><span>현재 미수 잔금</span><strong>${money(outstanding)}</strong></div></div><div class="status-banner warning"><strong>실제 수납 내역만 기록하세요.</strong><span>이 화면은 결제를 실행하지 않습니다. 수납액은 해당 수납월의 수입에 반영되고, 오너 할인은 수입이 아닌 정산 조정으로만 기록됩니다.</span></div>${ownerDiscountFields}<div class="settlement-live-summary" data-settlement-summary><span>이번 현금 수납</span><strong>${money(outstanding)}</strong><span>할인 후 남는 미수금</span><strong>${money(0)}</strong></div><div class="form-grid three"><div class="field"><label for="balance-payment-date">실제 수납·할인 적용일</label><input id="balance-payment-date" name="paymentDate" type="date" value="${localDateKey(new Date())}" max="${localDateKey(new Date())}" required/></div><div class="field"><label for="balance-payment-amount">실제 수납액</label><input id="balance-payment-amount" name="amount" type="number" min="0" max="${outstanding.toFixed(2)}" step="0.01" value="${outstanding.toFixed(2)}" required/><small data-balance-payment-limit>최대 ${money(outstanding)}</small></div><div class="field"><label for="balance-payment-method">결제 수단</label><select id="balance-payment-method" name="paymentMethod" required><option value="CARD">카드</option><option value="BANK_TRANSFER">계좌이체</option><option value="CHECK">수표</option><option value="CASH">현금</option><option value="OTHER">기타</option></select></div></div><div class="field"><label for="balance-payment-reference">거래·영수증 번호</label><input id="balance-payment-reference" name="paymentReference" minlength="3" maxlength="255" autocomplete="off" placeholder="결제사·은행의 고유 거래번호" required/><small>중복 사용할 수 없는 실제 외부 거래번호를 입력합니다. 전액 할인이라 현금 수납이 0이면 필요하지 않습니다.</small></div><label class="consent-line"><input type="checkbox" name="paymentConfirmed" required/><span>실제 수납액과 오너 승인 할인 내역이 위 정산 내용과 일치함을 확인합니다.</span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">잔금 정산 저장</button></div></form></section></div>`;
     bindModalFrame();
     const form = modalRoot.querySelector("[data-balance-payment-form]");
+    const amountInput = form.querySelector('[name="amount"]');
+    const discountInput = form.querySelector('[name="discountAmount"]');
+    const discountReasonInput = form.querySelector('[name="discountReason"]');
+    const paymentMethodInput = form.querySelector('[name="paymentMethod"]');
+    const paymentReferenceInput = form.querySelector('[name="paymentReference"]');
+    const settlementSummary = form.querySelector("[data-settlement-summary]");
+    const paymentLimit = form.querySelector("[data-balance-payment-limit]");
+    let lastAutomaticAmount = outstanding;
+    const syncSettlementInputs = () => {
+      const discountAmount = Math.min(outstanding, Math.max(0, Number(discountInput?.value || 0)));
+      const cashDueAfterDiscount = Math.max(0, outstanding - discountAmount);
+      const enteredAmount = Math.max(0, Number(amountInput.value || 0));
+      if (Math.abs(enteredAmount - lastAutomaticAmount) < 0.005 || enteredAmount > cashDueAfterDiscount) {
+        amountInput.value = cashDueAfterDiscount.toFixed(2);
+      }
+      lastAutomaticAmount = cashDueAfterDiscount;
+      amountInput.max = cashDueAfterDiscount.toFixed(2);
+      if (paymentLimit) paymentLimit.textContent = `할인 적용 후 최대 ${money(cashDueAfterDiscount)}`;
+      if (discountReasonInput) discountReasonInput.required = discountAmount > 0;
+      const cashRequired = cashDueAfterDiscount > 0;
+      paymentMethodInput.disabled = !cashRequired;
+      paymentMethodInput.required = cashRequired;
+      paymentReferenceInput.disabled = !cashRequired;
+      paymentReferenceInput.required = cashRequired;
+      if (settlementSummary) {
+        const currentAmount = Math.max(0, Number(amountInput.value || 0));
+        settlementSummary.innerHTML = `<span>이번 현금 수납</span><strong>${money(currentAmount)}</strong><span>할인 후 남는 미수금</span><strong>${money(Math.max(0, cashDueAfterDiscount - currentAmount))}</strong>`;
+      }
+    };
+    discountInput?.addEventListener("input", syncSettlementInputs);
+    amountInput.addEventListener("input", syncSettlementInputs);
+    syncSettlementInputs();
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const values = Object.fromEntries(new FormData(form).entries());
       const amount = Number(values.amount);
-      if (!Number.isFinite(amount) || amount <= 0 || amount > outstanding) return showToast(`수납액은 0보다 크고 ${money(outstanding)} 이하여야 합니다.`, "error");
+      const discountAmount = canApplyOwnerDiscount ? Number(values.discountAmount || 0) : 0;
+      if (!Number.isFinite(amount) || amount < 0) return showToast("수납액은 0 이상으로 입력해 주세요.", "error");
+      if (!Number.isFinite(discountAmount) || discountAmount < 0 || discountAmount > outstanding) return showToast(`할인액은 0 이상 ${money(outstanding)} 이하여야 합니다.`, "error");
+      if (amount + discountAmount <= 0 || amount + discountAmount > outstanding) return showToast(`수납액과 할인액의 합계는 0보다 크고 ${money(outstanding)} 이하여야 합니다.`, "error");
+      if (discountAmount > 0 && String(values.discountReason || "").trim().length < 3) return showToast("오너 할인 사유를 3자 이상 입력해 주세요.", "error");
+      if (amount > outstanding - discountAmount) return showToast("수납액이 할인 적용 후 미수금보다 큽니다.", "error");
       if (!values.paymentDate || values.paymentDate > localDateKey(new Date())) return showToast("실제 수납일은 오늘 또는 지난 날짜로 선택해 주세요.", "error");
       const submitButton = form.querySelector('button[type="submit"]');
       submitButton.disabled = true;
       submitButton.textContent = "저장 중…";
       try {
-        await recordServiceBalancePaymentCloud({ requestId, amount, paymentMethod: values.paymentMethod, paymentReference: values.paymentReference, receivedOn: values.paymentDate });
+        await recordServiceBalancePaymentCloud({ requestId, amount, paymentMethod: values.paymentMethod || "", paymentReference: values.paymentReference || "", receivedOn: values.paymentDate, discountAmount, discountReason: values.discountReason || null });
         closeModal();
         await refreshCloudState();
-        showToast(`${client.motherName} 고객의 잔금 ${money(amount)} 수납 기록을 저장했습니다.`);
+        const settlementParts = [amount > 0 ? `현금 수납 ${money(amount)}` : "", discountAmount > 0 ? `오너 할인 ${money(discountAmount)}` : ""].filter(Boolean).join(" · ");
+        showToast(`${client.motherName} 고객의 잔금 정산을 저장했습니다. ${settlementParts}`);
       } catch (error) {
         showToast(friendlyErrorMessage(error, "잔금 수납 기록을 저장하지 못했습니다."), "error");
         submitButton.disabled = false;
-        submitButton.textContent = "잔금 수납 저장";
+        submitButton.textContent = "잔금 정산 저장";
       }
     });
   }
