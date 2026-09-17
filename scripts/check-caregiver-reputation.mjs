@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [app, cloud, migration, moderationMigration, photoMigration, profileSyncMigration, competencyMigration] = await Promise.all([
+const [app, cloud, migration, moderationMigration, photoMigration, profileSyncMigration, competencyMigration, optionalExternalPhotoMigration] = await Promise.all([
   readFile(new URL("../app.js", import.meta.url), "utf8"),
   readFile(new URL("../cloud-data.js", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/033_caregiver_reputation_marketing.sql", import.meta.url), "utf8"),
@@ -9,6 +9,7 @@ const [app, cloud, migration, moderationMigration, photoMigration, profileSyncMi
   readFile(new URL("../supabase/migrations/035_verified_external_reviews_and_photos.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/036_caregiver_public_profile_sync.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/039_caregiver_competency_reviews.sql", import.meta.url), "utf8"),
+  readFile(new URL("../supabase/migrations/040_optional_external_review_photos.sql", import.meta.url), "utf8"),
 ]);
 
 const requiredSql = [
@@ -192,6 +193,9 @@ assert.ok(cloud.includes("values.certification ?? values.publicCredentials"), "p
 assert.ok(cloud.includes("p_competency_scores: competencyScores"), "customer review competency scores must be sent to the atomic RPC");
 assert.ok(cloud.includes("p_competency_scores: values.competencyScores"), "administrator historical review competency scores must be sent to the atomic RPC");
 assert.ok(cloud.includes("competencyReviewCount"), "public caregiver competency review counts must be normalized");
+assert.ok(optionalExternalPhotoMigration.includes("cardinality(photo_paths) between 0 and 3"), "verified external reviews must allow zero optional photos");
+assert.ok(!optionalExternalPhotoMigration.includes("At least one external review evidence photo is required"), "external review photos must not be mandatory");
+assert.ok(optionalExternalPhotoMigration.includes("coalesce(p_photo_paths, '{}'::text[])"), "optional external photo verification must accept an empty photo array");
 
 assert.ok(app.includes("function assignmentHasDeliveredCare"), "delivered-care eligibility guard is missing");
 assert.ok(app.includes("clientCompletedReviewCenterMarkup(client)"), "completed-service review route is missing");
@@ -206,6 +210,8 @@ assert.ok(app.includes("const easternToday = easternDateKey()"), "historical rev
 assert.ok(app.includes("data-add-historical-review"), "administrator historical review entry point is missing");
 assert.ok(app.includes("publicCaregiverDirectoryMarkup()"), "homepage caregiver directory is missing");
 assert.ok(app.includes('name="reviewPhotos"'), "review photo selection controls are missing");
+assert.ok(app.includes('원본·증빙 사진 <small>선택 · 최대 3장</small>'), "external review photo fields must be labeled optional");
+assert.ok(!app.includes('if (!photoFiles.length) return showToast("외부 경로 후기를 확인하려면'), "external review save must not reject a missing photo");
 assert.ok(app.includes("data-add-review-photos"), "customer review photo follow-up control is missing");
 assert.ok(app.includes("data-verify-historical-review"), "administrator external-review evidence control is missing");
 assert.ok(app.includes("reviewPhotoGalleryMarkup(review)"), "public caregiver reviews must render their attached photos");
@@ -216,6 +222,7 @@ assert.ok(!app.includes("관리자가 공개 대상으로 선정한 후기만 �
 assert.ok(app.includes("const REVIEW_COMPETENCIES = Object.freeze"), "the six caregiver competency definitions are missing");
 assert.ok(app.includes("reviewCompetencySurveyMarkup"), "the six-axis review survey is missing");
 assert.ok(app.includes("caregiverCompetencyRadarMarkup"), "the public six-axis caregiver radar chart is missing");
+assert.ok(cloud.includes("await addHistoricalReviewEvidenceCloud(caregiverId, savedReview.review_id, photoFiles, values.verificationNote);"), "photo-free external reviews must still be administrator-verified");
 assert.ok(app.includes("전체 평점, 6개 전문 역량과 후기를 모두 입력해 주세요."), "customer reviews must require the overall score and all six competencies");
 [
   'key: "meal_preparation"',

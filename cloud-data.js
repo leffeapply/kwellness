@@ -1308,13 +1308,22 @@ export async function updateCaregiverPublicProfileCloud(caregiverId, values, pho
 
 export async function addHistoricalReviewEvidenceCloud(caregiverId, reviewId, photoFiles, verificationNote) {
   await authenticatedUserId();
-  const photoPaths = await uploadReviewPhotoFiles(`external/${caregiverId}/${reviewId}`, photoFiles);
+  let photoPaths = [];
+  let photoUploadError = null;
   try {
-    return throwIfError(await supabase.rpc("admin_verify_historical_caregiver_review", {
+    photoPaths = await uploadReviewPhotoFiles(`external/${caregiverId}/${reviewId}`, photoFiles);
+  } catch (error) {
+    photoUploadError = error;
+  }
+  try {
+    const verifiedReview = throwIfError(await supabase.rpc("admin_verify_historical_caregiver_review", {
       p_review_id: reviewId,
       p_photo_paths: photoPaths,
       p_verification_note: String(verificationNote || "").trim(),
     }), "외부 경로 후기 확인");
+    return photoUploadError
+      ? { ...verifiedReview, photo_upload_error: photoUploadError.message || "선택한 후기 사진을 업로드하지 못했습니다." }
+      : verifiedReview;
   } catch (error) {
     await cleanupUnattachedReviewPhotos(photoPaths);
     throw error;
@@ -1335,13 +1344,13 @@ export async function createHistoricalCaregiverReviewCloud(caregiverId, values, 
     p_reviewer_alias: String(values.reviewerAlias || "이전 서비스 고객").trim(),
     p_is_published: values.isPublished === "on",
   }), "이전 관리사 후기 저장");
-  if (!photoFiles.length) return savedReview;
-  try {
-    await addHistoricalReviewEvidenceCloud(caregiverId, savedReview.review_id, photoFiles, values.verificationNote);
-    return { ...savedReview, verification_status: "VERIFIED", photo_count: photoFiles.length };
-  } catch (error) {
-    return { ...savedReview, verification_status: "UNVERIFIED", photo_upload_error: error.message || "외부 후기 사진을 연결하지 못했습니다." };
-  }
+  const verifiedReview = await addHistoricalReviewEvidenceCloud(caregiverId, savedReview.review_id, photoFiles, values.verificationNote);
+  return {
+    ...savedReview,
+    verification_status: "VERIFIED",
+    photo_count: Number(verifiedReview.photo_count || 0),
+    photo_upload_error: verifiedReview.photo_upload_error || "",
+  };
 }
 
 export async function setCaregiverReviewPublicationCloud(reviewId, status) {
