@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [app, cloud, migration, moderationMigration, photoMigration, profileSyncMigration, competencyMigration, optionalExternalPhotoMigration, derivedRatingMigration] = await Promise.all([
+const [app, cloud, migration, moderationMigration, photoMigration, profileSyncMigration, competencyMigration, optionalExternalPhotoMigration, derivedRatingMigration, derivedRatingBackfillMigration] = await Promise.all([
   readFile(new URL("../app.js", import.meta.url), "utf8"),
   readFile(new URL("../cloud-data.js", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/033_caregiver_reputation_marketing.sql", import.meta.url), "utf8"),
@@ -11,6 +11,7 @@ const [app, cloud, migration, moderationMigration, photoMigration, profileSyncMi
   readFile(new URL("../supabase/migrations/039_caregiver_competency_reviews.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/040_optional_external_review_photos.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/041_derived_caregiver_overall_rating.sql", import.meta.url), "utf8"),
+  readFile(new URL("../supabase/migrations/042_backfill_derived_caregiver_ratings.sql", import.meta.url), "utf8"),
 ]);
 
 const requiredSql = [
@@ -212,6 +213,10 @@ assert.ok(optionalExternalPhotoMigration.includes("coalesce(p_photo_paths, '{}':
 ));
 assert.ok(!/create or replace function public\.submit_caregiver_review\([\s\S]*?p_rating/i.test(derivedRatingMigration), "customer review RPC must not accept an independent overall rating");
 assert.ok(!/create or replace function public\.admin_create_historical_caregiver_review\([\s\S]*?p_rating/i.test(derivedRatingMigration), "administrator review RPC must not accept an independent overall rating");
+assert.ok(derivedRatingBackfillMigration.includes("update public.caregiver_reviews"), "existing customer six-axis ratings must be recalculated");
+assert.ok(derivedRatingBackfillMigration.includes("update public.caregiver_historical_reviews"), "existing external six-axis ratings must be recalculated");
+assert.equal((derivedRatingBackfillMigration.match(/\) \/ 6, 1\)/g) || []).length, 2, "both existing review sources must use the six-score one-decimal mean");
+assert.equal((derivedRatingBackfillMigration.match(/num_nonnulls\(/g) || []).length, 2, "legacy reviews without six-axis data must remain unchanged");
 
 assert.ok(app.includes("function assignmentHasDeliveredCare"), "delivered-care eligibility guard is missing");
 assert.ok(app.includes("clientCompletedReviewCenterMarkup(client)"), "completed-service review route is missing");
