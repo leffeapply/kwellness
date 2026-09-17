@@ -10,6 +10,7 @@
     "test:report": "node scripts/check-objective-report.mjs",
     "test:reviews": "node scripts/check-caregiver-reputation.mjs",
     "test:care-records": "node scripts/check-finance-care-records.mjs",
+    "test:services": "node scripts/check-service-packages-and-massage.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

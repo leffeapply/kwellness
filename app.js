@@ -46,7 +46,10 @@ import {
   signOutCloud,
   signUpCloud,
   submitServiceRequestCloud,
+  submitMassageServiceRequestCloud,
   submitServiceAdjustmentCloud,
+  submitMassageAdjustmentCloud,
+  reviewMassageAdjustmentCloud,
   updateCaregiverManagementCloud,
   updateCaregiverPublicProfileCloud,
   updateCareEventCloud,
@@ -55,6 +58,7 @@ import {
   updateMyProfileCloud,
   updatePasswordCloud,
   uploadCaregiverPublicPhotoCloud,
+  setMassageTherapistCapabilityCloud,
 } from "./cloud-data.js";
 
 (function () {
@@ -78,9 +82,11 @@ import {
   const SERVICE_META = {
     POSTPARTUM: { label: "산후조리", shortLabel: "산후조리", icon: "♡", tone: "postpartum", description: "산모 회복과 신생아 일상 케어" },
     BABYSITTING: { label: "베이비시팅", shortLabel: "베이비시팅", icon: "☆", tone: "babysitting", description: "식사·놀이·생활 중심 돌봄" },
+    MASSAGE: { label: "산전·산후 마사지", shortLabel: "마사지", icon: "✦", tone: "massage", description: "전문 테라피스트의 산전·산후 회복 관리" },
   };
 
   const POSTPARTUM_WEEKLY_RATE = 1800;
+  const POSTPARTUM_LIVE_IN_WEEKLY_RATE = 2100;
   const MIN_SERVICE_WEEKS = 2;
   const MIN_BABYSITTING_HOURS = 4;
   const POSTPARTUM_DEFAULT_WEEKS = 2;
@@ -93,6 +99,11 @@ import {
   const BABYSITTING_HOURLY_RATE = 32;
   const BABYSITTING_DEPOSIT = BABYSITTING_HOURLY_RATE * MIN_BABYSITTING_HOURS;
   const BABYSITTING_STANDARD_NOTICE_HOURS = 72;
+  const MASSAGE_CHANGE_NOTICE_HOURS = 24;
+  const MASSAGE_PRICES = Object.freeze({
+    GENERAL: Object.freeze({ 60: 150, 90: 210 }),
+    POSTPARTUM_CLIENT: Object.freeze({ 60: 135, 90: 190, PACKAGE_4: 520 }),
+  });
   const CURRENT_CONSENT_VERSION = "2026-09-13";
 
   const REVIEW_COMPETENCIES = Object.freeze([
@@ -106,13 +117,13 @@ import {
 
   const PREMIUM_ADD_ONS = {
     MASSAGE: {
-      label: "프리미엄 산모 마사지",
+      label: "산전·산후 마사지",
       icon: "✦",
-      status: "COMING_SOON",
-      enabled: false,
-      addOnOnly: true,
+      status: "ACTIVE",
+      enabled: true,
+      addOnOnly: false,
       licenseRequirement: "Georgia Licensed Massage Therapist",
-      description: "조지아주 마사지 테라피스트 라이선스를 보유한 전문가만 제공하는 산후조리 추가 서비스",
+      description: "일반 고객과 ProMoms 산후조리 예약·이용 고객 모두 신청할 수 있는 전문 회복 서비스",
     },
   };
 
@@ -928,11 +939,11 @@ import {
   }
 
   function assignmentServiceType(assignment) {
-    return assignment?.serviceType === "BABYSITTING" ? "BABYSITTING" : "POSTPARTUM";
+    return ["POSTPARTUM", "BABYSITTING", "MASSAGE"].includes(assignment?.serviceType) ? assignment.serviceType : "POSTPARTUM";
   }
 
   function serviceMetaFor(value) {
-    return SERVICE_META[value === "BABYSITTING" ? "BABYSITTING" : "POSTPARTUM"];
+    return SERVICE_META[["POSTPARTUM", "BABYSITTING", "MASSAGE"].includes(value) ? value : "POSTPARTUM"];
   }
 
   function serviceBadgeMarkup(value) {
@@ -991,7 +1002,44 @@ import {
   }
 
   function requestWindow(request) {
-    return assignmentWindow(dateInputValue(request.desiredStartDate), request.dailyStart, request.dailyEnd, request.weeks);
+    return serviceWindow(request, dateInputValue(request.desiredStartDate), request.dailyStart, request.dailyEnd, request.weeks);
+  }
+
+  function serviceWindow(source, startDate, dailyStart, dailyEnd, weeks) {
+    if (assignmentServiceType(source) !== "MASSAGE") return assignmentWindow(startDate, dailyStart, dailyEnd, weeks);
+    const sessionCount = Number(source?.sessionCount || weeks || 1);
+    const finalSessionDate = new Date(`${startDate}T12:00:00`);
+    finalSessionDate.setDate(finalSessionDate.getDate() + (Math.max(1, sessionCount) - 1) * 7);
+    return {
+      startAt: new Date(`${startDate}T${dailyStart}:00`),
+      endAt: new Date(`${localDateKey(finalSessionDate)}T${dailyEnd}:00`),
+    };
+  }
+
+  function postpartumModeFor(item) {
+    return item?.postpartumMode === "LIVE_IN" ? "LIVE_IN" : "COMMUTE";
+  }
+
+  function postpartumWeeklyRate(item) {
+    return postpartumModeFor(item) === "LIVE_IN" ? POSTPARTUM_LIVE_IN_WEEKLY_RATE : POSTPARTUM_WEEKLY_RATE;
+  }
+
+  function clientQualifiesForMassageMemberRate(clientId) {
+    const today = startOfLocalDay();
+    return state.assignments.some((assignment) => assignment.clientId === clientId
+      && assignment.status !== "CANCELLED"
+      && assignmentServiceType(assignment) === "POSTPARTUM"
+      && startOfLocalDay(assignment.endAt) >= today)
+      || state.serviceRequests.some((request) => request.clientId === clientId
+        && request.status === "APPROVED"
+        && assignmentServiceType(request) === "POSTPARTUM"
+        && startOfLocalDay(requestWindow(request).endAt) >= today);
+  }
+
+  function massagePrice({ pricingTier = "GENERAL", durationMinutes = 60, sessionCount = 1 } = {}) {
+    if (pricingTier === "POSTPARTUM_CLIENT" && Number(sessionCount) === 4) return MASSAGE_PRICES.POSTPARTUM_CLIENT.PACKAGE_4;
+    const tier = MASSAGE_PRICES[pricingTier] || MASSAGE_PRICES.GENERAL;
+    return Number(tier[Number(durationMinutes)] || MASSAGE_PRICES.GENERAL[60]);
   }
 
   function serviceLifecycleIssue(clientId, serviceType, startAt, endAt, excludedAssignmentId = null, excludedRequestId = null, babyId = null, babyName = "") {
@@ -1044,11 +1092,11 @@ import {
 
   function currentAssignmentFor(userId, serviceType = null) {
     const recoveredAssignment = state.session.active
-      ? state.assignments.find((assignment) => assignment.id === state.session.assignmentId && assignment.caregiverUserId === userId && assignment.status !== "CANCELLED" && (!serviceType || assignmentServiceType(assignment) === serviceType))
+      ? state.assignments.find((assignment) => assignment.id === state.session.assignmentId && assignment.caregiverUserId === userId && assignment.status !== "CANCELLED" && (serviceType ? assignmentServiceType(assignment) === serviceType : assignmentServiceType(assignment) !== "MASSAGE"))
       : null;
     if (recoveredAssignment) return recoveredAssignment;
     const todaysAssignments = state.assignments
-      .filter((assignment) => assignment.caregiverUserId === userId && assignmentAcceptsCareEntriesToday(assignment) && (!serviceType || assignmentServiceType(assignment) === serviceType))
+      .filter((assignment) => assignment.caregiverUserId === userId && assignmentAcceptsCareEntriesToday(assignment) && (serviceType ? assignmentServiceType(assignment) === serviceType : assignmentServiceType(assignment) !== "MASSAGE"))
       .sort((a, b) => String(a.dailyStart).localeCompare(String(b.dailyStart)));
     return todaysAssignments.find((assignment) => state.session.active && state.session.assignmentId === assignment.id)
       || todaysAssignments.find((assignment) => assignment.todayCareSessionStatus !== "COMPLETED" && !(state.session.assignmentId === assignment.id && state.session.endedAt))
@@ -1067,7 +1115,7 @@ import {
   function nextAssignmentFor(userId, serviceType = null) {
     const now = new Date();
     return state.assignments
-      .filter((assignment) => assignment.caregiverUserId === userId && new Date(assignment.startAt) > now && assignment.status !== "CANCELLED" && (!serviceType || assignmentServiceType(assignment) === serviceType))
+      .filter((assignment) => assignment.caregiverUserId === userId && new Date(assignment.startAt) > now && assignment.status !== "CANCELLED" && (serviceType ? assignmentServiceType(assignment) === serviceType : assignmentServiceType(assignment) !== "MASSAGE"))
       .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0] || null;
   }
 
@@ -1391,6 +1439,17 @@ import {
   }
 
   function adjustmentPolicy(serviceType, startAt, target = null, action = "CANCEL") {
+    if (serviceType === "MASSAGE") {
+      const hours = hoursUntil(startAt);
+      const allowed = hours >= MASSAGE_CHANGE_NOTICE_HOURS;
+      return {
+        code: allowed ? "MASSAGE_STANDARD_24H" : "MASSAGE_LATE_24H",
+        tone: allowed ? "success" : "warning",
+        allowed,
+        title: allowed ? `마사지 ${action === "CHANGE" ? "변경" : "취소"} 가능` : `마사지 ${action === "CHANGE" ? "변경" : "취소"} 가능 시간 경과`,
+        detail: allowed ? `예약 시작까지 ${Math.floor(hours)}시간 남았습니다. 24시간 이전 요청이므로 관리자에게 접수할 수 있습니다.` : "마사지 변경·취소는 예약 시작 24시간 이전까지만 가능합니다.",
+      };
+    }
     if (action === "CHANGE") return { code: "SCHEDULE_CHANGE_NO_DEPOSIT_PENALTY", tone: "success", title: "일정 변경 예약금 페널티 없음", detail: "기간·시간 변경은 서비스 취소가 아니므로 예약금 차감이나 환불 페널티가 없습니다. 관리자 승인 후 변경 일정만 반영됩니다." };
     if (serviceType === "POSTPARTUM") {
       if (target && isPostpartumServiceStarted(target)) {
@@ -1641,8 +1700,9 @@ import {
       </article>`;
   }
 
-  function postpartumEstimate(weeks) {
-    return POSTPARTUM_WEEKLY_RATE * Math.max(MIN_SERVICE_WEEKS, Number(weeks || MIN_SERVICE_WEEKS));
+  function postpartumEstimate(weeks, mode = "COMMUTE") {
+    const normalizedWeeks = mode === "LIVE_IN" ? 4 : Math.max(MIN_SERVICE_WEEKS, Number(weeks || MIN_SERVICE_WEEKS));
+    return (mode === "LIVE_IN" ? POSTPARTUM_LIVE_IN_WEEKLY_RATE : POSTPARTUM_WEEKLY_RATE) * normalizedWeeks;
   }
 
   function todayScheduleItems() {
@@ -1722,7 +1782,7 @@ import {
       const request = state.serviceRequests.find((item) => item.id === assignment.serviceRequestId || item.approvedAssignmentId === assignment.id);
       const paymentAction = request && canReviewServiceRequests()
         ? requestDepositNet(request) <= 0
-          ? `<button class="primary-button mini-button" data-record-approved-deposit="${request.id}">예약금 확인</button>`
+          ? `<button class="primary-button mini-button" data-record-approved-deposit="${request.id}">${assignmentServiceType(request) === "MASSAGE" ? "서비스 결제" : "예약금"} 확인</button>`
           : requestOutstandingBalance(request) > 0
             ? `<button class="primary-button mini-button" data-record-service-balance="${request.id}">잔금 확인</button>`
             : '<span class="status-chip">수납 완료</span>'
@@ -1737,7 +1797,7 @@ import {
     const approvedUnscheduled = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && clientById(request.clientId));
     const approvedQueue = approvedUnscheduled.filter(requestHasCapturedDepositEvidence);
     const depositEvidenceQueue = approvedUnscheduled.filter((request) => !requestHasCapturedDepositEvidence(request));
-    const filter = ["POSTPARTUM", "BABYSITTING"].includes(state.adminScheduleFilter) ? state.adminScheduleFilter : "ALL";
+    const filter = ["POSTPARTUM", "BABYSITTING", "MASSAGE"].includes(state.adminScheduleFilter) ? state.adminScheduleFilter : "ALL";
     const assignments = state.assignments.filter((item) => item.status !== "CANCELLED" && (filter === "ALL" || assignmentServiceType(item) === filter));
     return `
       <section class="page">
@@ -1745,7 +1805,7 @@ import {
         ${pageHeading("SCHEDULE & ASSIGNMENTS", "승인 신청 기반 일정·배정", "승인된 고객 서비스 신청을 불러와 관리사만 선택하고 월간 캘린더에 배치합니다.")}
         <div class="grid stats">${statCard("Active", state.assignments.filter(isAssignmentCurrent).length, "현재 진행 중", "◷")}${statCard("Postpartum", state.assignments.filter((item) => isAssignmentCurrent(item) && assignmentServiceType(item) === "POSTPARTUM").length, "산후조리 진행", "♡")}${statCard("Babysitting", state.assignments.filter((item) => isAssignmentCurrent(item) && assignmentServiceType(item) === "BABYSITTING").length, "베이비시팅 진행", "☆")}${statCard("Ready to schedule", approvedQueue.length, "승인·예약금 확인 완료", "→")}</div>
         <article class="card card-pad schedule-source-card" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">APPROVED SERVICE REQUESTS</p><h3>일정 배치 대기</h3><p>승인과 예약금 수납이 확인된 신청을 캘린더에 배치할 수 있습니다.</p></div><span class="status-chip gold">${approvedQueue.length} ready</span></div>${depositEvidenceQueue.length ? `<div class="status-banner warning"><strong>${depositEvidenceQueue.length}건의 예약금 증빙을 먼저 보완해 주세요.</strong><span>실제 수납 근거가 없는 기존 승인 건은 일정 배치에서 제외됩니다.</span></div><div class="approved-schedule-strip evidence-schedule-strip">${depositEvidenceQueue.map((request) => { const client = clientById(request.clientId); return `<button type="button" class="approved-schedule-card ${serviceMetaFor(request.serviceType).tone}" data-record-approved-deposit="${request.id}">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이")}</strong><span>${money(Number(request.depositAmount || (assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT)))} 수납 증빙 필요</span><em>증빙 보완 →</em></button>`; }).join("")}</div>` : ""}<div class="approved-schedule-strip">${approvedQueue.length ? approvedQueue.map((request) => { const client = clientById(request.clientId); return `<button type="button" class="approved-schedule-card ${serviceMetaFor(request.serviceType).tone}" data-open-assignment data-request-id="${request.id}">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이")}</strong><span>${formatDate(request.desiredStartDate)} · ${request.dailyStart}–${request.dailyEnd} · ${request.weeks}주</span><em>일정 배치 →</em></button>`; }).join("") : `<div class="empty-state"><strong>배치 가능한 승인 신청이 없습니다.</strong><span>${depositEvidenceQueue.length ? "위 승인 건의 실제 예약금 증빙을 보완해 주세요." : "서비스 신청·승인 메뉴에서 먼저 고객 신청을 승인해 주세요."}</span></div>`}</div></article>
-        <div class="schedule-filter-bar" role="group" aria-label="캘린더 서비스 필터"><span>표시 서비스</span>${[["ALL", "전체"], ["POSTPARTUM", "♡ 산후조리"], ["BABYSITTING", "☆ 베이비시팅"]].map(([value, label]) => `<button type="button" class="${filter === value ? "active" : ""}" data-schedule-filter="${value}">${label}</button>`).join("")}</div>
+        <div class="schedule-filter-bar" role="group" aria-label="캘린더 서비스 필터"><span>표시 서비스</span>${[["ALL", "전체"], ["POSTPARTUM", "♡ 산후조리"], ["BABYSITTING", "☆ 베이비시팅"], ["MASSAGE", "✦ 마사지"]].map(([value, label]) => `<button type="button" class="${filter === value ? "active" : ""}" data-schedule-filter="${value}">${label}</button>`).join("")}</div>
         <article class="card calendar-card" style="margin-top:12px"><div class="section-header calendar-head"><div><h3>${filter === "ALL" ? "전체 관리사" : serviceMetaFor(filter).label} 월간 일정</h3><p>${calendarMonthLabel()} · ${assignments.length}개 계약·배정</p></div><div class="calendar-actions"><button class="secondary-button mini-button" data-calendar-month="-1">← 이전 달</button><button class="secondary-button mini-button" data-calendar-today>이번 달</button><button class="secondary-button mini-button" data-calendar-month="1">다음 달 →</button><button class="primary-button" data-open-assignment ${approvedQueue.length ? "" : "disabled"}>+ 승인 신청에서 배치</button></div></div>${assignmentMonthCalendarMarkup()}</article>
         <article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>${filter === "ALL" ? "전체" : serviceMetaFor(filter).label} 계약·배정 목록</h3><p>${usingCloudData() ? "확정 일정은 고객 변경·취소 요청 승인 절차를 통해서만 바뀌며, 기록 보존을 위해 직접 삭제하지 않습니다." : "로컬 데이터의 일정 수정·삭제가 캘린더와 연동됩니다."}</p></div><span class="status-chip">${assignments.length} records</span></div><div class="assignment-list">${assignments.sort((a,b) => new Date(a.startAt)-new Date(b.startAt)).map((assignment) => { const client = clientById(assignment.clientId); const caregiver = state.users.find((user) => user.id === assignment.caregiverUserId); const status = isAssignmentCurrent(assignment) ? "진행 중" : new Date(assignment.startAt) > new Date() ? "예정" : "종료"; return `<div class="assignment-row"><div>${serviceBadgeMarkup(assignment.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 정보 확인 필요")} · ${escapeHtml(babyNameFor(assignment, client) || "아이 미등록")}</strong><span>${formatDate(assignment.startAt)} – ${formatDate(assignment.endAt)} · ${assignment.weeks}주</span></div><div><strong>${escapeHtml(caregiver?.fullName || assignment.caregiverName || "관리사 미배정")}</strong><span>${assignment.dailyStart} – ${assignment.dailyEnd}</span></div><div><strong>${escapeHtml(assignment.address)}</strong><span>알러지: ${escapeHtml(assignment.allergies)}</span></div><span class="status-chip ${status === "진행 중" ? "" : "gold"}">${status}</span><div class="assignment-actions">${adminAssignmentActionsMarkup(assignment)}</div></div>`; }).join("")}</div></article>
       </section>`;
@@ -1757,7 +1817,7 @@ import {
     gridStart.setDate(gridStart.getDate() - gridStart.getDay());
     const days = Array.from({ length: 42 }, (_, index) => { const day = new Date(gridStart); day.setDate(day.getDate() + index); return day; });
     const weekdayHeader = ["일", "월", "화", "수", "목", "금", "토"].map((day) => `<div>${day}</div>`).join("");
-    return `<div class="month-calendar"><div class="month-weekdays">${weekdayHeader}</div><div class="month-grid">${days.map((day) => { const dayStart = new Date(day); dayStart.setHours(0,0,0,0); const dayEnd = new Date(day); dayEnd.setHours(23,59,59,999); const assignments = state.assignments.filter((item) => item.status !== "CANCELLED" && (state.adminScheduleFilter === "ALL" || !state.adminScheduleFilter || assignmentServiceType(item) === state.adminScheduleFilter) && new Date(item.startAt) <= dayEnd && new Date(item.endAt) >= dayStart && assignmentOccursOnDate(item, day)); const outside = day.getMonth() !== viewMonth.getMonth(); const today = day.toDateString() === new Date().toDateString(); return `<div class="month-day ${outside ? "outside" : ""} ${today ? "today" : ""}"><header>${day.getDate()}</header><div class="month-events">${assignments.slice(0,3).map((assignment) => { const client = clientById(assignment.clientId); const caregiver = state.users.find((user) => user.id === assignment.caregiverUserId); return `<button class="month-event ${assignmentServiceType(assignment).toLowerCase()}" data-edit-assignment="${assignment.id}" title="${escapeHtml(serviceMetaFor(assignment.serviceType).label)} · ${escapeHtml(client?.motherName || "고객")} / ${escapeHtml(caregiver?.fullName || "관리사")}"><strong>${assignmentServiceType(assignment) === "BABYSITTING" ? "☆" : "♡"} ${escapeHtml(babyNameFor(assignment, client) || client?.motherName || "고객")}</strong><span>${escapeHtml(caregiver?.fullName || "관리사 미배정")} · ${assignment.dailyStart}</span></button>`; }).join("")}${assignments.length > 3 ? `<small>+${assignments.length - 3}개 일정</small>` : ""}</div></div>`; }).join("")}</div></div>`;
+    return `<div class="month-calendar"><div class="month-weekdays">${weekdayHeader}</div><div class="month-grid">${days.map((day) => { const dayStart = new Date(day); dayStart.setHours(0,0,0,0); const dayEnd = new Date(day); dayEnd.setHours(23,59,59,999); const assignments = state.assignments.filter((item) => item.status !== "CANCELLED" && (state.adminScheduleFilter === "ALL" || !state.adminScheduleFilter || assignmentServiceType(item) === state.adminScheduleFilter) && new Date(item.startAt) <= dayEnd && new Date(item.endAt) >= dayStart && assignmentOccursOnDate(item, day)); const outside = day.getMonth() !== viewMonth.getMonth(); const today = day.toDateString() === new Date().toDateString(); return `<div class="month-day ${outside ? "outside" : ""} ${today ? "today" : ""}"><header>${day.getDate()}</header><div class="month-events">${assignments.slice(0,3).map((assignment) => { const client = clientById(assignment.clientId); const caregiver = state.users.find((user) => user.id === assignment.caregiverUserId); const type = assignmentServiceType(assignment); return `<button class="month-event ${type.toLowerCase()}" data-edit-assignment="${assignment.id}" title="${escapeHtml(serviceMetaFor(assignment.serviceType).label)} · ${escapeHtml(client?.motherName || "고객")} / ${escapeHtml(caregiver?.fullName || "관리사")}"><strong>${type === "MASSAGE" ? "✦" : type === "BABYSITTING" ? "☆" : "♡"} ${escapeHtml(type === "MASSAGE" ? client?.motherName || "고객" : babyNameFor(assignment, client) || client?.motherName || "고객")}</strong><span>${escapeHtml(caregiver?.fullName || "관리사 미배정")} · ${assignment.dailyStart}</span></button>`; }).join("")}${assignments.length > 3 ? `<small>+${assignments.length - 3}개 일정</small>` : ""}</div></div>`; }).join("")}</div></div>`;
   }
 
   function calendarMonthLabel() {
@@ -1917,8 +1977,9 @@ import {
     const stored = Number(request?.estimatedTotal || 0);
     if (stored > 0) return stored;
     if (assignmentServiceType(request) === "POSTPARTUM") {
-      return Number(request?.weeks || 0) * Number(request?.weeklyRate || POSTPARTUM_WEEKLY_RATE);
+      return Number(request?.weeks || 0) * Number(request?.weeklyRate || postpartumWeeklyRate(request));
     }
+    if (assignmentServiceType(request) === "MASSAGE") return massagePrice(request);
     const [startHour = 0, startMinute = 0] = String(request?.dailyStart || "00:00").split(":").map(Number);
     const [endHour = 0, endMinute = 0] = String(request?.dailyEnd || "00:00").split(":").map(Number);
     const hours = Math.max(0, ((endHour * 60 + endMinute) - (startHour * 60 + startMinute)) / 60);
@@ -2001,7 +2062,7 @@ import {
     const adminLocked = !canGrantAdministrativeRole();
     const fixedRoles = ["OWNER", "CARE_MANAGER", "RETAIL_STAFF"].filter((role) => currentRoles.has(role));
     const roleOption = (role, label, detail, disabled = false) => `<label class="member-access-option ${disabled ? "locked" : ""}"><input type="checkbox" name="accessRole" value="${role}" ${currentRoles.has(role) ? "checked" : ""} ${disabled ? "disabled" : ""}/><span><strong>${label}</strong><small>${detail}</small></span></label>`;
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal member-access-modal" role="dialog" aria-modal="true" aria-labelledby="member-access-title"><header class="modal-header"><div><p class="eyebrow">MEMBER ACCESS</p><h3 id="member-access-title">회원 권한 구성</h3><p>${escapeHtml(member.fullName)} · ${escapeHtml(member.email || "이메일 미등록")}</p></div><button class="close-button" type="button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-member-access-form><div class="status-banner"><strong>복수 역할 계정</strong><span>선택한 작업공간을 같은 로그인 계정에서 전환해 사용할 수 있습니다. 기존 역할의 운영 기록은 다른 역할을 추가해도 유지됩니다.</span></div><fieldset class="member-access-options"><legend>허용할 작업공간</legend>${roleOption("CLIENT", "고객", "본인의 서비스 신청·일정·케어 기록을 확인합니다.")}${roleOption("CAREGIVER", "관리사", "배정된 고객 일정과 케어 기록 화면을 사용합니다.")}${roleOption("ADMIN", "관리자", adminLocked ? "현재 관리자 권한은 유지되며 소유자만 변경할 수 있습니다." : "회원·일정·결제·운영 정보를 관리합니다.", adminLocked)}${fixedRoles.length ? `<div class="fixed-access-note"><strong>보호된 기존 권한</strong><div class="member-role-badges">${fixedRoles.map((role) => `<span class="member-role-badge administrative">${escapeHtml(DATABASE_ROLE_LABELS[role])}</span>`).join("")}</div><small>소유자 및 기존 특수 권한은 이 화면에서 제거되지 않습니다.</small></div>` : ""}</fieldset><div class="privacy-boundary-note"><strong>고객 작업공간 자동 준비</strong><span>고객 권한을 추가하면 고객 레코드와 계정 연결을 즉시 생성하고 계정을 활성화합니다. 회원은 고객 화면에서 아기·주소 정보를 직접 작성한 뒤 바로 서비스를 신청할 수 있습니다.</span></div><div class="privacy-boundary-note"><strong>관리자 예외 승인</strong><span>관리자 또는 소유자가 관리사 권한을 추가하면 회원의 사전 약관 동의가 없어도 즉시 활성화됩니다. 회원 본인의 동의로 기록하지 않으며 승인자와 예외 적용 여부를 감사 로그에 남깁니다.</span></div><div class="privacy-boundary-note"><strong>활성 기록 보호</strong><span>진행 중인 고객 계약이나 관리사 배정이 있으면 해당 권한은 제거할 수 없지만, 다른 권한을 추가하는 것은 가능합니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">권한 저장</button></div></form></section></div>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal member-access-modal" role="dialog" aria-modal="true" aria-labelledby="member-access-title"><header class="modal-header"><div><p class="eyebrow">MEMBER ACCESS</p><h3 id="member-access-title">회원 권한 구성</h3><p>${escapeHtml(member.fullName)} · ${escapeHtml(member.email || "이메일 미등록")}</p></div><button class="close-button" type="button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-member-access-form><div class="status-banner"><strong>복수 역할 계정</strong><span>선택한 작업공간을 같은 로그인 계정에서 전환해 사용할 수 있습니다. 기존 역할의 운영 기록은 다른 역할을 추가해도 유지됩니다.</span></div><fieldset class="member-access-options"><legend>허용할 작업공간</legend>${roleOption("CLIENT", "고객", "본인의 서비스 신청·일정·케어 기록을 확인합니다.")}${roleOption("CAREGIVER", "관리사", "배정된 고객 일정과 케어 기록 화면을 사용합니다.")}${roleOption("ADMIN", "관리자", adminLocked ? "현재 관리자 권한은 유지되며 소유자만 변경할 수 있습니다." : "회원·일정·결제·운영 정보를 관리합니다.", adminLocked)}${fixedRoles.length ? `<div class="fixed-access-note"><strong>보호된 기존 권한</strong><div class="member-role-badges">${fixedRoles.map((role) => `<span class="member-role-badge administrative">${escapeHtml(DATABASE_ROLE_LABELS[role])}</span>`).join("")}</div><small>소유자 및 기존 특수 권한은 이 화면에서 제거되지 않습니다.</small></div>` : ""}</fieldset><fieldset class="member-access-options"><legend>전문 서비스 자격</legend><label class="member-access-option"><input type="checkbox" name="massageTherapist" ${member.isMassageTherapist ? "checked" : ""}/><span><strong>마사지 테라피스트</strong><small>마사지 예약 후보에 표시되며, 일반 케어 일정과의 충돌을 자동 검사합니다.</small></span></label></fieldset><div class="privacy-boundary-note"><strong>마사지 중복 배정 예외</strong><span>해당 고객을 직접 케어 중인 테라피스트는 그 고객의 케어 시간 안에도 마사지가 배정될 수 있습니다. 다른 고객의 일정 또는 다른 마사지와 겹치면 배정되지 않습니다.</span></div><div class="privacy-boundary-note"><strong>고객 작업공간 자동 준비</strong><span>고객 권한을 추가하면 고객 레코드와 계정 연결을 즉시 생성하고 계정을 활성화합니다. 회원은 고객 화면에서 아기·주소 정보를 직접 작성한 뒤 바로 서비스를 신청할 수 있습니다.</span></div><div class="privacy-boundary-note"><strong>관리자 예외 승인</strong><span>관리자 또는 소유자가 관리사 권한을 추가하면 회원의 사전 약관 동의가 없어도 즉시 활성화됩니다. 회원 본인의 동의로 기록하지 않으며 승인자와 예외 적용 여부를 감사 로그에 남깁니다.</span></div><div class="privacy-boundary-note"><strong>활성 기록 보호</strong><span>진행 중인 고객 계약이나 관리사 배정이 있으면 해당 권한은 제거할 수 없지만, 다른 권한을 추가하는 것은 가능합니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">권한 저장</button></div></form></section></div>`;
     bindModalFrame();
     modalRoot.querySelector("[data-member-access-form]")?.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -2011,16 +2072,20 @@ import {
       if (!selectedRoles.length) return showToast("최소 한 개의 접근 권한을 선택해 주세요.", "error");
       const addingCaregiver = selectedRoles.includes("CAREGIVER") && !currentRoles.has("CAREGIVER");
       const addingClient = selectedRoles.includes("CLIENT") && !currentRoles.has("CLIENT");
+      const massageTherapist = form.elements.massageTherapist.checked;
+      if (massageTherapist && !selectedRoles.includes("CAREGIVER")) return showToast("마사지 테라피스트 자격은 관리사 권한과 함께 부여해 주세요.", "error");
       const submitButton = form.querySelector('button[type="submit"]');
       submitButton.disabled = true;
       submitButton.textContent = "저장 중…";
       try {
         if (usingCloudData()) {
           await setMemberAccessRolesCloud(member.id, selectedRoles);
+          await setMassageTherapistCapabilityCloud(member.id, massageTherapist);
           closeModal();
           await refreshCloudState();
         } else {
           member.databaseRoles = selectedRoles;
+          member.isMassageTherapist = massageTherapist;
           member.role = selectedRoles.some((role) => ["OWNER", "ADMIN", "CARE_MANAGER"].includes(role))
             ? "admin"
             : selectedRoles.includes("CAREGIVER") ? "caregiver"
@@ -2072,8 +2137,9 @@ import {
     const isApprovedQueue = mode === "approved";
     const detail = assignmentServiceType(request) === "BABYSITTING" ? request.mealInstructions || request.routineNotes || request.specialNotes : request.maternalNotes || request.specialNotes;
     const window = requestWindow(request);
-    const issue = serviceLifecycleIssue(request.clientId, assignmentServiceType(request), window.startAt, window.endAt, null, request.id, request.babyId, request.babyName);
-    const price = assignmentServiceType(request) === "POSTPARTUM" ? `$${postpartumEstimate(request.weeks).toLocaleString("en-US")} 예상 · 주 $${POSTPARTUM_WEEKLY_RATE.toLocaleString("en-US")}` : `시간당 $${BABYSITTING_HOURLY_RATE} · 독립 신청 서비스`;
+    const serviceType = assignmentServiceType(request);
+    const issue = serviceType === "MASSAGE" ? null : serviceLifecycleIssue(request.clientId, serviceType, window.startAt, window.endAt, null, request.id, request.babyId, request.babyName);
+    const price = serviceType === "POSTPARTUM" ? `${money(requestServiceTotal(request))} 예상 · 주 ${money(postpartumWeeklyRate(request))}` : serviceType === "MASSAGE" ? `${money(requestServiceTotal(request))} · ${request.durationMinutes || 60}분 × ${request.sessionCount || 1}회` : `시간당 $${BABYSITTING_HOURLY_RATE} · 독립 신청 서비스`;
     const clientLinkIssue = requestClientLinkIssue(request);
     const depositEvidenceMissing = isApprovedQueue && !requestHasCapturedDepositEvidence(request);
     const queueTitle = clientLinkIssue
@@ -2087,14 +2153,16 @@ import {
     const issueDetail = clientLinkIssue
       ? `${clientLinkIssue} 회원 관리에서 고객 권한과 고객 프로필 연결을 복구한 뒤 처리해 주세요.`
       : issue?.message || (depositEvidenceMissing ? "실제 수납 내역의 결제수단과 거래·영수증 번호를 기록한 뒤 일정 배치가 열립니다." : detail || "별도 요청 없음");
-    return `<div class="client-request-row service-request-management-row ${issue || clientLinkIssue || depositEvidenceMissing ? "has-lifecycle-issue" : ""}"><div><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${request.weeks}주 · ${formatDate(request.desiredStartDate)} · ${request.dailyStart}–${request.dailyEnd}</span><small>${price}</small></div><div><strong>${escapeHtml(request.address)}</strong><span>알러지 ${escapeHtml(request.allergies || "없음")} · 추가인원 ${request.extraHouseholdMembers || 0}명</span></div><div><strong>${clientLinkIssue ? "고객 계정 연결 오류" : issue ? "일정 중복 확인 필요" : isApprovedQueue ? queueTitle : "신청 내용"}</strong><span>${escapeHtml(issueDetail)}</span></div>${isApprovedQueue ? queueAction : `<button class="primary-button mini-button" data-review-client-request="${request.id}" ${clientLinkIssue ? "disabled" : ""}>신청 검토·승인</button>`}</div>`;
+    return `<div class="client-request-row service-request-management-row ${issue || clientLinkIssue || depositEvidenceMissing ? "has-lifecycle-issue" : ""}"><div><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")}${serviceType === "MASSAGE" ? "" : ` · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}`}</strong></div><span>${serviceType === "MASSAGE" ? `${request.durationMinutes || 60}분 · ${request.sessionCount || 1}회` : `${request.weeks}주`} · ${formatDate(request.desiredStartDate)} · ${request.dailyStart}–${request.dailyEnd}</span><small>${price}</small></div><div><strong>${escapeHtml(request.address)}</strong><span>${serviceType === "MASSAGE" ? (request.pricingTier === "POSTPARTUM_CLIENT" ? "산후조리 고객 우대가" : "일반 고객가") : `알러지 ${escapeHtml(request.allergies || "없음")} · 추가인원 ${request.extraHouseholdMembers || 0}명`}</span></div><div><strong>${clientLinkIssue ? "고객 계정 연결 오류" : issue ? "일정 중복 확인 필요" : isApprovedQueue ? queueTitle : "신청 내용"}</strong><span>${escapeHtml(issueDetail)}</span></div>${isApprovedQueue ? queueAction : `<button class="primary-button mini-button" data-review-client-request="${request.id}" ${clientLinkIssue ? "disabled" : ""}>신청 검토·승인</button>`}</div>`;
   }
 
   function adjustmentManagementMarkup(adjustments) {
     return `<article class="card card-pad adjustment-review-card" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">CHANGE & CANCELLATION QUEUE</p><h3>변경·취소 승인 요청</h3><p>기존 일정은 유지한 채 정책과 관리사 일정을 검토한 뒤 승인합니다.</p></div><span class="status-chip coral">${adjustments.length} pending</span></div><div class="request-list">${adjustments.length ? adjustments.map((adjustment) => {
       const client = clientById(adjustment.clientId);
       const target = adjustmentTarget(adjustment.targetType, adjustment.targetId);
-      const proposed = adjustment.action === "CHANGE" ? `${new Date(`${adjustment.proposedStartDate}T12:00:00`).toLocaleDateString("ko-KR")} · ${adjustment.proposedWeeks}주 · ${adjustment.proposedDailyStart}–${adjustment.proposedDailyEnd}` : "전체 서비스 취소";
+      const proposed = adjustment.action === "CHANGE"
+        ? `${new Date(`${adjustment.proposedStartDate}T12:00:00`).toLocaleDateString("ko-KR")} · ${adjustment.serviceType === "MASSAGE" ? `${target?.durationMinutes || 60}분` : `${adjustment.proposedWeeks}주`} · ${adjustment.proposedDailyStart}–${adjustment.proposedDailyEnd}`
+        : "전체 서비스 취소";
       const brokenLink = !client || !target;
       return `<div class="client-request-row adjustment-management-row ${brokenLink ? "has-lifecycle-issue" : ""}"><div><div class="request-title-line">${serviceBadgeMarkup(adjustment.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${adjustment.action === "CANCEL" ? "취소" : "일정 변경"}</strong></div><span>${target ? `현재 ${new Date(adjustmentTargetStart(target)).toLocaleDateString("ko-KR")} 시작` : "연결된 서비스 없음"}</span><small>${escapeHtml(adjustment.reason)}</small></div><div><strong>요청 내용</strong><span>${proposed}</span></div><div><strong>${escapeHtml(brokenLink ? "데이터 연결 복구 필요" : adjustment.policyTitle)}</strong><span>${escapeHtml(brokenLink ? "연결된 고객·서비스를 확인한 뒤 처리해 주세요." : adjustment.policyDetail)}</span></div><div class="management-actions"><button class="secondary-button mini-button" data-reject-adjustment="${adjustment.id}">반려</button><button class="primary-button mini-button" data-approve-adjustment="${adjustment.id}" ${brokenLink ? "disabled" : ""}>승인·반영</button></div></div>`;
     }).join("") : `<div class="empty-state"><strong>검토 대기 중인 변경·취소 요청이 없습니다.</strong></div>`}</div></article>`;
@@ -2115,7 +2183,8 @@ import {
     const refundDueRequests = state.serviceRequests.filter((request) => request.status === "CANCELLED" && request.depositStatus === "REFUND_DUE");
     const pendingPostpartum = pending.filter((request) => assignmentServiceType(request) === "POSTPARTUM");
     const pendingBabysitting = pending.filter((request) => assignmentServiceType(request) === "BABYSITTING");
-    return `<section class="page admin-request-page">${demoBanner()}${pageHeading("SERVICE REQUEST CONTROL", "서비스 신청·승인", "산후조리와 베이비시팅 신청을 각각 검토하고 일정 중복 여부를 확인합니다.")}<div class="grid stats">${statCard("Pending review", pending.length, "신청 검토 필요", "!")}${statCard("Postpartum", pendingPostpartum.length, "산후조리 검토 대기", "♡")}${statCard("Babysitting", pendingBabysitting.length, "베이비시팅 검토 대기", "☆")}${statCard("Ready to schedule", approvedQueue.length, "승인 완료·배정 대기", "◷")}</div><div class="service-request-columns" style="margin-top:18px"><article class="card card-pad request-service-column postpartum"><div class="section-header"><div>${serviceBadgeMarkup("POSTPARTUM")}<h3>산후조리 신청</h3><p>주 $${POSTPARTUM_WEEKLY_RATE.toLocaleString("en-US")} · 산모 상태와 신생아 케어 요청을 검토합니다.</p></div><span class="status-chip coral">${pendingPostpartum.length}</span></div><div class="request-list">${pendingPostpartum.length ? pendingPostpartum.map((request) => requestManagementRowMarkup(request, "pending")).join("") : `<div class="empty-state"><strong>검토 대기 신청이 없습니다.</strong></div>`}</div></article><article class="card card-pad request-service-column babysitting"><div class="section-header"><div>${serviceBadgeMarkup("BABYSITTING")}<h3>베이비시팅 신청</h3><p>희망 일정과 식사·알러지·생활 루틴을 함께 검토합니다.</p></div><span class="status-chip coral">${pendingBabysitting.length}</span></div><div class="request-list">${pendingBabysitting.length ? pendingBabysitting.map((request) => requestManagementRowMarkup(request, "pending")).join("") : `<div class="empty-state"><strong>검토 대기 신청이 없습니다.</strong></div>`}</div></article></div><article class="card card-pad approved-request-queue" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">APPROVED QUEUE</p><h3>일정 배치 가능한 승인 신청</h3><p>고객이 입력한 일정과 요청사항을 불러오고, 동일 아기의 서비스 기간이 겹치지 않을 때 관리사를 배치합니다.</p></div><span class="status-chip gold">${approvedQueue.length} ready</span></div><div class="request-list">${approvedQueue.length ? approvedQueue.map((request) => requestManagementRowMarkup(request, "approved")).join("") : `<div class="empty-state"><strong>일정 배치 대기 신청이 없습니다.</strong><span>신청을 승인하면 이 목록으로 이동합니다.</span></div>`}</div></article>${canReviewServiceRequests() ? depositRefundQueueMarkup(refundDueRequests) : ""}</section>`;
+    const pendingMassage = pending.filter((request) => assignmentServiceType(request) === "MASSAGE");
+    return `<section class="page admin-request-page">${demoBanner()}${pageHeading("SERVICE REQUEST CONTROL", "서비스 신청·승인", "산후조리·베이비시팅·마사지 신청을 검토하고 가격과 일정 충돌 여부를 확인합니다.")}<div class="grid stats">${statCard("Pending review", pending.length, "신청 검토 필요", "!")}${statCard("Postpartum", pendingPostpartum.length, "산후조리 검토 대기", "♡")}${statCard("Babysitting", pendingBabysitting.length, "베이비시팅 검토 대기", "☆")}${statCard("Massage", pendingMassage.length, "마사지 검토 대기", "✦")}</div><div class="service-request-columns three-service-columns" style="margin-top:18px"><article class="card card-pad request-service-column postpartum"><div class="section-header"><div>${serviceBadgeMarkup("POSTPARTUM")}<h3>산후조리 신청</h3><p>출퇴근형 주 $1,800 · 입주형 주 $2,100</p></div><span class="status-chip coral">${pendingPostpartum.length}</span></div><div class="request-list">${pendingPostpartum.length ? pendingPostpartum.map((request) => requestManagementRowMarkup(request, "pending")).join("") : `<div class="empty-state"><strong>검토 대기 신청이 없습니다.</strong></div>`}</div></article><article class="card card-pad request-service-column babysitting"><div class="section-header"><div>${serviceBadgeMarkup("BABYSITTING")}<h3>베이비시팅 신청</h3><p>시간당 $32 · 희망 일정과 생활 루틴을 검토합니다.</p></div><span class="status-chip coral">${pendingBabysitting.length}</span></div><div class="request-list">${pendingBabysitting.length ? pendingBabysitting.map((request) => requestManagementRowMarkup(request, "pending")).join("") : `<div class="empty-state"><strong>검토 대기 신청이 없습니다.</strong></div>`}</div></article><article class="card card-pad request-service-column massage"><div class="section-header"><div>${serviceBadgeMarkup("MASSAGE")}<h3>마사지 신청</h3><p>고객 가격 등급과 자격 테라피스트 일정을 확인합니다.</p></div><span class="status-chip coral">${pendingMassage.length}</span></div><div class="request-list">${pendingMassage.length ? pendingMassage.map((request) => requestManagementRowMarkup(request, "pending")).join("") : `<div class="empty-state"><strong>검토 대기 신청이 없습니다.</strong></div>`}</div></article></div><article class="card card-pad approved-request-queue" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">APPROVED QUEUE</p><h3>일정 배치 가능한 승인 신청</h3><p>돌봄은 동일 아기 일정, 마사지는 자격 테라피스트의 전체 케어기빙 일정을 확인해 배치합니다.</p></div><span class="status-chip gold">${approvedQueue.length} ready</span></div><div class="request-list">${approvedQueue.length ? approvedQueue.map((request) => requestManagementRowMarkup(request, "approved")).join("") : `<div class="empty-state"><strong>일정 배치 대기 신청이 없습니다.</strong><span>신청을 승인하면 이 목록으로 이동합니다.</span></div>`}</div></article>${canReviewServiceRequests() ? depositRefundQueueMarkup(refundDueRequests) : ""}</section>`;
   }
 
   function serviceRequestStatusLabel(request) {
@@ -2180,6 +2249,7 @@ import {
 
   function financeApplicationRowMarkup(request) {
     const client = clientById(request.clientId);
+    const serviceType = assignmentServiceType(request);
     const clientLinkIssue = requestClientLinkIssue(request);
     const total = requestServiceTotal(request);
     const deposit = requestDepositNet(request);
@@ -2202,7 +2272,7 @@ import {
     const canRecordDeposit = usingCloudData() && request.status === "APPROVED" && deposit <= 0 && !clientLinkIssue;
     const statusTone = ["REJECTED", "CANCELLED"].includes(request.status) || clientLinkIssue ? "coral" : request.status === "PENDING" ? "gold" : "";
     const actionMarkup = canRecordDeposit
-      ? `<button class="primary-button mini-button" data-record-approved-deposit="${request.id}">예약금 확인·기록</button>`
+      ? `<button class="primary-button mini-button" data-record-approved-deposit="${request.id}">${serviceType === "MASSAGE" ? "서비스 결제" : "예약금"} 확인·기록</button>`
       : canRecordBalance
         ? `<button class="primary-button mini-button" data-record-service-balance="${request.id}">잔금 확인·기록</button>`
         : request.status === "APPROVED" && clientLinkIssue
@@ -2210,7 +2280,20 @@ import {
           : outstanding === 0 && request.status === "APPROVED"
             ? '<span class="status-chip">수납 완료</span>'
             : "";
-    return `<div class="finance-ledger-row ${clientLinkIssue ? "has-lifecycle-issue" : ""}"><div class="finance-ledger-primary"><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 연결 확인 필요")} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</strong></div><span>${formatDate(request.desiredStartDate)} 시작 · ${request.weeks}주</span><small>신청 ${request.createdAt ? formatDate(request.createdAt) : "일자 미등록"}</small></div><div><span>신청 상태</span><strong class="status-chip ${statusTone}">${escapeHtml(serviceRequestStatusLabel(request))}</strong><small>${escapeHtml(clientLinkIssue || (request.approvedAssignmentId ? "일정 배정 연결됨" : ""))}</small></div><div><span>총 예정금액</span><strong>${total > 0 ? money(total) : "계산 필요"}</strong><small>${ownerDiscount > 0 ? `오너 할인 -${money(ownerDiscount)} · 정산액 ${money(total - ownerDiscount)}` : assignmentServiceType(request) === "POSTPARTUM" ? `주 ${money(Number(request.weeklyRate || POSTPARTUM_WEEKLY_RATE))}` : `시간당 ${money(BABYSITTING_HOURLY_RATE)}`}</small></div><div><span>예약금</span><strong>${depositLabel}</strong><small>${escapeHtml(depositReference ? `거래 ${depositReference}` : "실제 증빙 기준")}${depositReceivedAt ? ` · ${formatDate(depositReceivedAt)}` : ""}</small></div><div><span>잔금</span><strong>${money(balancePaid)} 수납</strong><small>${request.status === "APPROVED" ? `${money(outstanding)} 미수` : "승인 건만 미수 계산"}${latestBalancePayment ? ` · 최근 ${formatDate(latestBalancePayment.capturedAt || latestBalancePayment.captured_at)}` : ""}</small></div><div class="finance-ledger-action">${actionMarkup}</div></div>`;
+    const subject = serviceType === "MASSAGE"
+      ? (client?.motherName || "고객 연결 확인 필요")
+      : `${client?.motherName || "고객 연결 확인 필요"} · ${babyNameFor(request, client) || "아이 정보 없음"}`;
+    const schedule = serviceType === "MASSAGE"
+      ? `${formatDate(request.desiredStartDate)} · ${request.durationMinutes || 60}분 × ${request.sessionCount || 1}회`
+      : `${formatDate(request.desiredStartDate)} 시작 · ${request.weeks}주`;
+    const pricing = ownerDiscount > 0
+      ? `오너 할인 -${money(ownerDiscount)} · 정산액 ${money(total - ownerDiscount)}`
+      : serviceType === "POSTPARTUM"
+        ? `주 ${money(Number(request.weeklyRate || postpartumWeeklyRate(request)))}`
+        : serviceType === "MASSAGE"
+          ? `${request.pricingTier === "POSTPARTUM_CLIENT" ? "산후조리 고객 우대가" : "일반 고객가"} · ${request.durationMinutes || 60}분`
+          : `시간당 ${money(BABYSITTING_HOURLY_RATE)}`;
+    return `<div class="finance-ledger-row ${clientLinkIssue ? "has-lifecycle-issue" : ""}"><div class="finance-ledger-primary"><div class="request-title-line">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(subject)}</strong></div><span>${schedule}</span><small>신청 ${request.createdAt ? formatDate(request.createdAt) : "일자 미등록"}</small></div><div><span>신청 상태</span><strong class="status-chip ${statusTone}">${escapeHtml(serviceRequestStatusLabel(request))}</strong><small>${escapeHtml(clientLinkIssue || (request.approvedAssignmentId ? "일정 배정 연결됨" : ""))}</small></div><div><span>총 예정금액</span><strong>${total > 0 ? money(total) : "계산 필요"}</strong><small>${pricing}</small></div><div><span>${serviceType === "MASSAGE" ? "서비스 결제" : "예약금"}</span><strong>${depositLabel}</strong><small>${escapeHtml(depositReference ? `거래 ${depositReference}` : "실제 증빙 기준")}${depositReceivedAt ? ` · ${formatDate(depositReceivedAt)}` : ""}</small></div><div><span>${serviceType === "MASSAGE" ? "추가 수납" : "잔금"}</span><strong>${money(balancePaid)} 수납</strong><small>${request.status === "APPROVED" ? `${money(outstanding)} 미수` : "승인 건만 미수 계산"}${latestBalancePayment ? ` · 최근 ${formatDate(latestBalancePayment.capturedAt || latestBalancePayment.captured_at)}` : ""}</small></div><div class="finance-ledger-action">${actionMarkup}</div></div>`;
   }
 
   function financeCollectionQueueItemMarkup(request) {
@@ -2340,7 +2423,7 @@ import {
   function adminServiceHistory() {
     const filters = {
       query: String(state.serviceHistoryFilters?.query || "").trim(),
-      serviceType: ["ALL", "POSTPARTUM", "BABYSITTING"].includes(state.serviceHistoryFilters?.serviceType) ? state.serviceHistoryFilters.serviceType : "ALL",
+      serviceType: ["ALL", "POSTPARTUM", "BABYSITTING", "MASSAGE"].includes(state.serviceHistoryFilters?.serviceType) ? state.serviceHistoryFilters.serviceType : "ALL",
       status: ["ALL", "PENDING", "APPROVED", "ACTIVE", "COMPLETED", "CANCELLED", "REJECTED", "REMOVED"].includes(state.serviceHistoryFilters?.status) ? state.serviceHistoryFilters.status : "ALL",
       sort: ["newest", "oldest", "service-newest", "service-oldest"].includes(state.serviceHistoryFilters?.sort) ? state.serviceHistoryFilters.sort : "newest",
     };
@@ -2475,12 +2558,24 @@ import {
     return `<article class="card service-overview-card ${meta.tone}"><div class="service-overview-top"><div>${serviceBadgeMarkup(serviceType)}<h3>${current ? "현재 담당 중" : "다음 배정 예정"}</h3></div><span class="status-chip ${current ? "" : "gold"}">${assignmentCountdown(primary)}</span></div><strong class="service-overview-family">${escapeHtml(client.motherName)} · ${escapeHtml(babyName)}</strong><p>${formatDate(assignmentStartDateKey(primary))}–${formatDate(assignmentEndDateKey(primary))} · 고객 요청 참고시간 ${primary.dailyStart}–${primary.dailyEnd}</p><div class="service-overview-actions"><button class="primary-button" data-enter-caregiver-service="${serviceType}">${meta.label} 작업공간</button><button class="secondary-button" data-caregiver-assignment-detail="${primary.id}">고객 정보</button></div></article>`;
   }
 
+  function caregiverMassageOverviewCard(user) {
+    if (!user.isMassageTherapist) return "";
+    const current = currentAssignmentFor(user.id, "MASSAGE");
+    const next = nextAssignmentFor(user.id, "MASSAGE");
+    const booking = current || next;
+    if (!booking) return `<article class="card service-overview-card empty massage"><div class="service-overview-icon">✦</div><div>${serviceBadgeMarkup("MASSAGE")}<h3>예정된 마사지 예약이 없습니다.</h3><p>관리자가 예약을 확정하면 이곳에서 일정을 확인할 수 있습니다.</p></div></article>`;
+    const client = clientById(booking.clientId);
+    if (!client) return `<article class="card service-overview-card empty massage"><div class="service-overview-icon">!</div><div>${serviceBadgeMarkup("MASSAGE")}<h3>예약 고객 연결 확인이 필요합니다.</h3><p>관리자에게 예약 데이터 연결을 확인해 달라고 요청해 주세요.</p></div></article>`;
+    const canSeeBrief = caregiverCanViewClientBrief(booking);
+    return `<article class="card service-overview-card massage"><div class="service-overview-top"><div>${serviceBadgeMarkup("MASSAGE")}<h3>${current ? "현재 마사지 일정" : "다음 마사지 예약"}</h3></div><span class="status-chip ${current ? "" : "gold"}">${assignmentCountdown(booking)}</span></div><strong class="service-overview-family">${canSeeBrief ? escapeHtml(client.motherName) : "고객 정보 공개 대기"}</strong><p>${formatDate(booking.startAt)} · ${booking.dailyStart}–${booking.dailyEnd} · ${booking.durationMinutes || 60}분${Number(booking.sessionCount || 1) > 1 ? ` × ${booking.sessionCount}회` : ""}</p><div class="service-overview-actions">${canSeeBrief ? `<button class="secondary-button" data-caregiver-assignment-detail="${booking.id}">예약·방문 정보</button>` : `<button class="secondary-button" type="button" disabled>${caregiverClientBriefAccessText(booking)}</button>`}</div></article>`;
+  }
+
   function caregiverCaregivingHub() {
     const user = authUser();
     const activeAssignments = state.assignments.filter((assignment) => assignment.caregiverUserId === user.id && isAssignmentCurrent(assignment));
     const upcomingAssignments = state.assignments.filter((assignment) => assignment.caregiverUserId === user.id && assignment.status !== "CANCELLED" && new Date(assignment.startAt) > new Date());
     const retrospectiveAssignments = retrospectiveAssignmentsFor(user.id);
-    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY CAREGIVING", "나의 케어기빙 현황", "산후조리와 베이비시팅 배정을 분리해 확인하고 각 작업공간으로 이동합니다.")}<div class="grid stats">${statCard("Current", activeAssignments.length, "현재 진행 중인 전체 배정", "◷")}${statCard("Postpartum", activeAssignments.filter((item) => assignmentServiceType(item) === "POSTPARTUM").length, "산후조리 진행 중", "♡")}${statCard("Babysitting", activeAssignments.filter((item) => assignmentServiceType(item) === "BABYSITTING").length, "베이비시팅 진행 중", "☆")}${statCard("Employment", "W-2", "보험 적용 정식 직원", "◈")}</div><div class="service-overview-grid" style="margin-top:18px">${caregiverServiceOverviewCard(user, "POSTPARTUM")}${caregiverServiceOverviewCard(user, "BABYSITTING")}</div><article class="card card-pad retrospective-entry-card" style="margin-top:18px"><div><p class="eyebrow">RETROSPECTIVE CARE RECORD</p><h3>지난 근무 리포트 보완</h3><p>웹 기록을 놓친 실제 근무를 소급 입력할 수 있습니다. 서비스 날짜와 실제 근무시간은 그대로 기록되고, 입력자와 뒤늦게 입력한 시각은 감사 이력에 별도로 남습니다.</p></div><button type="button" class="primary-button" data-open-retrospective-report ${retrospectiveAssignments.length ? "" : "disabled"}>지난 근무 리포트 입력</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>서비스별 기록·업무 범위</strong><p>산후조리에는 산모·신생아 케어와 차트만, 베이비시팅에는 식사·생활 이벤트만 표시됩니다. 의료행위와 무면허 마사지는 업무 범위에 포함되지 않으며, 프리미엄 산모 마사지는 향후 조지아주 라이선스 보유 전문가에게만 별도 배정됩니다.</p></article></section>`;
+    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY CAREGIVING", "나의 서비스 일정", "산후조리·베이비시팅 케어와 자격에 따라 배정된 마사지 예약을 분리해 확인합니다.")}<div class="grid stats">${statCard("Current", activeAssignments.length, "현재 진행 중인 전체 배정", "◷")}${statCard("Postpartum", activeAssignments.filter((item) => assignmentServiceType(item) === "POSTPARTUM").length, "산후조리 진행 중", "♡")}${statCard("Babysitting", activeAssignments.filter((item) => assignmentServiceType(item) === "BABYSITTING").length, "베이비시팅 진행 중", "☆")}${statCard("Massage", activeAssignments.filter((item) => assignmentServiceType(item) === "MASSAGE").length, user.isMassageTherapist ? "테라피스트 자격 활성" : "테라피스트 자격 없음", "✦")}</div><div class="service-overview-grid" style="margin-top:18px">${caregiverServiceOverviewCard(user, "POSTPARTUM")}${caregiverServiceOverviewCard(user, "BABYSITTING")}${caregiverMassageOverviewCard(user)}</div><article class="card card-pad retrospective-entry-card" style="margin-top:18px"><div><p class="eyebrow">RETROSPECTIVE CARE RECORD</p><h3>지난 근무 리포트 보완</h3><p>웹 기록을 놓친 실제 돌봄 근무를 소급 입력할 수 있습니다. 서비스 날짜와 실제 근무시간은 그대로 기록되고, 입력자와 뒤늦게 입력한 시각은 감사 이력에 별도로 남습니다.</p></div><button type="button" class="primary-button" data-open-retrospective-report ${retrospectiveAssignments.length ? "" : "disabled"}>지난 근무 리포트 입력</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>서비스별 기록·업무 범위</strong><p>산후조리에는 산모·신생아 케어 차트, 베이비시팅에는 식사·생활 이벤트를 기록합니다. 산전·산후 마사지는 관리자에게 테라피스트 자격을 부여받은 관리사에게만 별도 일정으로 배정되며, 일반 돌봄 기록과 분리됩니다.</p></article></section>`;
   }
 
   function retrospectiveAssignmentsFor(userId) {
@@ -2489,6 +2584,7 @@ import {
     return state.assignments
       .filter((assignment) => assignment.caregiverUserId === userId
         && assignment.status !== "CANCELLED"
+        && assignmentServiceType(assignment) !== "MASSAGE"
         && new Date(assignment.startAt) <= todayEnd)
       .sort((first, second) => new Date(second.endAt) - new Date(first.endAt));
   }
@@ -2853,12 +2949,16 @@ import {
       const canAdjustRequest = request?.status === "APPROVED" && !request.approvedAssignmentId;
       const adjustment = canAdjustRequest ? pendingAdjustment("REQUEST", request.id) : null;
       const requestBabyName = request ? babyNameFor(request, client) || "아이" : "";
-      return `<article class="card service-overview-card empty ${meta.tone}"><div class="service-overview-icon">${meta.icon}</div><div>${serviceBadgeMarkup(serviceType)}<h3>${requestStatus ? `${escapeHtml(requestBabyName)} · ${requestStatus}` : `현재 이용중인 ${meta.label} 서비스가 없습니다.`}</h3><p>${requestStatus ? `${request.weeks}주 · ${formatDate(request.desiredStartDate)} 시작 희망 · ${request.dailyStart}–${request.dailyEnd}` : (babysittingBlocked ? "동일 아기가 산후조리를 이용 중인 동안에는 베이비시팅을 신청할 수 없습니다." : serviceType === "BABYSITTING" ? "산후조리 이용 여부와 관계없이 별도의 서비스로 신청할 수 있습니다." : "필요한 경우 별도의 서비스 신청서를 접수할 수 있습니다.")}</p>${adjustment ? `<small class="adjustment-state">변경·취소 요청 관리자 검토 중</small>` : ""}${extensionPending ? `<small class="adjustment-state">기간 연장 신청 관리자 검토 중</small>` : ""}</div><div class="service-overview-actions">${requestStatus ? `<span class="status-chip ${request.status === "PENDING" ? "gold" : ""}">${requestStatus}</span>${canAdjustRequest ? `<button class="secondary-button" data-service-adjust="REQUEST:${request.id}" ${adjustment ? "disabled" : ""}>${adjustment ? "요청 검토 중" : "신청 변경·취소"}</button>` : ""}` : `<button class="primary-button" data-service-apply="${serviceType}" ${babysittingBlocked ? "disabled" : ""}>${babysittingBlocked ? "산후조리 이용 중 신청 불가" : `${meta.label} 신청`}</button>`}</div></article>`;
+      const summary = requestStatus
+        ? (serviceType === "MASSAGE" ? `${request.durationMinutes || 60}분 · ${request.sessionCount || 1}회 · ${formatDate(request.desiredStartDate)} ${request.dailyStart}` : `${request.weeks}주 · ${formatDate(request.desiredStartDate)} 시작 희망 · ${request.dailyStart}–${request.dailyEnd}`)
+        : (babysittingBlocked ? "동일 아기가 산후조리를 이용 중인 동안에는 베이비시팅을 신청할 수 없습니다." : serviceType === "BABYSITTING" ? "산후조리 이용 여부와 관계없이 별도의 서비스로 신청할 수 있습니다." : "필요한 경우 별도의 서비스 신청서를 접수할 수 있습니다.");
+      const applyButton = serviceType === "MASSAGE" ? `<button class="primary-button" data-massage-book>마사지 예약</button>` : `<button class="primary-button" data-service-apply="${serviceType}" ${babysittingBlocked ? "disabled" : ""}>${babysittingBlocked ? "산후조리 이용 중 신청 불가" : `${meta.label} 신청`}</button>`;
+      return `<article class="card service-overview-card empty ${meta.tone}"><div class="service-overview-icon">${meta.icon}</div><div>${serviceBadgeMarkup(serviceType)}<h3>${requestStatus ? `${serviceType === "MASSAGE" ? "마사지" : escapeHtml(requestBabyName)} · ${requestStatus}` : `현재 이용중인 ${meta.label} 서비스가 없습니다.`}</h3><p>${summary}</p>${adjustment ? `<small class="adjustment-state">변경·취소 요청 관리자 검토 중</small>` : ""}${extensionPending ? `<small class="adjustment-state">기간 연장 신청 관리자 검토 중</small>` : ""}</div><div class="service-overview-actions">${requestStatus ? `<span class="status-chip ${request.status === "PENDING" ? "gold" : ""}">${requestStatus}</span>${canAdjustRequest ? `<button class="secondary-button" data-service-adjust="REQUEST:${request.id}" ${adjustment ? "disabled" : ""}>${adjustment ? "요청 검토 중" : "신청 변경·취소"}</button>` : ""}` : applyButton}</div></article>`;
     }
     const caregiver = state.users.find((user) => user.id === assignment.caregiverUserId);
     const status = isAssignmentCurrent(assignment) ? "이용 중" : new Date(assignment.startAt) > new Date() ? "시작 예정" : "이용 완료";
     const adjustment = pendingAdjustment("ASSIGNMENT", assignment.id);
-    return `<article class="card service-overview-card ${meta.tone}"><div class="service-overview-top"><div>${serviceBadgeMarkup(serviceType)}<h3>${status}</h3></div><span class="status-chip ${status === "이용 중" ? "" : "gold"}">${assignmentCountdown(assignment)}</span></div><strong class="service-overview-family">${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(assignment, client) || "아이")}</strong><p>${new Date(assignment.startAt).toLocaleDateString("ko-KR")}–${new Date(assignment.endAt).toLocaleDateString("ko-KR")} · ${assignment.dailyStart}–${assignment.dailyEnd}</p><div class="service-overview-meta"><span>담당 ${escapeHtml(caregiver?.fullName || "배정 대기")}</span><span>${escapeHtml(assignment.address)}</span>${serviceType === "POSTPARTUM" ? `<span>예약금 $${Number(assignment.depositAmount || POSTPARTUM_DEPOSIT).toLocaleString("en-US")} 납부 · 계약 $${Number(assignment.contractValue || postpartumEstimate(assignment.weeks)).toLocaleString("en-US")}</span>` : ""}</div>${adjustment ? `<small class="adjustment-state">변경·취소 요청 관리자 검토 중</small>` : ""}${extensionPending ? `<small class="adjustment-state">기간 연장 신청 관리자 검토 중</small>` : ""}<div class="service-overview-actions"><button class="primary-button" data-enter-client-service="${serviceType}" data-assignment-id="${assignment.id}">${serviceType === "BABYSITTING" ? "나의 베이비시팅" : "나의 산후조리"} 보기</button><button class="secondary-button" data-service-adjust="ASSIGNMENT:${assignment.id}" ${adjustment ? "disabled" : ""}>${adjustment ? "요청 검토 중" : "일정 변경·취소"}</button>${serviceType === "BABYSITTING" ? `<button class="secondary-button" data-service-extend="${assignment.id}" ${extensionPending ? "disabled" : ""}>${extensionPending ? "연장 검토 중" : "기간 연장 신청"}</button>` : ""}</div></article>`;
+    return `<article class="card service-overview-card ${meta.tone}"><div class="service-overview-top"><div>${serviceBadgeMarkup(serviceType)}<h3>${status}</h3></div><span class="status-chip ${status === "이용 중" ? "" : "gold"}">${assignmentCountdown(assignment)}</span></div><strong class="service-overview-family">${escapeHtml(client.motherName)}${serviceType === "MASSAGE" ? "" : ` · ${escapeHtml(babyNameFor(assignment, client) || "아이")}`}</strong><p>${new Date(assignment.startAt).toLocaleDateString("ko-KR")}–${new Date(assignment.endAt).toLocaleDateString("ko-KR")} · ${assignment.dailyStart}–${assignment.dailyEnd}</p><div class="service-overview-meta"><span>담당 ${escapeHtml(caregiver?.fullName || "배정 대기")}</span><span>${escapeHtml(assignment.address)}</span>${serviceType === "POSTPARTUM" ? `<span>예약금 $${Number(assignment.depositAmount || POSTPARTUM_DEPOSIT).toLocaleString("en-US")} 납부 · 계약 $${Number(assignment.contractValue || requestServiceTotal(assignment)).toLocaleString("en-US")}</span>` : serviceType === "MASSAGE" ? `<span>${assignment.durationMinutes || 60}분 · ${assignment.sessionCount || 1}회 · ${money(assignment.contractValue || massagePrice(assignment))}</span>` : ""}</div>${adjustment ? `<small class="adjustment-state">변경·취소 요청 관리자 검토 중</small>` : ""}${extensionPending ? `<small class="adjustment-state">기간 연장 신청 관리자 검토 중</small>` : ""}<div class="service-overview-actions">${serviceType === "MASSAGE" ? "" : `<button class="primary-button" data-enter-client-service="${serviceType}" data-assignment-id="${assignment.id}">${serviceType === "BABYSITTING" ? "나의 베이비시팅" : "나의 산후조리"} 보기</button>`}<button class="secondary-button" data-service-adjust="ASSIGNMENT:${assignment.id}" ${adjustment ? "disabled" : ""}>${adjustment ? "요청 검토 중" : "일정 변경·취소"}</button>${serviceType === "BABYSITTING" ? `<button class="secondary-button" data-service-extend="${assignment.id}" ${extensionPending ? "disabled" : ""}>${extensionPending ? "연장 검토 중" : "기간 연장 신청"}</button>` : ""}</div></article>`;
   }
 
   function clientServicesHub() {
@@ -2869,14 +2969,18 @@ import {
     const pendingCount = state.serviceRequests.filter((request) => request.clientId === client.id && (request.status === "PENDING" || (request.status === "APPROVED" && !request.approvedAssignmentId))).length;
     const postpartumAssignments = currentAndUpcomingAssignmentsForClient(client.id, "POSTPARTUM");
     const babysittingAssignments = currentAndUpcomingAssignmentsForClient(client.id, "BABYSITTING");
+    const massageAssignments = currentAndUpcomingAssignmentsForClient(client.id, "MASSAGE");
     const openRequests = state.serviceRequests.filter((request) => request.clientId === client.id && ["PENDING", "APPROVED"].includes(request.status) && !request.approvedAssignmentId);
     const postpartumRequests = openRequests.filter((request) => assignmentServiceType(request) === "POSTPARTUM");
     const babysittingRequests = openRequests.filter((request) => assignmentServiceType(request) === "BABYSITTING");
+    const massageRequests = openRequests.filter((request) => assignmentServiceType(request) === "MASSAGE");
     const postpartumCards = [...postpartumAssignments.map((assignment) => clientServiceOverviewCard(client, "POSTPARTUM", assignment)), ...postpartumRequests.map((request) => clientServiceOverviewCard(client, "POSTPARTUM", null, request))];
     const babysittingCards = [...babysittingAssignments.map((assignment) => clientServiceOverviewCard(client, "BABYSITTING", assignment)), ...babysittingRequests.map((request) => clientServiceOverviewCard(client, "BABYSITTING", null, request))];
     const massage = state.serviceCatalog.MASSAGE;
+    const massageTier = clientQualifiesForMassageMemberRate(client.id) ? "POSTPARTUM_CLIENT" : "GENERAL";
+    const massageStatusCards = [...massageAssignments.map((assignment) => clientServiceOverviewCard(client, "MASSAGE", assignment)), ...massageRequests.map((request) => clientServiceOverviewCard(client, "MASSAGE", null, request))];
     const profileSetup = clientProfileComplete(client) ? "" : `<article class="card client-profile-onboarding"><div><p class="eyebrow">PROFILE SETUP</p><h3>서비스 신청 전에 가족 프로필을 완성해 주세요.</h3><p>아기 이름·출생일 또는 예정일과 기본 서비스 주소를 한 번 저장하면 신청서에 자동으로 불러옵니다.</p></div><button class="primary-button" type="button" data-edit-profile>고객·아기 프로필 작성</button></article>`;
-    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY SERVICES", `${escapeHtml(client.motherName)}님의 서비스`, "아기별 이용 중인 돌봄과 신청·배정 상태를 한눈에 확인하세요.")}${profileSetup}<div class="grid stats">${statCard("Active service", activeCount, "현재 진행 중인 전체 배정", "✓")}${statCard("Current service", activeCount > 1 ? `${activeCount}건 이용 중` : currentService ? serviceMetaFor(currentService).label : "대기", "아기별 현재 돌봄", currentService === "BABYSITTING" ? "☆" : "♡")}${statCard("Pending requests", pendingCount ? `${pendingCount}건` : "없음", "승인·일정 배정 대기", "◷")}</div><div class="service-overview-grid" style="margin-top:18px">${postpartumCards.length ? postpartumCards.join("") : clientServiceOverviewCard(client, "POSTPARTUM")}${babysittingCards.length ? babysittingCards.join("") : clientServiceOverviewCard(client, "BABYSITTING")}</div>${clientCompletedReviewCenterMarkup(client)}<div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, null, true)}</div><article class="card premium-addon-card" style="margin-top:18px"><div class="premium-addon-icon">${massage.icon}</div><div><p class="eyebrow">PREMIUM ADD-ON · COMING SOON</p><h3>${massage.label}</h3><p>${massage.description}. 현재는 신청할 수 없으며, 라이선스·보험·전문인력 검증이 완료된 뒤 산후조리 계약의 추가 상품으로 열립니다.</p><div class="premium-addon-tags"><span>Georgia License 필수</span><span>산후조리 Add-on</span><span>현재 선택 불가</span></div></div><button class="secondary-button" disabled>준비 중</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>동일 아기의 겹치는 서비스만 자동으로 차단합니다.</strong><p>베이비시팅은 산후조리 이용 이력 없이도 독립적으로 신청할 수 있습니다. 다만 동일 아기가 산후조리를 현재 이용 중일 때는 베이비시팅 신규 신청이 제한되며, 두 서비스 기간은 서로 겹칠 수 없습니다.</p></article></section>`;
+    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY SERVICES", `${escapeHtml(client.motherName)}님의 서비스`, "돌봄과 마사지 신청·배정 상태를 한눈에 확인하세요.")}${profileSetup}<div class="grid stats">${statCard("Active service", activeCount, "현재 진행 중인 전체 배정", "✓")}${statCard("Current service", activeCount > 1 ? `${activeCount}건 이용 중` : currentService ? serviceMetaFor(currentService).label : "대기", "현재 케어", currentService === "BABYSITTING" ? "☆" : "♡")}${statCard("Pending requests", pendingCount ? `${pendingCount}건` : "없음", "승인·일정 배정 대기", "◷")}</div><div class="service-overview-grid" style="margin-top:18px">${postpartumCards.length ? postpartumCards.join("") : clientServiceOverviewCard(client, "POSTPARTUM")}${babysittingCards.length ? babysittingCards.join("") : clientServiceOverviewCard(client, "BABYSITTING")}</div>${massageStatusCards.length ? `<div class="service-overview-grid" style="margin-top:18px">${massageStatusCards.join("")}</div>` : ""}${clientCompletedReviewCenterMarkup(client)}<div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, null, true)}</div><article class="card premium-addon-card" style="margin-top:18px"><div class="premium-addon-icon">${massage.icon}</div><div><p class="eyebrow">PRENATAL · POSTPARTUM MASSAGE</p><h3>${massage.label}</h3><p>${massage.description}</p><div class="premium-addon-tags"><span>${massageTier === "POSTPARTUM_CLIENT" ? "산후조리 고객 우대가 자동 적용" : "일반 고객 요금"}</span><span>60분·90분</span><span>24시간 전까지 변경·취소</span></div></div><button class="primary-button" data-massage-book>마사지 예약</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>돌봄과 마사지는 일정 충돌을 자동으로 확인합니다.</strong><p>마사지 테라피스트가 해당 고객의 담당 관리사인 경우에만 그 고객의 케어 시간 안에 마사지를 배정할 수 있습니다. 다른 고객 일정이나 다른 마사지 예약과 겹치면 선택할 수 없습니다.</p></article></section>`;
   }
 
   function clientBabysittingSummary(client, assignment, workspaceNav = "") {
@@ -3955,7 +4059,7 @@ import {
         <section class="public-hero" id="home"><div class="public-hero-copy"><p class="eyebrow">ProMoms PROFESSIONAL FAMILY CARE</p><h1>회복의 시간부터<br/><em>아이의 일상까지.</em></h1><p>전문가의 믿음직한 손길과 엄마의 따뜻한 마음. 산후조리 케어, 베이비 케어, 맘스 뷰티를 ProMoms에서 만나보세요.</p><div class="public-hero-actions"><button class="primary-button public-cta" data-service-apply="${defaultApplicationType}">${defaultApplicationType === "BABYSITTING" ? "베이비시팅 미리 신청" : "서비스 신청하기"}</button><button class="secondary-button public-cta" data-public-anchor="services">서비스 살펴보기</button></div><div class="public-trust-row"><span>✓ 책임보상보험 운영 원칙</span><span>✓ 근로자재해보험 운영 원칙</span><span>✓ W-2 직접 고용 원칙</span><span>✓ 고객에게 고용 리스크 전가 없음</span></div></div><div class="public-hero-visual promoms-hero">${brandLogoMarkup(true)}<p class="promoms-brand-lines">POSTPARTUM CARE · BABY CARE · MOMS BEAUTY</p></div></section>
         <div class="public-content">${publicServiceStatusMarkup(user)}
           <section class="public-section public-about" id="about"><div class="public-section-heading"><p class="eyebrow">ABOUT ProMoms</p><h2>가족에게 필요한 케어를<br/>더 투명하고 책임 있게.</h2></div><div class="about-story"><p>ProMoms는 조지아 애틀랜타 메트로 지역의 가족을 중심으로 산모의 회복, 아이의 안전한 돌봄, 생활에 필요한 제품까지 연결하는 패밀리 웰니스 서비스입니다. W-2 직접 고용과 회사 차원의 책임보상보험·근로자재해보험 운영을 원칙으로 삼아 고객에게 고용 및 업무상 재해 리스크를 전가하지 않는 체계를 지향합니다.</p><div class="about-metrics"><div><strong>W-2</strong><span>직접 고용 운영 원칙</span></div><div><strong>Company</strong><span>보험 책임 회사 관리</span></div><div><strong>Atlanta</strong><span>메트로 지역 방문 케어</span></div></div></div></section>
-          <section class="public-section" id="services"><div class="public-section-heading centered"><p class="eyebrow">OUR SERVICES</p><h2>가족에게 필요한 돌봄을 선택하세요.</h2><p>산후조리와 베이비시팅은 각각 독립적으로 신청할 수 있으며, 동일 아기의 서비스 기간만 겹치지 않도록 운영합니다.</p></div><div class="public-service-grid"><article class="public-service-card featured"><span class="service-number">01</span><div class="service-symbol">♡</div><p class="eyebrow">POSTPARTUM CARE</p><h3>산후조리 서비스</h3><p>산모 회복 지원과 신생아 수유·수면·체온·목욕·체중 기록을 세심하게 관리합니다.</p><ul><li>2·3·4주 맞춤 일정</li><li>산모 식사·휴식·회복 지원</li><li>신생아 케어 기록과 주간 차트</li><li>보험 적용·W-2 정식 직원 운영 원칙</li></ul><div class="service-price"><span>2주 기본 패키지</span><strong>$3,600<small> · 주 $1,800</small></strong></div><button class="primary-button" data-service-apply="POSTPARTUM">산후조리 신청</button></article><article class="public-service-card"><span class="service-number">02</span><div class="service-symbol">☆</div><p class="eyebrow">BABYSITTING</p><h3>베이비시팅 서비스</h3><p>아이의 식사와 한국형 이유식·유아식, 놀이·산책과 생활 이벤트를 보호자에게 정확하게 공유합니다.</p><ul><li>보험 적용·W-2 정식 직원 운영 원칙</li><li>고용 및 사고 Risk 고객 전가 없음</li><li>이유식 및 유아식 한국형 준비</li><li>놀이·산책·특이 이벤트 메모</li></ul><div class="service-price"><span>4시간분 예약금 $128 · 최소 2주</span><strong>$32<small>부터</small></strong></div><button class="primary-button" data-service-apply="BABYSITTING">베이비시팅 신청</button></article><article class="public-service-card premium-coming-soon"><span class="service-number">03</span><div class="service-symbol">✦</div><p class="eyebrow">PREMIUM ADD-ON · COMING SOON</p><h3>산모 마사지</h3><p>산후조리 고객을 위한 프리미엄 추가 상품으로 준비하고 있습니다.</p><ul><li>Georgia Massage Therapist License 필수</li><li>라이선스 확인된 전문가만 제공</li><li>마사지 업무 보험 범위 확인</li><li>산후조리 계약 Add-on 형태</li></ul><div class="service-price"><span>출시 준비 중</span><strong>미정</strong></div><button class="secondary-button" disabled>현재 선택 불가</button></article></div><section class="insured-staffing-panel"><div><p class="eyebrow">WHY INSURED STAFFING MATTERS</p><h3>보험·고용 책임을 회사가 관리합니다.</h3><p>ProMoms는 W-2 직접 고용과 책임보상보험·근로자재해보험 운영을 회사의 원칙으로 두고 있습니다.</p></div><ul><li><span>◈</span><strong>책임보상보험</strong><small>서비스 수행 중 대인·대물 리스크 관리</small></li><li><span>✓</span><strong>근로자재해보험</strong><small>업무상 재해 책임을 고객에게 전가하지 않음</small></li><li><span>W-2</span><strong>정식 직원</strong><small>독립계약자 편법 운영 없이 회사가 고용 의무 처리</small></li></ul></section><div class="public-rules" id="rules"><div><strong>이용 규칙</strong><span>① 산후조리 예약금 $500 · 시작 30일 전까지 취소 시 환불</span><span>② 시작 30일 이내 산후조리 예약금 환불 불가</span><span>③ 베이비시팅 예약금 $128 · 4시간분</span><span>④ 시작 72시간 이전 취소 시 베이비시팅 예약금 환불</span><span>⑤ 시작 72시간 이내 취소·노쇼 시 예약금 환불 불가</span><span>⑥ 동일 아기의 산후조리·베이비시팅 기간 중복 불가</span><span>⑦ 의료행위·무면허 마사지는 제공하지 않음</span></div></div></section>
+          <section class="public-section" id="services"><div class="public-section-heading centered"><p class="eyebrow">OUR SERVICES</p><h2>필요한 케어를 옆으로 넘겨 비교하세요.</h2><p>산후조리 형태, 베이비시팅, 산전·산후 마사지의 기준과 가격을 한눈에 확인할 수 있습니다.</p></div><div class="public-service-scroll-shell"><div class="public-service-grid" aria-label="ProMoms 서비스 패키지"><article class="public-service-card featured"><span class="service-number">01</span><div class="service-symbol">♡</div><p class="eyebrow">POSTPARTUM · COMMUTE</p><h3>산후조리 출퇴근형</h3><p>정해진 시간에 방문하여 산모 회복과 신생아 일상 케어를 제공합니다.</p><ul><li>기본 2주부터 시작</li><li>2주 · 3주 · 4주 선택</li><li>하루 케어 8시간 기준</li><li>식사 1시간·휴식 30분 포함</li></ul><div class="service-price"><span>주당</span><strong>$1,800<small> · 2주 $3,600</small></strong></div><button class="primary-button" data-service-apply="POSTPARTUM" data-postpartum-mode="COMMUTE">출퇴근형 신청</button></article><article class="public-service-card live-in"><span class="service-number">02</span><div class="service-symbol">⌂</div><p class="eyebrow">POSTPARTUM · LIVE-IN</p><h3>산후조리 입주형</h3><p>집중적인 회복과 신생아 케어가 필요한 가족을 위한 입주형 서비스입니다.</p><ul><li>기본 4주부터 시작</li><li>입주 일정·휴무일 관리자 협의</li><li>산모·신생아 통합 케어</li><li>관리사 일정 확인 후 확정</li></ul><div class="service-price"><span>주당</span><strong>$2,100<small> · 4주 $8,400</small></strong></div><button class="primary-button" data-service-apply="POSTPARTUM" data-postpartum-mode="LIVE_IN">입주형 신청</button></article><article class="public-service-card"><span class="service-number">03</span><div class="service-symbol">☆</div><p class="eyebrow">BABYSITTING</p><h3>베이비시팅</h3><p>식사, 놀이, 산책과 생활 이벤트를 보호자에게 정확하게 공유합니다.</p><ul><li>시간당 단일 요금</li><li>하루 최소 4시간</li><li>산후조리와 별개 신청 가능</li><li>4시간분 예약금 $128</li></ul><div class="service-price"><span>시간당</span><strong>$32<small> · 최소 4시간</small></strong></div><button class="primary-button" data-service-apply="BABYSITTING">베이비시팅 신청</button></article><article class="public-service-card massage"><span class="service-number">04</span><div class="service-symbol">✦</div><p class="eyebrow">PRENATAL · POSTPARTUM MASSAGE</p><h3>산전·산후 마사지</h3><p>전문 자격이 부여된 마사지 테라피스트의 빈 일정을 확인해 예약합니다.</p><div class="massage-price-table"><div><span>일반 고객</span><strong>60분 $150 · 90분 $210</strong></div><div><span>산후조리 예약·이용 고객</span><strong>60분 $135 · 90분 $190</strong></div><div><span>산후조리 고객 4회권</span><strong>60분 × 4회 $520</strong></div></div><div class="service-price"><span>변경·취소</span><strong>24시간<small> 이전까지</small></strong></div><button class="primary-button" data-massage-book>마사지 예약</button></article></div><p class="horizontal-scroll-hint" aria-hidden="true">← 좌우로 넘겨 모든 패키지 보기 →</p></div><section class="insured-staffing-panel"><div><p class="eyebrow">WHY INSURED STAFFING MATTERS</p><h3>보험·고용 책임을 회사가 관리합니다.</h3><p>ProMoms는 W-2 직접 고용과 책임보상보험·근로자재해보험 운영을 회사의 원칙으로 두고 있습니다.</p></div><ul><li><span>◈</span><strong>책임보상보험</strong><small>서비스 수행 중 대인·대물 리스크 관리</small></li><li><span>✓</span><strong>근로자재해보험</strong><small>업무상 재해 책임을 고객에게 전가하지 않음</small></li><li><span>W-2</span><strong>정식 직원</strong><small>독립계약자 편법 운영 없이 회사가 고용 의무 처리</small></li></ul></section><div class="public-rules" id="rules"><div><strong>이용 규칙</strong><span>① 산후조리 예약금 $500 · 시작 30일 전까지 취소 시 환불</span><span>② 시작 30일 이내 산후조리 예약금 환불 불가</span><span>③ 베이비시팅 예약금 $128 · 4시간분</span><span>④ 시작 72시간 이전 취소 시 베이비시팅 예약금 환불</span><span>⑤ 시작 72시간 이내 취소·노쇼 시 예약금 환불 불가</span><span>⑥ 마사지는 시작 24시간 이전까지 변경·취소 가능</span><span>⑦ 마사지 가격은 산후조리 승인·예약 상태에 따라 자동 적용</span></div></div></section>
           <section class="public-section public-caregiver-section" id="caregivers"><div class="public-section-heading"><p class="eyebrow">MEET OUR CARE PROFESSIONALS</p><h2>경력과 고객 경험으로<br/>확인하는 ProMoms 관리사.</h2><p>등록된 관리사의 공개 약력과 전문분야, ProMoms 서비스 후기와 근거가 확인된 외부 경로 후기의 통합 별점을 투명하게 확인하세요.</p></div>${publicCaregiverDirectoryMarkup()}</section>
           <section class="public-section" id="shop-preview"><div class="public-section-heading public-shop-heading"><div><p class="eyebrow">ProMoms SELECT · COMING SOON</p><h2>Beauty & Baby Store</h2><p>상품·결제·재고 운영 체계가 준비된 뒤 별도 스토어로 선보일 예정입니다.</p></div><button class="secondary-button" disabled>출시 준비 중</button></div><div class="store-readiness-note"><strong>지금은 돌봄 서비스 신청과 기록 기능만 운영합니다.</strong><span>샘플 상품이나 재고를 실제 판매 상품처럼 표시하지 않습니다.</span></div></section>
           <section class="public-section public-location" id="location"><div class="location-card"><p class="eyebrow">SERVICE AREA</p><h2>Atlanta Metro 방문 케어</h2><p>고객의 서비스 주소와 일정, 관리사 이동 가능 범위를 확인한 뒤 방문 가능 여부를 안내합니다.</p><dl><div><dt>기본 지역</dt><dd>Atlanta Metro, Georgia</dd></div><div><dt>상담 방식</dt><dd>전화 상담 후 일정·주소 확인</dd></div><div><dt>방문 안내</dt><dd>신청 승인 전 최종 서비스 가능 지역을 확인합니다.</dd></div></dl><a class="primary-button public-link-button" href="tel:+14704049467">전화로 가능 지역 문의</a></div><div class="location-map" role="img" aria-label="Atlanta Metro 방문 서비스 지역 안내"><div class="map-road road-one"></div><div class="map-road road-two"></div><div class="map-pin"><span class="promoms-mark">${brandLogoMarkup()}</span><strong>ProMoms</strong></div><small>Atlanta Metro · Georgia</small></div></section>
@@ -3993,7 +4097,8 @@ import {
     const publicSite = document.querySelector(".public-site");
     publicSite?.addEventListener("keydown", (event) => { if (event.key === "Escape") setPublicMenuOpen(false); });
     publicSite?.addEventListener("click", (event) => { if (publicNav?.classList.contains("is-open") && !event.target.closest(".public-header")) setPublicMenuOpen(false); });
-    document.querySelectorAll("[data-service-apply]").forEach((button) => button.addEventListener("click", () => { const user = authUser(); if (!user) { state.auth.screen = "signup"; saveState(); render(); return; } if (!userHasAccessRole(user, "CLIENT")) return showToast("서비스 신청은 고객 권한이 있는 계정에서 이용할 수 있습니다."); openServiceApplicationModal(button.dataset.serviceApply || null); }));
+    document.querySelectorAll("[data-service-apply]").forEach((button) => button.addEventListener("click", () => { const user = authUser(); if (!user) { state.auth.screen = "signup"; saveState(); render(); return; } if (!userHasAccessRole(user, "CLIENT")) return showToast("서비스 신청은 고객 권한이 있는 계정에서 이용할 수 있습니다."); openServiceApplicationModal(button.dataset.serviceApply || null, "NEW", null, button.dataset.postpartumMode || "COMMUTE"); }));
+    document.querySelectorAll("[data-massage-book]").forEach((button) => button.addEventListener("click", openMassageBookingModal));
     document.querySelectorAll("[data-my-service]").forEach((button) => button.addEventListener("click", enterClientPortal));
     document.querySelectorAll("[data-enter-portal]").forEach((button) => button.addEventListener("click", () => { state.auth.screen = "portal"; saveState(); render(); }));
     document.querySelectorAll("[data-public-caregiver-detail]").forEach((button) => button.addEventListener("click", () => openPublicCaregiverDetail(button.dataset.publicCaregiverDetail)));
@@ -4540,7 +4645,8 @@ import {
     }));
 
     document.querySelectorAll("[data-public-home]").forEach((button) => button.addEventListener("click", () => { state.auth.screen = "public"; saveState(); render(); window.scrollTo({ top: 0, behavior: "smooth" }); }));
-    document.querySelectorAll("[data-service-apply]").forEach((button) => button.addEventListener("click", () => openServiceApplicationModal(button.dataset.serviceApply || null)));
+    document.querySelectorAll("[data-service-apply]").forEach((button) => button.addEventListener("click", () => openServiceApplicationModal(button.dataset.serviceApply || null, "NEW", null, button.dataset.postpartumMode || "COMMUTE")));
+    document.querySelectorAll("[data-massage-book]").forEach((button) => button.addEventListener("click", openMassageBookingModal));
     document.querySelectorAll("[data-service-adjust]").forEach((button) => button.addEventListener("click", () => openServiceAdjustmentModal(button.dataset.serviceAdjust)));
     document.querySelectorAll("[data-service-extend]").forEach((button) => button.addEventListener("click", () => openServiceApplicationModal("BABYSITTING", "EXTENSION", button.dataset.serviceExtend || null)));
 
@@ -5089,6 +5195,12 @@ import {
     if (!caregiverCanViewClientBrief(assignment)) return showToast(caregiverClientBriefAccessText(assignment));
     const client = clientById(assignment.clientId);
     if (!client) return showToast("배정된 고객 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.", "error");
+    const massage = assignmentServiceType(assignment) === "MASSAGE";
+    if (massage) {
+      modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal assignment-detail-modal" role="dialog" aria-modal="true" aria-labelledby="caregiver-assignment-detail-title"><header class="modal-header"><div>${serviceBadgeMarkup("MASSAGE")}<p class="eyebrow">MASSAGE APPOINTMENT BRIEF</p><h3 id="caregiver-assignment-detail-title">마사지 예약·방문 정보</h3><p>${assignmentCountdown(assignment)} · ${formatDate(assignment.startAt)} ${assignment.dailyStart}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><div class="modal-form"><div class="profile-summary"><div class="profile-summary-person"><div class="profile-avatar">✦</div><div><strong>${escapeHtml(client.motherName)}</strong><span>${assignment.durationMinutes || 60}분 · ${assignment.sessionCount || 1}회 ${serviceMetaFor("MASSAGE").label}</span></div></div><div class="profile-summary-tags"><span>${assignment.pricingTier === "POSTPARTUM_CLIENT" ? "산후조리 고객 우대" : "일반 고객"}</span><span>${new Date(assignment.startAt) > new Date() ? "예약 예정" : "진행 일정"}</span></div></div><div class="request-review-grid"><div><span>예약 구성</span><strong>${assignment.durationMinutes || 60}분 × ${assignment.sessionCount || 1}회</strong></div><div><span>예약 시간</span><strong>${assignment.dailyStart}–${assignment.dailyEnd}</strong></div><div class="wide"><span>방문 주소</span><strong>${escapeHtml(assignment.address || client.address || "미등록")}</strong></div><div><span>선호 언어</span><strong>${escapeHtml(client.preferredLanguage || "미등록")}</strong></div><div><span>비상 연락처</span><strong>${escapeHtml(client.emergencyContact || "미등록")}</strong></div><div class="wide"><span>고객 요청사항</span><strong>${escapeHtml(assignment.requestNote || client.requestNote || "별도 요청사항 없음")}</strong></div></div><div class="privacy-boundary-note"><strong>마사지 예약 전용 정보</strong><span>예약 수행에 필요한 방문 정보만 표시됩니다. 산후조리·베이비시팅 케어 기록 화면과는 분리되어 있습니다.</span></div><div class="form-actions"><button type="button" class="primary-button" data-close-modal>확인 완료</button></div></div></section></div>`;
+      bindModalFrame();
+      return;
+    }
     const babysitting = assignmentServiceType(assignment) === "BABYSITTING";
     const babyName = babyNameFor(assignment, client) || "아이";
     const baby = findClientBaby(client, babyName, assignment.babyId);
@@ -5892,7 +6004,7 @@ import {
   function assignmentWindow(startDate, dailyStart, dailyEnd, weeks) {
     const startAt = new Date(`${startDate}T${dailyStart}:00`);
     const endAt = new Date(startAt);
-    endAt.setDate(endAt.getDate() + Math.max(MIN_SERVICE_WEEKS, Number(weeks || MIN_SERVICE_WEEKS)) * 7 - 1);
+    endAt.setDate(endAt.getDate() + Math.max(1, Number(weeks || 1)) * 7 - 1);
     const [endHour, endMinute] = dailyEnd.split(":").map(Number);
     endAt.setHours(endHour, endMinute, 0, 0);
     return { startAt, endAt };
@@ -5926,6 +6038,37 @@ import {
       isCaregiverAssignable(user)
       && caregiverIsAvailable(user.id, startAt, endAt, excludedAssignmentId, requestedDays, requestedDailyStart, requestedDailyEnd),
     );
+  }
+
+  function massageTherapistIsAvailable(user, clientId, startAt, endAt, excludedAssignmentId = null, requestedDays = [], requestedDailyStart = null, requestedDailyEnd = null) {
+    if (!isCaregiverAssignable(user) || !user.isMassageTherapist) return false;
+    const requestedDaySet = new Set(requestedDays.length ? requestedDays : [KOREAN_WEEKDAYS[startOfLocalDay(startAt).getDay()]]);
+    const requestStartMinutes = timeMinutes(requestedDailyStart || "00:00");
+    const requestEndMinutes = timeMinutes(requestedDailyEnd || "23:59");
+    return !state.assignments.some((assignment) => {
+      if (assignment.id === excludedAssignmentId || assignment.caregiverUserId !== user.id || assignment.status === "CANCELLED") return false;
+      const overlapStart = new Date(Math.max(startOfLocalDay(startAt).getTime(), startOfLocalDay(assignment.startAt).getTime()));
+      const overlapEnd = new Date(Math.min(startOfLocalDay(endAt).getTime(), startOfLocalDay(assignment.endAt).getTime()));
+      if (overlapStart > overlapEnd) return false;
+      const existingStart = timeMinutes(assignment.dailyStart || "00:00");
+      const existingEnd = timeMinutes(assignment.dailyEnd || "23:59");
+      if (requestEndMinutes <= existingStart || existingEnd <= requestStartMinutes) return false;
+      const existingDays = new Set(assignment.daysOfWeek?.length ? assignment.daysOfWeek : DEFAULT_SERVICE_DAYS);
+      const cursor = new Date(overlapStart);
+      while (cursor <= overlapEnd) {
+        const weekday = KOREAN_WEEKDAYS[cursor.getDay()];
+        if (requestedDaySet.has(weekday) && existingDays.has(weekday)) {
+          const sameClientCareException = assignment.clientId === clientId && assignmentServiceType(assignment) !== "MASSAGE";
+          if (!sameClientCareException) return true;
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return false;
+    });
+  }
+
+  function approvedAvailableMassageTherapists(clientId, startAt, endAt, excludedAssignmentId = null, requestedDays = [], requestedDailyStart = null, requestedDailyEnd = null) {
+    return state.users.filter((user) => massageTherapistIsAvailable(user, clientId, startAt, endAt, excludedAssignmentId, requestedDays, requestedDailyStart, requestedDailyEnd));
   }
 
   function canReassignCloudAssignment(assignment) {
@@ -5975,22 +6118,26 @@ import {
     if (!source) return showToast("배치할 서비스 신청 정보를 찾을 수 없습니다.", "error");
     const client = clientById(source.clientId);
     if (!client) return showToast("연결된 고객 정보를 찾을 수 없습니다. 회원·고객 프로필 연결을 먼저 확인해 주세요.", "error");
-    const selectedWeeks = String(Math.max(MIN_SERVICE_WEEKS, Number(source.weeks || MIN_SERVICE_WEEKS)));
+    const serviceType = assignmentServiceType(source);
+    const selectedWeeks = String(serviceType === "MASSAGE" ? Number(source.weeks || source.sessionCount || 1) : Math.max(MIN_SERVICE_WEEKS, Number(source.weeks || MIN_SERVICE_WEEKS)));
     const dateValue = dateInputValue(assignment?.startAt || selectedRequest?.desiredStartDate);
     const dailyStart = assignment?.dailyStart || selectedRequest?.dailyStart || "09:00";
     const dailyEnd = assignment?.dailyEnd || selectedRequest?.dailyEnd || "17:00";
-    const previewWindow = assignmentWindow(dateValue, dailyStart, dailyEnd, selectedWeeks);
-    const lifecycleIssue = serviceLifecycleIssue(source.clientId, assignmentServiceType(source), previewWindow.startAt, previewWindow.endAt, assignment?.id || null, selectedRequest?.id || null, source.babyId, source.babyName);
-    const caregivers = assignment ? state.users.filter((user) => user.id === assignment.caregiverUserId || isCaregiverAssignable(user)) : approvedAvailableCaregivers(previewWindow.startAt, previewWindow.endAt, null, source.daysOfWeek || [], dailyStart, dailyEnd);
+    const previewWindow = serviceWindow(source, dateValue, dailyStart, dailyEnd, selectedWeeks);
+    const lifecycleIssue = serviceType === "MASSAGE" ? null : serviceLifecycleIssue(source.clientId, serviceType, previewWindow.startAt, previewWindow.endAt, assignment?.id || null, selectedRequest?.id || null, source.babyId, source.babyName);
+    const caregivers = assignment
+      ? state.users.filter((user) => user.id === assignment.caregiverUserId || (serviceType === "MASSAGE" ? massageTherapistIsAvailable(user, source.clientId, previewWindow.startAt, previewWindow.endAt, assignment.id, source.daysOfWeek || [], dailyStart, dailyEnd) : isCaregiverAssignable(user)))
+      : serviceType === "MASSAGE"
+        ? approvedAvailableMassageTherapists(source.clientId, previewWindow.startAt, previewWindow.endAt, null, source.daysOfWeek || [], dailyStart, dailyEnd)
+        : approvedAvailableCaregivers(previewWindow.startAt, previewWindow.endAt, null, source.daysOfWeek || [], dailyStart, dailyEnd);
     const selectedCaregiverId = assignment?.caregiverUserId || caregivers[0]?.id || "";
-    const serviceType = assignmentServiceType(source);
     const sourceBabyName = babyNameFor(source, client) || "아이 미등록";
     const requestLocked = Boolean(!assignment && usingCloudData());
     const reassignmentBlockedByActiveSession = Boolean(assignment && usingCloudData() && (state.careSessions || []).some((session) => session.assignmentId === assignment.id && session.status === "IN_PROGRESS"));
     const reassignmentAllowed = canReassignCloudAssignment(assignment);
     const reassignmentWindow = reassignmentAllowed ? reassignmentAvailabilityWindow(assignment) : null;
     const reassignmentCandidates = reassignmentAllowed && reassignmentWindow
-      ? approvedAvailableCaregivers(reassignmentWindow.startAt, reassignmentWindow.endAt, assignment.id, source.daysOfWeek || [], dailyStart, dailyEnd).filter((user) => user.id !== assignment.caregiverUserId)
+      ? (serviceType === "MASSAGE" ? approvedAvailableMassageTherapists(source.clientId, reassignmentWindow.startAt, reassignmentWindow.endAt, assignment.id, source.daysOfWeek || [], dailyStart, dailyEnd) : approvedAvailableCaregivers(reassignmentWindow.startAt, reassignmentWindow.endAt, assignment.id, source.daysOfWeek || [], dailyStart, dailyEnd)).filter((user) => user.id !== assignment.caregiverUserId)
       : [];
     const reassignmentMarkup = reassignmentBlockedByActiveSession
       ? '<section class="profile-form-section assignment-reassignment-panel"><div class="status-banner warning"><strong>진행 중인 근무를 먼저 종료해 주세요.</strong><span>현장 기록이 열려 있는 동안에는 담당 관리사를 바꿀 수 없습니다.</span></div></section>'
@@ -6002,9 +6149,9 @@ import {
     modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal assignment-modal" role="dialog" aria-modal="true" aria-labelledby="assignment-title"><header class="modal-header"><div><h3 id="assignment-title">${productionDetailOnly ? "확정 일정 상세" : assignment ? "일정·관리사 변경" : "승인된 신청에서 일정 배치"}</h3><p>${productionDetailOnly ? "확정된 신청·계약 기준 정보입니다. 변경과 취소는 승인 절차를 통해 감사 기록과 함께 반영됩니다." : assignment ? "기간, 시간과 담당 관리사를 변경합니다." : "고객 신청 정보를 불러왔습니다. 가능한 관리사를 선택해 캘린더에 배치하세요."}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-assignment-form>
       ${assignment ? "" : `<div class="field approved-request-picker"><label for="approved-request-select">승인된 서비스 신청</label><select id="approved-request-select" data-approved-request-select>${approvedQueue.map((request) => { const requestClient = clientById(request.clientId); const requestBabyName = babyNameFor(request, requestClient) || "아이 미등록"; return `<option value="${request.id}" ${request.id === selectedRequest.id ? "selected" : ""}>${serviceMetaFor(request.serviceType).label} · ${escapeHtml(requestClient.motherName)} / ${escapeHtml(requestBabyName)} · ${new Date(request.desiredStartDate).toLocaleDateString("ko-KR")}</option>`; }).join("")}</select><small>목록을 바꾸면 신청서의 일정·주소·요청사항이 자동으로 다시 불러와집니다.</small></div>`}
       <input type="hidden" name="serviceRequestId" value="${escapeHtml(selectedRequest?.id || assignment?.serviceRequestId || "")}"/><input type="hidden" name="serviceType" value="${serviceType}"/><input type="hidden" name="clientId" value="${client.id}"/>
-      <div class="assignment-source-summary ${serviceMetaFor(serviceType).tone}">${serviceBadgeMarkup(serviceType)}<div><strong>${escapeHtml(client.motherName)} · ${escapeHtml(sourceBabyName)}</strong><span>${escapeHtml(source.address || client.address || "주소 미등록")} · 알러지 ${escapeHtml(source.allergies || "없음")}</span></div><em>승인 신청 연결</em></div>${serviceType === "POSTPARTUM" ? `<div class="application-price-summary"><span>계약 예정 금액</span><strong>$${postpartumEstimate(selectedWeeks).toLocaleString("en-US")}</strong><small>주 $${POSTPARTUM_WEEKLY_RATE.toLocaleString("en-US")} × ${selectedWeeks}주</small></div>` : ""}<div class="insured-contract-note"><strong>보험 적용 W-2 직원 배정</strong><span>고객에게 고용·급여·세무·업무상 재해 리스크를 전가하지 않습니다.</span></div>${requestLocked ? '<div class="status-banner info">고객이 승인받은 신청 조건은 이 단계에서 수정되지 않습니다. 관리사만 선택해 확정하며, 일정 변경은 별도 변경·취소 승인 절차로 처리합니다.</div>' : ""}${lifecycleIssue ? `<div class="status-banner warning">${escapeHtml(lifecycleIssue.message)}</div>` : ""}
+      <div class="assignment-source-summary ${serviceMetaFor(serviceType).tone}">${serviceBadgeMarkup(serviceType)}<div><strong>${escapeHtml(client.motherName)}${serviceType === "MASSAGE" ? "" : ` · ${escapeHtml(sourceBabyName)}`}</strong><span>${escapeHtml(source.address || client.address || "주소 미등록")} · ${serviceType === "MASSAGE" ? `${source.durationMinutes || 60}분 × ${source.sessionCount || 1}회` : `알러지 ${escapeHtml(source.allergies || "없음")}`}</span></div><em>승인 신청 연결</em></div>${serviceType === "POSTPARTUM" ? `<div class="application-price-summary"><span>${postpartumModeFor(source) === "LIVE_IN" ? "입주형" : "출퇴근형"} 계약 예정 금액</span><strong>${money(requestServiceTotal(source))}</strong><small>주 ${money(postpartumWeeklyRate(source))} × ${selectedWeeks}주</small></div>` : serviceType === "MASSAGE" ? `<div class="application-price-summary"><span>${source.pricingTier === "POSTPARTUM_CLIENT" ? "산후조리 고객 우대가" : "일반 고객가"}</span><strong>${money(requestServiceTotal(source))}</strong><small>${source.durationMinutes || 60}분 × ${source.sessionCount || 1}회 · 24시간 이전 변경·취소</small></div>` : ""}<div class="insured-contract-note"><strong>보험 적용 W-2 직원 배정</strong><span>고객에게 고용·급여·세무·업무상 재해 리스크를 전가하지 않습니다.</span></div>${requestLocked ? '<div class="status-banner info">고객이 승인받은 신청 조건은 이 단계에서 수정되지 않습니다. 관리사만 선택해 확정하며, 일정 변경은 별도 변경·취소 승인 절차로 처리합니다.</div>' : ""}${lifecycleIssue ? `<div class="status-banner warning">${escapeHtml(lifecycleIssue.message)}</div>` : ""}
       <div class="field"><label for="assignment-caregiver">해당 기간에 가능한 관리사</label>${caregivers.length ? `<select id="assignment-caregiver" name="caregiverUserId" required>${caregivers.map((user) => `<option value="${user.id}" ${user.id === selectedCaregiverId ? "selected" : ""}>${escapeHtml(user.fullName)} · ${escapeHtml(user.serviceArea || user.residentialArea || "활동지역 미등록")}</option>`).join("")}</select><small>저장 시 다른 배정과의 기간 충돌을 다시 확인합니다.</small>` : `<div class="status-banner warning">신청 기간에 배정 가능한 승인 관리사가 없습니다. 관리사 일정을 조정한 뒤 다시 시도해 주세요.</div>`}</div>
-      <div class="field"><span class="field-label">계약 기간</span>${requestLocked ? `<input type="hidden" name="weeks" value="${selectedWeeks}"/><div class="read-only-value">${selectedWeeks}주</div>` : `<div class="option-grid three">${radioOptions("weeks", [["2", "2주"], ["3", "3주"], ["4", "4주"]], String(Math.max(MIN_SERVICE_WEEKS, Number(selectedWeeks))))}</div>`}</div>
+      <div class="field"><span class="field-label">${serviceType === "MASSAGE" ? "예약 횟수" : "계약 기간"}</span>${requestLocked ? `<input type="hidden" name="weeks" value="${selectedWeeks}"/><div class="read-only-value">${serviceType === "MASSAGE" ? `${source.sessionCount || selectedWeeks}회` : `${selectedWeeks}주`}</div>` : serviceType === "MASSAGE" ? `<input type="hidden" name="weeks" value="${selectedWeeks}"/><div class="read-only-value">${source.sessionCount || selectedWeeks}회</div>` : `<div class="option-grid three">${radioOptions("weeks", [["2", "2주"], ["3", "3주"], ["4", "4주"]], String(Math.max(MIN_SERVICE_WEEKS, Number(selectedWeeks))))}</div>`}</div>
       <div class="form-grid three"><div class="field"><label for="assignment-start">시작일</label><input id="assignment-start" name="startDate" type="date" value="${dateValue}" required ${requestLocked ? 'readonly aria-readonly="true"' : ""}/></div><div class="field"><label for="assignment-start-time">시작 시간</label><input id="assignment-start-time" name="dailyStart" type="time" value="${dailyStart}" required ${requestLocked ? 'readonly aria-readonly="true"' : ""}/></div><div class="field"><label for="assignment-end-time">종료 시간</label><input id="assignment-end-time" name="dailyEnd" type="time" value="${dailyEnd}" required ${requestLocked ? 'readonly aria-readonly="true"' : ""}/></div></div>
       <div class="field"><label for="assignment-address">서비스 주소</label><input id="assignment-address" name="address" value="${escapeHtml(source.address || client.address || "")}" required placeholder="Street, City, State ZIP" ${requestLocked ? 'readonly aria-readonly="true"' : ""}/></div>
       <div class="form-grid two"><div class="field"><label for="assignment-household">가정 내 추가인원</label><input id="assignment-household" name="extraHouseholdMembers" type="number" min="0" value="${source.extraHouseholdMembers ?? 0}" required ${requestLocked ? 'readonly aria-readonly="true"' : ""}/></div><div class="field"><label for="assignment-allergy">알러지 유무/내용</label><input id="assignment-allergy" name="allergies" value="${escapeHtml(source.allergies || "없음")}" required ${requestLocked ? 'readonly aria-readonly="true"' : ""}/></div></div>
@@ -6057,20 +6204,24 @@ import {
   async function saveAssignment(event, assignmentId = null) {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget).entries());
-    if (Number(values.weeks) < MIN_SERVICE_WEEKS) return showToast("서비스 계약은 최소 2주부터 가능합니다.");
+    if (values.serviceType !== "MASSAGE" && Number(values.weeks) < MIN_SERVICE_WEEKS) return showToast("서비스 계약은 최소 2주부터 가능합니다.");
     if (values.serviceType === "BABYSITTING" && babysittingHours(values.dailyStart, values.dailyEnd) < MIN_BABYSITTING_HOURS) return showToast("베이비시팅은 하루 최소 4시간부터 배정할 수 있습니다.");
     if (values.serviceType === "POSTPARTUM" && values.dailyEnd !== postpartumEndTime(values.dailyStart)) return showToast("산후조리는 케어 8시간·식사 1시간·휴식 30분을 포함한 종료시간을 사용해야 합니다.");
     const request = values.serviceRequestId ? state.serviceRequests.find((item) => item.id === values.serviceRequestId) : null;
-    if (!assignmentId && (!request || request.status !== "APPROVED" || request.approvedAssignmentId)) return showToast("배치 가능한 승인 신청을 다시 선택해 주세요.");
-    const { startAt, endAt } = assignmentWindow(values.startDate, values.dailyStart, values.dailyEnd, values.weeks);
-    if (values.dailyEnd <= values.dailyStart) return showToast("종료 시간은 시작 시간보다 늦어야 합니다.");
     const existingAssignment = assignmentId ? state.assignments.find((item) => item.id === assignmentId) : null;
+    if (!assignmentId && (!request || request.status !== "APPROVED" || request.approvedAssignmentId)) return showToast("배치 가능한 승인 신청을 다시 선택해 주세요.");
+    const { startAt, endAt } = serviceWindow(request || existingAssignment || { serviceType: values.serviceType, sessionCount: Number(values.weeks) }, values.startDate, values.dailyStart, values.dailyEnd, values.weeks);
+    if (values.dailyEnd <= values.dailyStart) return showToast("종료 시간은 시작 시간보다 늦어야 합니다.");
     const babySource = request || existingAssignment;
-    const lifecycleIssue = serviceLifecycleIssue(values.clientId, values.serviceType, startAt, endAt, assignmentId, request?.id || null, babySource?.babyId, babySource?.babyName);
+    const lifecycleIssue = values.serviceType === "MASSAGE" ? null : serviceLifecycleIssue(values.clientId, values.serviceType, startAt, endAt, assignmentId, request?.id || null, babySource?.babyId, babySource?.babyName);
     if (lifecycleIssue) return showToast(lifecycleIssue.message);
     const requestedDays = request?.daysOfWeek || state.assignments.find((item) => item.id === assignmentId)?.daysOfWeek || [];
-    if (!caregiverIsAvailable(values.caregiverUserId, startAt, endAt, assignmentId, requestedDays, values.dailyStart, values.dailyEnd)) {
-      showToast("해당 관리사에게 겹치는 배정 일정이 있습니다.");
+    const selectedCaregiver = state.users.find((user) => user.id === values.caregiverUserId);
+    const selectedCaregiverAvailable = values.serviceType === "MASSAGE"
+      ? massageTherapistIsAvailable(selectedCaregiver, values.clientId, startAt, endAt, assignmentId, requestedDays, values.dailyStart, values.dailyEnd)
+      : caregiverIsAvailable(values.caregiverUserId, startAt, endAt, assignmentId, requestedDays, values.dailyStart, values.dailyEnd);
+    if (!selectedCaregiverAvailable) {
+      showToast(values.serviceType === "MASSAGE" ? "해당 테라피스트에게 겹치는 케어기빙 또는 마사지 일정이 있습니다." : "해당 관리사에게 겹치는 배정 일정이 있습니다.");
       return;
     }
     const client = clientById(values.clientId);
@@ -6094,8 +6245,10 @@ import {
       }
       return;
     }
-    const assignmentData = { serviceType: values.serviceType, serviceRequestId: request?.id || existingAssignment?.serviceRequestId || null, clientId: client.id, babyId: babySource?.babyId || client.babyId, babyName: babyNameFor(babySource, client) || client.babyName, caregiverUserId: values.caregiverUserId, weeks: Number(values.weeks), weeklyRate: values.serviceType === "POSTPARTUM" ? POSTPARTUM_WEEKLY_RATE : null, contractValue: values.serviceType === "POSTPARTUM" ? postpartumEstimate(values.weeks) : null, depositAmount: values.serviceType === "POSTPARTUM" ? (request?.depositAmount || existingAssignment?.depositAmount || POSTPARTUM_DEPOSIT) : null, depositStatus: values.serviceType === "POSTPARTUM" ? (request?.depositStatus || existingAssignment?.depositStatus || "PAID") : null, depositPaidAt: values.serviceType === "POSTPARTUM" ? (request?.depositPaidAt || existingAssignment?.depositPaidAt || new Date().toISOString()) : null, insuredStaffing: true, employeeClassification: "W-2", startAt: startAt.toISOString(), endAt: endAt.toISOString(), dailyStart: values.dailyStart, dailyEnd: values.dailyEnd, daysOfWeek: request?.daysOfWeek || existingAssignment?.daysOfWeek || [], address: values.address, extraHouseholdMembers: Number(values.extraHouseholdMembers), allergies: values.allergies, requestNote: values.requestNote, maternalNotes: request?.maternalNotes || existingAssignment?.maternalNotes || "", mealInstructions: request?.mealInstructions || existingAssignment?.mealInstructions || "", routineNotes: request?.routineNotes || existingAssignment?.routineNotes || "", pickupNotes: request?.pickupNotes || existingAssignment?.pickupNotes || "", status: startAt <= new Date() && new Date() <= endAt ? "ACTIVE" : "SCHEDULED", updatedBy: authUser().id, updatedAt: new Date().toISOString() };
+    const assignmentData = { serviceType: values.serviceType, serviceRequestId: request?.id || existingAssignment?.serviceRequestId || null, clientId: client.id, babyId: babySource?.babyId || client.babyId, babyName: babyNameFor(babySource, client) || client.babyName, caregiverUserId: values.caregiverUserId, weeks: Number(values.weeks), weeklyRate: values.serviceType === "POSTPARTUM" ? postpartumWeeklyRate(request || existingAssignment) : null, contractValue: values.serviceType === "POSTPARTUM" ? postpartumEstimate(values.weeks, postpartumModeFor(request || existingAssignment)) : null, depositAmount: values.serviceType === "POSTPARTUM" ? (request?.depositAmount || existingAssignment?.depositAmount || POSTPARTUM_DEPOSIT) : null, depositStatus: values.serviceType === "POSTPARTUM" ? (request?.depositStatus || existingAssignment?.depositStatus || "PAID") : null, depositPaidAt: values.serviceType === "POSTPARTUM" ? (request?.depositPaidAt || existingAssignment?.depositPaidAt || new Date().toISOString()) : null, insuredStaffing: true, employeeClassification: "W-2", startAt: startAt.toISOString(), endAt: endAt.toISOString(), dailyStart: values.dailyStart, dailyEnd: values.dailyEnd, daysOfWeek: request?.daysOfWeek || existingAssignment?.daysOfWeek || [], address: values.address, extraHouseholdMembers: Number(values.extraHouseholdMembers), allergies: values.allergies, requestNote: values.requestNote, maternalNotes: request?.maternalNotes || existingAssignment?.maternalNotes || "", mealInstructions: request?.mealInstructions || existingAssignment?.mealInstructions || "", routineNotes: request?.routineNotes || existingAssignment?.routineNotes || "", pickupNotes: request?.pickupNotes || existingAssignment?.pickupNotes || "", status: startAt <= new Date() && new Date() <= endAt ? "ACTIVE" : "SCHEDULED", updatedBy: authUser().id, updatedAt: new Date().toISOString() };
     if (values.serviceType === "BABYSITTING") Object.assign(assignmentData, { depositAmount: request?.depositAmount || existingAssignment?.depositAmount || BABYSITTING_DEPOSIT, depositStatus: request?.depositStatus || existingAssignment?.depositStatus || "PAID", depositPaidAt: request?.depositPaidAt || existingAssignment?.depositPaidAt || new Date().toISOString() });
+    if (values.serviceType === "POSTPARTUM") Object.assign(assignmentData, { postpartumMode: request?.postpartumMode || existingAssignment?.postpartumMode || "COMMUTE", weeklyRate: request?.weeklyRate || existingAssignment?.weeklyRate || postpartumWeeklyRate(request), contractValue: requestServiceTotal(request || existingAssignment) });
+    if (values.serviceType === "MASSAGE") Object.assign(assignmentData, { babyId: null, babyName: "", durationMinutes: request?.durationMinutes || 60, sessionCount: request?.sessionCount || 1, pricingTier: request?.pricingTier || "GENERAL", contractValue: requestServiceTotal(request), depositAmount: request?.depositAmount || requestServiceTotal(request), depositStatus: request?.depositStatus || "PAID", depositPaidAt: request?.depositPaidAt || new Date().toISOString() });
     let savedAssignment;
     if (assignmentId) {
       Object.assign(existingAssignment, assignmentData);
@@ -6163,11 +6316,17 @@ import {
     const startLocked = postpartumStarted || hasCareHistory;
     const policy = adjustmentPolicy(serviceType, startAt, target, "CHANGE");
     const startValue = startLocked ? dateInputValue(startAt) : new Date(startAt) > new Date() ? dateInputValue(startAt) : localDateKey(new Date(Date.now() + 86400000));
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal assignment-modal" role="dialog" aria-modal="true" aria-labelledby="adjustment-title"><header class="modal-header"><div>${serviceBadgeMarkup(serviceType)}<p class="eyebrow">CHANGE & CANCELLATION</p><h3 id="adjustment-title">${serviceMetaFor(serviceType).label} 변경·취소 요청</h3><p>요청은 관리자 승인 전까지 기존 일정에 영향을 주지 않습니다.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-service-adjustment-form><input type="hidden" name="targetType" value="${targetType}"/><input type="hidden" name="targetId" value="${targetId}"/><div class="request-review-grid"><div><span>현재 기간</span><strong>${new Date(startAt).toLocaleDateString("ko-KR")}–${new Date(target.endAt || requestWindow(target).endAt).toLocaleDateString("ko-KR")}</strong></div><div><span>현재 시간</span><strong>${target.dailyStart}–${target.dailyEnd}</strong></div></div><div class="status-banner ${policy.tone}" data-adjustment-policy><strong>${escapeHtml(policy.title)}</strong><span>${escapeHtml(policy.detail)}</span></div><div class="field"><span class="field-label">요청 종류</span><div class="option-grid two">${radioOptions("adjustmentAction", [["CHANGE", "일정 변경"], ["CANCEL", "서비스 취소"]], "CHANGE")}</div></div><section class="application-block" data-adjustment-change><h4>변경 희망 일정</h4>${hasCareHistory ? '<div class="status-banner info"><strong>방문 이력이 있어 시작일과 일일 시간은 고정됩니다.</strong><span>과거 기록과 계약을 일치시키기 위해 이용 기간만 변경할 수 있습니다.</span></div>' : ""}<div class="form-grid three"><div class="field"><label for="adjustment-start">시작일</label><input id="adjustment-start" name="proposedStartDate" type="date" min="${localDateKey(new Date())}" value="${startValue}" ${startLocked ? 'readonly aria-readonly="true"' : "required"}/>${startLocked ? `<small>${hasCareHistory ? "완료·진행 방문 이력이 있어 최초 시작일을 변경할 수 없습니다." : "서비스가 시작되어 최초 시작일은 변경할 수 없습니다."}</small>` : ""}</div><div class="field"><label for="adjustment-start-time">시작 시간</label><input id="adjustment-start-time" name="proposedDailyStart" type="time" value="${target.dailyStart}" ${hasCareHistory ? 'readonly aria-readonly="true"' : ""} required/></div><div class="field"><label for="adjustment-end-time">종료 시간</label><input id="adjustment-end-time" name="proposedDailyEnd" type="time" value="${target.dailyEnd}" ${hasCareHistory ? 'readonly aria-readonly="true"' : ""} required/></div></div><div class="field"><span class="field-label">이용 기간</span><div class="option-grid three">${radioOptions("proposedWeeks", [["2", "2주"], ["3", "3주"], ["4", "4주"]], String(Math.max(MIN_SERVICE_WEEKS, Number(target.weeks || MIN_SERVICE_WEEKS))))}</div></div></section><div class="field"><label for="adjustment-reason">변경·취소 사유</label><textarea id="adjustment-reason" name="reason" placeholder="관리자가 일정과 관리사 배정을 판단할 수 있도록 구체적으로 적어주세요." required></textarea></div><label class="consent-row"><input type="checkbox" name="policyAccepted" required/><span><strong>표시된 정책을 확인했습니다.</strong><small>관리자 승인 결과와 비용 처리 내역은 나의 서비스에서 확인할 수 있습니다.</small></span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">관리자에게 요청</button></div></form></section></div>`;
+    const durationControl = serviceType === "MASSAGE" ? `<input type="hidden" name="proposedWeeks" value="${Number(target.weeks || target.sessionCount || 1)}"/><div class="read-only-value">${target.durationMinutes || 60}분 · ${target.sessionCount || 1}회</div>` : `<div class="option-grid three">${radioOptions("proposedWeeks", [["2", "2주"], ["3", "3주"], ["4", "4주"]], String(Math.max(MIN_SERVICE_WEEKS, Number(target.weeks || MIN_SERVICE_WEEKS))))}</div>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal assignment-modal" role="dialog" aria-modal="true" aria-labelledby="adjustment-title"><header class="modal-header"><div>${serviceBadgeMarkup(serviceType)}<p class="eyebrow">CHANGE & CANCELLATION</p><h3 id="adjustment-title">${serviceMetaFor(serviceType).label} 변경·취소 요청</h3><p>요청은 관리자 승인 전까지 기존 일정에 영향을 주지 않습니다.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-service-adjustment-form><input type="hidden" name="targetType" value="${targetType}"/><input type="hidden" name="targetId" value="${targetId}"/><div class="request-review-grid"><div><span>${serviceType === "MASSAGE" ? "예약일" : "현재 기간"}</span><strong>${new Date(startAt).toLocaleDateString("ko-KR")}${serviceType === "MASSAGE" ? "" : `–${new Date(target.endAt || requestWindow(target).endAt).toLocaleDateString("ko-KR")}`}</strong></div><div><span>현재 시간</span><strong>${target.dailyStart}–${target.dailyEnd}</strong></div></div><div class="status-banner ${policy.tone}" data-adjustment-policy><strong>${escapeHtml(policy.title)}</strong><span>${escapeHtml(policy.detail)}</span></div><div class="field"><span class="field-label">요청 종류</span><div class="option-grid two">${radioOptions("adjustmentAction", [["CHANGE", "일정 변경"], ["CANCEL", "서비스 취소"]], "CHANGE")}</div></div><section class="application-block" data-adjustment-change><h4>변경 희망 일정</h4>${hasCareHistory ? '<div class="status-banner info"><strong>방문 이력이 있어 시작일과 일일 시간은 고정됩니다.</strong><span>과거 기록과 계약을 일치시키기 위해 이용 기간만 변경할 수 있습니다.</span></div>' : ""}<div class="form-grid three"><div class="field"><label for="adjustment-start">시작일</label><input id="adjustment-start" name="proposedStartDate" type="date" min="${localDateKey(new Date())}" value="${startValue}" ${startLocked ? 'readonly aria-readonly="true"' : "required"}/>${startLocked ? `<small>${hasCareHistory ? "완료·진행 방문 이력이 있어 최초 시작일을 변경할 수 없습니다." : "서비스가 시작되어 최초 시작일은 변경할 수 없습니다."}</small>` : ""}</div><div class="field"><label for="adjustment-start-time">시작 시간</label><input id="adjustment-start-time" name="proposedDailyStart" type="time" value="${target.dailyStart}" ${hasCareHistory ? 'readonly aria-readonly="true"' : ""} required/></div><div class="field"><label for="adjustment-end-time">종료 시간</label><input id="adjustment-end-time" name="proposedDailyEnd" type="time" value="${target.dailyEnd}" ${serviceType === "MASSAGE" || hasCareHistory ? 'readonly aria-readonly="true"' : ""} required/></div></div><div class="field"><span class="field-label">${serviceType === "MASSAGE" ? "예약 상품" : "이용 기간"}</span>${durationControl}</div></section><div class="field"><label for="adjustment-reason">변경·취소 사유</label><textarea id="adjustment-reason" name="reason" placeholder="관리자가 일정과 관리사 배정을 판단할 수 있도록 구체적으로 적어주세요." required></textarea></div><label class="consent-row"><input type="checkbox" name="policyAccepted" required/><span><strong>표시된 정책을 확인했습니다.</strong><small>관리자 승인 결과와 비용 처리 내역은 나의 서비스에서 확인할 수 있습니다.</small></span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">관리자에게 요청</button></div></form></section></div>`;
     const form = modalRoot.querySelector("[data-service-adjustment-form]");
     form.insertAdjacentHTML("afterbegin", `<input type="hidden" name="serviceType" value="${serviceType}"/>`);
     configureBabysittingMinimumTime(form, "proposedDailyStart", "proposedDailyEnd");
     configurePostpartumFixedTime(form, "proposedDailyStart", "proposedDailyEnd");
+    if (serviceType === "MASSAGE") {
+      const syncMassageEnd = () => { form.elements.proposedDailyEnd.value = timeFromMinutes(timeMinutes(form.elements.proposedDailyStart.value) + Number(target.durationMinutes || 60)); };
+      form.elements.proposedDailyStart.addEventListener("input", syncMassageEnd);
+      syncMassageEnd();
+    }
     if (hasCareHistory) {
       form.querySelector(".babysitting-duration-field input")?.setAttribute("disabled", "");
     }
@@ -6179,6 +6338,7 @@ import {
       policyBanner.className = `status-banner ${currentPolicy.tone}`;
       policyBanner.querySelector("strong").textContent = currentPolicy.title;
       policyBanner.querySelector("span").textContent = currentPolicy.detail;
+      form.querySelector('button[type="submit"]').disabled = currentPolicy.allowed === false;
     };
     form.querySelectorAll('input[name="adjustmentAction"]').forEach((radio) => radio.addEventListener("change", toggle));
     form.addEventListener("submit", submitServiceAdjustment);
@@ -6193,7 +6353,7 @@ import {
     if (!target || pendingAdjustment(values.targetType, values.targetId)) return showToast("서비스 정보가 없거나 이미 검토 중인 요청이 있습니다.");
     const serviceType = assignmentServiceType(target);
     if (values.adjustmentAction === "CHANGE") {
-      if (Number(values.proposedWeeks) < MIN_SERVICE_WEEKS) return showToast("서비스는 최소 2주부터 가능합니다.");
+      if (serviceType !== "MASSAGE" && Number(values.proposedWeeks) < MIN_SERVICE_WEEKS) return showToast("서비스는 최소 2주부터 가능합니다.");
       if (values.proposedDailyEnd <= values.proposedDailyStart) return showToast("종료 시간은 시작 시간보다 늦어야 합니다.");
       if (serviceType === "BABYSITTING" && babysittingHours(values.proposedDailyStart, values.proposedDailyEnd) < MIN_BABYSITTING_HOURS) return showToast("베이비시팅은 하루 최소 4시간부터 변경할 수 있습니다.");
       if (serviceType === "POSTPARTUM" && values.proposedDailyEnd !== postpartumEndTime(values.proposedDailyStart)) return showToast("산후조리 종료시간은 시작시간부터 케어 8시간·식사 1시간·휴식 30분을 반영해 자동 계산됩니다.");
@@ -6201,12 +6361,14 @@ import {
       if (assignmentHasCareHistory(target) && (values.proposedStartDate !== dateInputValue(adjustmentTargetStart(target)) || values.proposedDailyStart !== target.dailyStart || values.proposedDailyEnd !== target.dailyEnd)) return showToast("방문 이력이 있는 서비스는 시작일과 일일 시간을 변경할 수 없습니다.", "error");
     }
     const policy = adjustmentPolicy(serviceType, adjustmentTargetStart(target), target, values.adjustmentAction);
+    if (policy.allowed === false) return showToast(policy.detail, "error");
     if (usingCloudData()) {
       const submitButton = event.currentTarget.querySelector('button[type="submit"]');
       submitButton.disabled = true;
       submitButton.textContent = "요청 저장 중…";
       try {
-        await submitServiceAdjustmentCloud({
+        const submitAdjustment = serviceType === "MASSAGE" ? submitMassageAdjustmentCloud : submitServiceAdjustmentCloud;
+        await submitAdjustment({
           targetType: values.targetType,
           targetId: values.targetId,
           clientId: target.clientId,
@@ -6234,12 +6396,93 @@ import {
     showToast(`${serviceMetaFor(serviceType).label} ${values.adjustmentAction === "CANCEL" ? "취소" : "변경"} 요청을 접수했습니다.`);
   }
 
-  function openServiceApplicationModal(preselectedType = null, applicationMode = "NEW", extensionAssignmentId = null) {
+  function openMassageBookingModal() {
+    const user = authUser();
+    if (!user) {
+      state.auth.screen = "signup";
+      saveState();
+      render();
+      return;
+    }
+    if (state.role !== "client" || !userHasAccessRole(user, "CLIENT")) return showToast("마사지 예약은 고객 작업공간에서 신청해 주세요.", "error");
+    const client = clientForUser(user.id);
+    if (!client) return showToast("고객 프로필 연결을 먼저 확인해 주세요.", "error");
+    const memberPricing = clientQualifiesForMassageMemberRate(client.id);
+    const pricingTier = memberPricing ? "POSTPARTUM_CLIENT" : "GENERAL";
+    const earliest = new Date();
+    earliest.setDate(earliest.getDate() + 2);
+    const earliestDate = localDateKey(earliest);
+    const packageOption = memberPricing ? `<label><input type="radio" name="massagePlan" value="PACKAGE_4"/><span><strong>60분 × 4회</strong><small>$520 · 매주 같은 요일·시간</small></span></label>` : "";
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal service-application-modal massage-booking-modal" role="dialog" aria-modal="true" aria-labelledby="massage-booking-title"><header class="modal-header"><div>${serviceBadgeMarkup("MASSAGE")}<p class="eyebrow">MASSAGE BOOKING</p><h3 id="massage-booking-title">산전·산후 마사지 예약</h3><p>전문 테라피스트의 일정 확인 후 관리자가 최종 확정합니다.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-massage-booking-form><input type="hidden" name="pricingTier" value="${pricingTier}"/><div class="status-banner ${memberPricing ? "success" : "info"}"><strong>${memberPricing ? "ProMoms 산후조리 고객 우대가" : "일반 고객 요금"}</strong><span>${memberPricing ? "현재 또는 예약된 산후조리 서비스가 확인되어 우대가가 자동 적용됩니다." : "산후조리 서비스 승인·예약이 확인되면 우대가가 자동 적용됩니다."}</span></div><section class="application-block"><h4>서비스 선택</h4><div class="massage-plan-options"><label><input type="radio" name="massagePlan" value="SINGLE_60" checked/><span><strong>60분 1회</strong><small>${money(MASSAGE_PRICES[pricingTier][60])}</small></span></label><label><input type="radio" name="massagePlan" value="SINGLE_90"/><span><strong>90분 1회</strong><small>${money(MASSAGE_PRICES[pricingTier][90])}</small></span></label>${packageOption}</div></section><section class="application-block"><h4>희망 일정</h4><div class="form-grid two"><div class="field"><label for="massage-start-date">희망 시작일</label><input id="massage-start-date" type="date" name="desiredStartDate" min="${earliestDate}" value="${earliestDate}" required/><small>변경·취소는 예약 시작 24시간 이전까지만 가능합니다.</small></div><div class="field"><label for="massage-start-time">희망 시작시간</label><input id="massage-start-time" type="time" name="requestedDailyStart" value="10:00" min="07:00" max="20:00" required/></div></div></section><section class="application-block"><h4>방문 정보</h4><div class="field"><label for="massage-address">서비스 주소</label><input id="massage-address" name="requestAddress" value="${escapeHtml(client.address || "")}" placeholder="Street, City, State ZIP" required/></div><div class="field"><label for="massage-notes">요청사항</label><textarea id="massage-notes" name="requestSpecialNotes" maxlength="1000" placeholder="임신 주수, 회복 상태, 집중을 원하는 부위 등 테라피스트가 알아야 할 내용을 적어주세요."></textarea></div></section><div class="application-price-summary" data-massage-price><span>${memberPricing ? "산후조리 고객 우대가" : "일반 고객가"}</span><strong>${money(MASSAGE_PRICES[pricingTier][60])}</strong><small>예약 승인 시 선택한 서비스 금액을 수납 확인합니다.</small></div><label class="consent-row application-consent"><input type="checkbox" name="requestConsent" required/><span><strong>예약 정보 활용 및 24시간 변경·취소 규정에 동의합니다.</strong><small>관리자는 자격이 부여된 테라피스트의 케어기빙·마사지 일정을 함께 확인한 뒤 배정합니다.</small></span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">마사지 예약 요청</button></div></form></section></div>`;
+    const form = modalRoot.querySelector("[data-massage-booking-form]");
+    const refreshPrice = () => {
+      const plan = form.elements.massagePlan.value;
+      const values = plan === "PACKAGE_4" ? { pricingTier, durationMinutes: 60, sessionCount: 4 } : { pricingTier, durationMinutes: plan === "SINGLE_90" ? 90 : 60, sessionCount: 1 };
+      const price = form.querySelector("[data-massage-price]");
+      price.querySelector("strong").textContent = money(massagePrice(values));
+      price.querySelector("small").textContent = values.sessionCount === 4 ? "60분 마사지 4회 · 매주 같은 요일과 시간으로 배정" : `${values.durationMinutes}분 1회 · 승인 시 전액 수납 확인`;
+    };
+    form.querySelectorAll('input[name="massagePlan"]').forEach((input) => input.addEventListener("change", refreshPrice));
+    form.addEventListener("submit", submitMassageBooking);
+    bindModalFrame();
+  }
+
+  async function submitMassageBooking(event) {
+    event.preventDefault();
+    const user = authUser();
+    const client = clientForUser(user?.id);
+    if (!user || !client || state.role !== "client") return showToast("고객 작업공간으로 다시 전환해 주세요.", "error");
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form).entries());
+    const plan = values.massagePlan;
+    const durationMinutes = plan === "SINGLE_90" ? 90 : 60;
+    const sessionCount = plan === "PACKAGE_4" ? 4 : 1;
+    const startMinutes = timeMinutes(values.requestedDailyStart);
+    const requestedDailyEnd = timeFromMinutes(startMinutes + durationMinutes);
+    if (startMinutes + durationMinutes > 23 * 60 + 59) return showToast("마사지는 당일 안에 종료되는 시간을 선택해 주세요.", "error");
+    const expectedTier = clientQualifiesForMassageMemberRate(client.id) ? "POSTPARTUM_CLIENT" : "GENERAL";
+    if (sessionCount === 4 && expectedTier !== "POSTPARTUM_CLIENT") return showToast("4회 패키지는 산후조리 예약·이용 고객에게만 제공됩니다.", "error");
+    const desiredStart = new Date(`${values.desiredStartDate}T${values.requestedDailyStart}:00`);
+    if (hoursUntil(desiredStart) <= MASSAGE_CHANGE_NOTICE_HOURS) return showToast("마사지 예약은 시작 24시간보다 여유 있게 신청해 주세요.", "error");
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    button.textContent = "예약 요청 저장 중…";
+    try {
+      if (usingCloudData()) {
+        await submitMassageServiceRequestCloud({
+          desiredStartDate: values.desiredStartDate,
+          requestedDailyStart: values.requestedDailyStart,
+          requestedDailyEnd,
+          durationMinutes,
+          sessionCount,
+          requestAddress: values.requestAddress,
+          requestSpecialNotes: values.requestSpecialNotes,
+          requestConsent: values.requestConsent,
+        });
+        closeModal();
+        await refreshCloudState();
+      } else {
+        const day = KOREAN_WEEKDAYS[desiredStart.getDay()];
+        state.serviceRequests.push({ id: `massage-request-${Date.now()}`, requestKind: "NEW", serviceType: "MASSAGE", clientId: client.id, userId: user.id, status: "PENDING", weeks: sessionCount, durationMinutes, sessionCount, pricingTier: expectedTier, estimatedTotal: massagePrice({ pricingTier: expectedTier, durationMinutes, sessionCount }), depositAmount: massagePrice({ pricingTier: expectedTier, durationMinutes, sessionCount }), depositStatus: "DUE_ON_APPROVAL", desiredStartDate: desiredStart.toISOString(), dailyStart: values.requestedDailyStart, dailyEnd: requestedDailyEnd, daysOfWeek: [day], address: values.requestAddress.trim(), specialNotes: values.requestSpecialNotes?.trim() || "", createdAt: new Date().toISOString() });
+        saveState();
+        closeModal();
+        render();
+      }
+      showToast("마사지 예약 요청이 접수되었습니다. 테라피스트 일정 확인 후 확정됩니다.");
+    } catch (error) {
+      showToast(friendlyErrorMessage(error, "마사지 예약 요청을 저장하지 못했습니다."), "error");
+      button.disabled = false;
+      button.textContent = "마사지 예약 요청";
+    }
+  }
+
+  function openServiceApplicationModal(preselectedType = null, applicationMode = "NEW", extensionAssignmentId = null, preselectedPostpartumMode = "COMMUTE") {
     const user = authUser();
     if (!user || state.role !== "client" || !userHasAccessRole(user, "CLIENT")) return showToast("고객 작업공간으로 전환해 주세요.");
     const client = clientForUser(user.id);
     if (!client) return showToast("가족 고객 정보가 계정에 연결되지 않았습니다. 관리자에게 회원 연결 확인을 요청해 주세요.", "error");
     const selectedType = ["POSTPARTUM", "BABYSITTING"].includes(preselectedType) ? preselectedType : defaultServiceApplicationType(client);
+    const initialPostpartumMode = preselectedPostpartumMode === "LIVE_IN" ? "LIVE_IN" : "COMMUTE";
     const extensionMode = applicationMode === "EXTENSION" && selectedType === "BABYSITTING";
     const extensionAssignment = extensionMode
       ? state.assignments.find((assignment) => assignment.id === extensionAssignmentId && assignment.clientId === client.id && assignment.status !== "CANCELLED" && assignmentServiceType(assignment) === "BABYSITTING") || null
@@ -6261,12 +6504,12 @@ import {
     const babySelectionMarkup = registeredBabies.length
       ? `<div class="field"><label for="application-baby-selector">서비스 대상 아이</label><select id="application-baby-selector" data-baby-selector ${extensionMode ? 'disabled aria-disabled="true"' : ""}>${registeredBabies.map((baby) => `<option value="${escapeHtml(baby.id || "")}" ${baby.id === initialBabyId ? "selected" : ""}>${escapeHtml(baby.name || "이름 미등록")} · ${baby.birthDate ? formatDate(baby.birthDate) : "생년월일 미등록"}</option>`).join("")}${extensionMode ? "" : '<option value="__new__">+ 새 아이 등록</option>'}</select><small>기존 아이는 목록에서 선택해야 동일 서비스와 일정 중복을 정확히 확인할 수 있습니다.</small></div>`
       : "";
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal service-application-modal" role="dialog" aria-modal="true" aria-labelledby="service-application-title"><header class="modal-header"><div><p class="eyebrow">${extensionMode ? "SERVICE EXTENSION" : "CARE REQUEST"}</p><h3 id="service-application-title">${extensionMode ? "베이비시팅 기간 연장 신청" : "서비스 신청"}</h3><p>${extensionMode ? "기존 베이비시팅 종료 후 첫 평일에 이어서 시작합니다." : "희망 내용을 접수하면 관리자가 가능한 관리사를 확인해 배정합니다."}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-service-application-form><input type="hidden" name="applicationMode" value="${extensionMode ? "EXTENSION" : "NEW"}"/><input type="hidden" name="extensionAssignmentId" value="${escapeHtml(extensionAssignment?.id || "")}"/>
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal service-application-modal" role="dialog" aria-modal="true" aria-labelledby="service-application-title"><header class="modal-header"><div><p class="eyebrow">${extensionMode ? "SERVICE EXTENSION" : "CARE REQUEST"}</p><h3 id="service-application-title">${extensionMode ? "베이비시팅 기간 연장 신청" : "서비스 신청"}</h3><p>${extensionMode ? "기존 베이비시팅 종료 후 첫 평일에 이어서 시작합니다." : "희망 내용을 접수하면 관리자가 가능한 관리사를 확인해 배정합니다."}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-service-application-form><input type="hidden" name="applicationMode" value="${extensionMode ? "EXTENSION" : "NEW"}"/><input type="hidden" name="extensionAssignmentId" value="${escapeHtml(extensionAssignment?.id || "")}"/><input type="hidden" name="postpartumMode" value="${initialPostpartumMode}"/>
       <div class="field"><span class="field-label">서비스 종류</span><div class="service-choice-grid">${[["POSTPARTUM", "♡", "산후조리", "산모 회복·신생아 케어와 관리 차트"], ["BABYSITTING", "☆", "베이비시팅", "아이 식사·놀이·생활 이벤트 기록"]].map(([value, icon, label, detail]) => { const unavailable = extensionMode && value !== "BABYSITTING"; return `<label class="service-choice ${unavailable ? "unavailable" : ""}"><input type="radio" name="serviceType" value="${value}" ${value === selectedType ? "checked" : ""} ${unavailable ? "disabled" : ""}/><span><b>${icon}</b><strong>${label}</strong><small>${detail}</small></span></label>`; }).join("")}</div></div>
       <section class="application-block"><h4>아이 정보</h4>${babySelectionMarkup}<input type="hidden" name="babyId" value="${escapeHtml(initialBabyId)}"/><div class="form-grid two"><div class="field"><label for="application-baby-name">아기 이름</label><input id="application-baby-name" name="babyName" value="${escapeHtml(initialBabyName)}" autocomplete="off" ${initialBaby || extensionMode ? 'readonly aria-readonly="true"' : ""} required /><small>${extensionMode ? "연장 대상 아이는 기존 예약과 동일하게 유지됩니다." : registeredBabies.length ? "새 아이를 추가하려면 위 목록에서 ‘새 아이 등록’을 선택해 주세요." : "서비스를 받을 아이의 이름을 입력해 주세요."}</small></div><div class="field"><label for="application-baby-birth">출생일 또는 출산 예정일</label><input id="application-baby-birth" name="babyBirthDate" type="date" value="${initialBabyBirthDate ? dateInputValue(initialBabyBirthDate) : ""}" ${initialBaby || extensionMode ? 'readonly aria-readonly="true"' : ""} required /></div></div></section>
       <section class="application-block"><h4>희망 일정</h4><div class="field"><span class="field-label">이용 기간</span><div class="option-grid three">${radioOptions("requestedWeeks", [["2", "2주"], ["3", "3주"], ["4", "4주"]], "2")}</div></div><div class="form-grid three"><div class="field"><label for="application-start">희망 시작일</label><input id="application-start" name="desiredStartDate" type="date" min="${selectedType === "BABYSITTING" ? babysittingMinimum : localDateKey(new Date())}" value="${startValue}" data-babysitting-min="${babysittingMinimum}" required /><small data-start-guidance>희망 시작일은 관리자 확인 후 확정됩니다.</small></div><div class="field"><label for="application-start-time">시작 시간</label><input id="application-start-time" name="requestedDailyStart" type="time" value="09:00" required /></div><div class="field"><label for="application-end-time">종료 시간</label><input id="application-end-time" name="requestedDailyEnd" type="time" value="17:00" required /></div></div><div class="field"><span class="field-label">희망 요일</span><div class="weekday-options">${["월", "화", "수", "목", "금", "토", "일"].map((day) => `<label><input type="checkbox" name="daysOfWeek" value="${day}" ${["월", "화", "수", "목", "금"].includes(day) ? "checked" : ""}/><span>${day}</span></label>`).join("")}</div></div><div class="application-price-summary" data-application-price><span>산후조리 예상 서비스 비용</span><strong>$${postpartumEstimate(2).toLocaleString("en-US")}</strong><small>주 $${POSTPARTUM_WEEKLY_RATE.toLocaleString("en-US")} × 2주 · 예약금 $${POSTPARTUM_DEPOSIT.toLocaleString("en-US")}</small></div></section>
       <section class="application-block"><h4>방문·안전 정보</h4><div class="field"><label for="application-address">서비스 주소</label><input id="application-address" name="requestAddress" value="${escapeHtml(client.address || user.address || "")}" placeholder="Street, City, State ZIP" required /></div><div class="form-grid two"><div class="field"><label for="application-household">가정 내 추가인원</label><input id="application-household" name="requestHousehold" type="number" min="0" value="${Number(client.extraHouseholdMembers || 0)}" required /></div><div class="field"><label for="application-allergies">알러지 유무 및 내용</label><input id="application-allergies" name="requestAllergies" value="${escapeHtml(client.allergies || "없음")}" required /></div></div></section>
-      <section class="application-block" data-postpartum-application><h4>산후조리 요청</h4><div class="field"><label for="maternal-notes">산모 상태·회복 지원 요청</label><textarea id="maternal-notes" name="maternalNotes" placeholder="회복 상태, 식사, 수유 지원 등 필요한 내용을 적어주세요."></textarea></div></section>
+      <section class="application-block" data-postpartum-application><h4>산후조리 형태</h4><div class="option-grid two"><label class="radio-option"><input type="radio" name="postpartumModeChoice" value="COMMUTE" ${initialPostpartumMode === "COMMUTE" ? "checked" : ""}/><span><strong>출퇴근형</strong><small>주 $1,800 · 2/3/4주</small></span></label><label class="radio-option"><input type="radio" name="postpartumModeChoice" value="LIVE_IN" ${initialPostpartumMode === "LIVE_IN" ? "checked" : ""}/><span><strong>입주형</strong><small>주 $2,100 · 기본 4주</small></span></label></div><div class="field"><label for="maternal-notes">산모 상태·회복 지원 요청</label><textarea id="maternal-notes" name="maternalNotes" placeholder="회복 상태, 식사, 수유 지원 등 필요한 내용을 적어주세요."></textarea></div></section>
       <section class="application-block" data-babysitting-application hidden><h4>베이비시팅 요청</h4><div class="field"><label for="meal-instructions">식사·간식 지침</label><textarea id="meal-instructions" name="mealInstructions" placeholder="식사 시간, 메뉴, 양, 금지 식품을 적어주세요."></textarea></div><div class="form-grid two"><div class="field"><label for="routine-notes">생활 루틴</label><textarea id="routine-notes" name="routineNotes" placeholder="낮잠, 놀이, 산책 루틴"></textarea></div><div class="field"><label for="pickup-notes">인계·출입 지침</label><textarea id="pickup-notes" name="pickupNotes" placeholder="보호자 인계, 출입 방법"></textarea></div></div></section>
       <div class="field"><label for="application-special">특이사항·고객 요청 메모</label><textarea id="application-special" name="requestSpecialNotes" placeholder="반려동물, 주차, 선호 언어 등 관리사가 알아야 할 내용을 적어주세요."></textarea></div>
       <div class="insured-contract-note"><strong>보험 적용 정식 직원 서비스</strong><span>관리사는 ProMoms의 W-2 정식 직원이며, 회사가 급여·세무·고용 책임과 책임보상보험·근로자재해보험 체계를 관리합니다.</span></div><label class="consent-row application-consent"><input type="checkbox" name="requestConsent" required/><span><strong>서비스 신청 정보 수집·배정 활용 및 일정 중복 방지 안내에 동의합니다.</strong><small>입력 정보는 일정 검토와 배정된 관리사의 서비스 준비에 사용되며, 동일 아기의 두 서비스는 같은 기간에 배정되지 않습니다.</small></span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">신청 접수</button></div>
@@ -6291,11 +6534,13 @@ import {
     form.elements.requestedDailyEnd.dataset.babysittingHours = String(MIN_BABYSITTING_HOURS);
     configureBabysittingMinimumTime(form, "requestedDailyStart", "requestedDailyEnd");
     configurePostpartumFixedTime(form, "requestedDailyStart", "requestedDailyEnd");
-    const updatePrice = () => { const babysitting = form.elements.serviceType.value === "BABYSITTING"; const weeks = Number(form.elements.requestedWeeks.value || POSTPARTUM_DEFAULT_WEEKS); const price = form.querySelector("[data-application-price]"); price.hidden = false; price.querySelector("span").textContent = babysitting ? "베이비시팅 예약금" : "산후조리 예상 서비스 비용"; price.querySelector("strong").textContent = babysitting ? `$${BABYSITTING_DEPOSIT.toLocaleString("en-US")}` : `$${postpartumEstimate(weeks).toLocaleString("en-US")}`; price.querySelector("small").textContent = babysitting ? `시간당 $${BABYSITTING_HOURLY_RATE} × ${MIN_BABYSITTING_HOURS}시간 · 72시간 이전 취소 시 환불` : `주 $${POSTPARTUM_WEEKLY_RATE.toLocaleString("en-US")} × ${weeks}주 · 승인 시 예약금 $${POSTPARTUM_DEPOSIT.toLocaleString("en-US")}`; };
-    const toggle = () => { const babysitting = form.elements.serviceType.value === "BABYSITTING"; const startInput = form.elements.desiredStartDate; const guidance = form.querySelector("[data-start-guidance]"); form.querySelector("[data-babysitting-application]").hidden = !babysitting; form.querySelector("[data-postpartum-application]").hidden = babysitting; startInput.min = babysitting ? startInput.dataset.babysittingMin : localDateKey(new Date()); startInput.readOnly = extensionMode; if (babysitting && startInput.value < startInput.min) startInput.value = startInput.min; guidance.textContent = extensionMode ? `기존 예약 종료 후 첫 평일인 ${new Date(`${startInput.dataset.babysittingMin}T12:00:00`).toLocaleDateString("ko-KR")}로 자동 배치됩니다.` : "희망 시작일은 관리자 확인 후 확정됩니다."; refreshEnhancedDateInput(startInput); updatePrice(); };
+    const updatePrice = () => { const babysitting = form.elements.serviceType.value === "BABYSITTING"; const weeks = Number(form.elements.requestedWeeks.value || POSTPARTUM_DEFAULT_WEEKS); const liveIn = form.elements.postpartumMode.value === "LIVE_IN"; const rate = liveIn ? POSTPARTUM_LIVE_IN_WEEKLY_RATE : POSTPARTUM_WEEKLY_RATE; const price = form.querySelector("[data-application-price]"); price.hidden = false; price.querySelector("span").textContent = babysitting ? "베이비시팅 예약금" : `${liveIn ? "입주형" : "출퇴근형"} 예상 서비스 비용`; price.querySelector("strong").textContent = babysitting ? `$${BABYSITTING_DEPOSIT.toLocaleString("en-US")}` : `$${(rate * weeks).toLocaleString("en-US")}`; price.querySelector("small").textContent = babysitting ? `시간당 $${BABYSITTING_HOURLY_RATE} × ${MIN_BABYSITTING_HOURS}시간 · 72시간 이전 취소 시 환불` : `주 $${rate.toLocaleString("en-US")} × ${weeks}주 · 승인 시 예약금 $${POSTPARTUM_DEPOSIT.toLocaleString("en-US")}`; };
+    const syncPostpartumMode = () => { const selected = form.querySelector('input[name="postpartumModeChoice"]:checked')?.value || "COMMUTE"; form.elements.postpartumMode.value = selected; const liveIn = selected === "LIVE_IN"; form.querySelectorAll('input[name="requestedWeeks"]').forEach((input) => { input.disabled = liveIn && input.value !== "4"; }); if (liveIn) form.elements.requestedWeeks.value = "4"; updatePrice(); };
+    const toggle = () => { const babysitting = form.elements.serviceType.value === "BABYSITTING"; const startInput = form.elements.desiredStartDate; const guidance = form.querySelector("[data-start-guidance]"); form.querySelector("[data-babysitting-application]").hidden = !babysitting; form.querySelector("[data-postpartum-application]").hidden = babysitting; form.querySelectorAll('input[name="requestedWeeks"]').forEach((input) => { input.disabled = false; }); if (!babysitting) syncPostpartumMode(); startInput.min = babysitting ? startInput.dataset.babysittingMin : localDateKey(new Date()); startInput.readOnly = extensionMode; if (babysitting && startInput.value < startInput.min) startInput.value = startInput.min; guidance.textContent = extensionMode ? `기존 예약 종료 후 첫 평일인 ${new Date(`${startInput.dataset.babysittingMin}T12:00:00`).toLocaleDateString("ko-KR")}로 자동 배치됩니다.` : form.elements.postpartumMode.value === "LIVE_IN" && !babysitting ? "입주형은 기본 4주이며 세부 입주·휴무 일정은 관리자 확인 후 확정됩니다." : "희망 시작일은 관리자 확인 후 확정됩니다."; refreshEnhancedDateInput(startInput); updatePrice(); };
     form.querySelectorAll('input[name="serviceType"]').forEach((radio) => radio.addEventListener("change", toggle));
     form.querySelectorAll('input[name="requestedWeeks"]').forEach((radio) => radio.addEventListener("change", updatePrice));
-    if (selectedType === "POSTPARTUM") form.elements.requestedWeeks.value = String(POSTPARTUM_DEFAULT_WEEKS);
+    form.querySelectorAll('input[name="postpartumModeChoice"]').forEach((radio) => radio.addEventListener("change", syncPostpartumMode));
+    if (selectedType === "POSTPARTUM") form.elements.requestedWeeks.value = initialPostpartumMode === "LIVE_IN" ? "4" : String(POSTPARTUM_DEFAULT_WEEKS);
     toggle();
     form.addEventListener("submit", submitServiceApplication);
     bindModalFrame();
@@ -6317,6 +6562,7 @@ import {
     const selectedBabyId = selectedBaby?.id || null;
     if (values.serviceType === "BABYSITTING" && activePostpartumForClient(client, selectedBabyId, values.babyName) && !extensionMode) return showToast("동일 아기가 산후조리를 이용 중인 동안에는 베이비시팅을 새로 신청할 수 없습니다.");
     if (Number(values.requestedWeeks) < MIN_SERVICE_WEEKS) return showToast("서비스 신청은 최소 2주부터 가능합니다.");
+    if (values.serviceType === "POSTPARTUM" && values.postpartumMode === "LIVE_IN" && Number(values.requestedWeeks) !== 4) return showToast("입주형 산후조리는 기본 4주로 신청해 주세요.");
     if (values.serviceType === "BABYSITTING" && babysittingHours(values.requestedDailyStart, values.requestedDailyEnd) < MIN_BABYSITTING_HOURS) return showToast("베이비시팅은 하루 최소 4시간부터 신청할 수 있습니다.");
     if (values.serviceType === "POSTPARTUM" && values.requestedDailyEnd !== postpartumEndTime(values.requestedDailyStart)) return showToast("산후조리는 케어 8시간·식사 1시간·휴식 30분을 포함한 종료시간을 사용해야 합니다.");
     const daysOfWeek = formData.getAll("daysOfWeek");
@@ -6363,7 +6609,8 @@ import {
       client.babies.push({ id: babyId, name: values.babyName.trim(), birthDate: babyBirthDate });
     }
     Object.assign(client, { babyId, babyName: values.babyName.trim(), babyBirthDate, address: values.requestAddress.trim(), allergies: values.requestAllergies.trim(), extraHouseholdMembers: Number(values.requestHousehold || 0), requestNote: values.requestSpecialNotes?.trim() || "", clientStatus: "LEAD", approvalStatus: "SERVICE_PENDING" });
-    state.serviceRequests.push({ id: `request-${Date.now()}`, requestKind: extensionMode ? "EXTENSION" : "NEW", serviceType: values.serviceType, clientId: client.id, userId: user.id, status: "PENDING", babyName: client.babyName, weeks: Number(values.requestedWeeks), weeklyRate: values.serviceType === "POSTPARTUM" ? POSTPARTUM_WEEKLY_RATE : null, estimatedTotal: values.serviceType === "POSTPARTUM" ? postpartumEstimate(values.requestedWeeks) : null, depositAmount: values.serviceType === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : null, depositStatus: values.serviceType === "POSTPARTUM" ? "DUE_ON_APPROVAL" : null, desiredStartDate: new Date(`${values.desiredStartDate}T${values.requestedDailyStart}:00`).toISOString(), dailyStart: values.requestedDailyStart, dailyEnd: values.requestedDailyEnd, daysOfWeek, address: values.requestAddress.trim(), extraHouseholdMembers: Number(values.requestHousehold || 0), allergies: values.requestAllergies.trim(), specialNotes: values.requestSpecialNotes?.trim() || "", maternalNotes: values.maternalNotes?.trim() || "", mealInstructions: values.mealInstructions?.trim() || "", routineNotes: values.routineNotes?.trim() || "", pickupNotes: values.pickupNotes?.trim() || "", birthOrDueDate: babyBirthDate, sequencePolicyAccepted: true, insuredStaffingAcknowledged: true, createdAt: new Date().toISOString() });
+    const selectedPostpartumRate = values.postpartumMode === "LIVE_IN" ? POSTPARTUM_LIVE_IN_WEEKLY_RATE : POSTPARTUM_WEEKLY_RATE;
+    state.serviceRequests.push({ id: `request-${Date.now()}`, requestKind: extensionMode ? "EXTENSION" : "NEW", serviceType: values.serviceType, postpartumMode: values.serviceType === "POSTPARTUM" ? values.postpartumMode : null, clientId: client.id, userId: user.id, status: "PENDING", babyName: client.babyName, weeks: Number(values.requestedWeeks), weeklyRate: values.serviceType === "POSTPARTUM" ? selectedPostpartumRate : null, estimatedTotal: values.serviceType === "POSTPARTUM" ? selectedPostpartumRate * Number(values.requestedWeeks) : null, depositAmount: values.serviceType === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : null, depositStatus: values.serviceType === "POSTPARTUM" ? "DUE_ON_APPROVAL" : null, desiredStartDate: new Date(`${values.desiredStartDate}T${values.requestedDailyStart}:00`).toISOString(), dailyStart: values.requestedDailyStart, dailyEnd: values.requestedDailyEnd, daysOfWeek, address: values.requestAddress.trim(), extraHouseholdMembers: Number(values.requestHousehold || 0), allergies: values.requestAllergies.trim(), specialNotes: values.requestSpecialNotes?.trim() || "", maternalNotes: values.maternalNotes?.trim() || "", mealInstructions: values.mealInstructions?.trim() || "", routineNotes: values.routineNotes?.trim() || "", pickupNotes: values.pickupNotes?.trim() || "", birthOrDueDate: babyBirthDate, sequencePolicyAccepted: true, insuredStaffingAcknowledged: true, createdAt: new Date().toISOString() });
     Object.assign(state.serviceRequests.at(-1), { babyId, babyName: values.babyName.trim(), depositAmount: values.serviceType === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT, depositStatus: "DUE_ON_APPROVAL" });
     saveState();
     closeModal();
@@ -6377,17 +6624,26 @@ import {
     if (!request) return showToast("대기 중인 고객 신청을 찾을 수 없습니다.");
     const client = clientById(request.clientId);
     if (!client) return showToast("연결된 고객 정보를 찾을 수 없습니다. 회원·고객 프로필 연결을 확인해 주세요.", "error");
+    const serviceType = assignmentServiceType(request);
     const startDate = dateInputValue(request.desiredStartDate);
-    const { startAt, endAt } = assignmentWindow(startDate, request.dailyStart, request.dailyEnd, request.weeks);
-    const lifecycleIssue = serviceLifecycleIssue(client.id, assignmentServiceType(request), startAt, endAt, null, request.id, request.babyId, request.babyName);
+    const { startAt, endAt } = serviceWindow(request, startDate, request.dailyStart, request.dailyEnd, request.weeks);
+    const lifecycleIssue = serviceType === "MASSAGE" ? null : serviceLifecycleIssue(client.id, serviceType, startAt, endAt, null, request.id, request.babyId, request.babyName);
     const requestBabyName = babyNameFor(request, client) || "아이 미등록";
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal assignment-modal" role="dialog" aria-modal="true" aria-labelledby="client-request-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<h3 id="client-request-title">${serviceMetaFor(request.serviceType).label} 신청 검토·승인</h3><p>${escapeHtml(client.motherName)} · ${escapeHtml(requestBabyName)}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-client-request-form>
-      <div class="request-review-grid"><div><span>희망 기간</span><strong>${request.weeks}주 · ${formatDate(startAt)}–${formatDate(endAt)}</strong></div><div><span>방문 시간</span><strong>${request.dailyStart}–${request.dailyEnd}</strong></div><div><span>희망 요일</span><strong>${escapeHtml((request.daysOfWeek || []).join(" · ") || "미지정")}</strong></div><div><span>출생/출산(예정)일</span><strong>${formatDate(request.birthOrDueDate)}</strong></div><div><span>추가인원</span><strong>${request.extraHouseholdMembers}명</strong></div>${assignmentServiceType(request) === "POSTPARTUM" ? `<div><span>예상 서비스 비용</span><strong>$${postpartumEstimate(request.weeks).toLocaleString("en-US")} · 주 $${POSTPARTUM_WEEKLY_RATE.toLocaleString("en-US")}</strong></div>` : ""}<div class="wide"><span>주소</span><strong>${escapeHtml(request.address)}</strong></div><div class="wide"><span>알러지</span><strong>${escapeHtml(request.allergies)}</strong></div>${assignmentServiceType(request) === "BABYSITTING" ? `<div class="wide"><span>식사·간식 지침</span><strong>${escapeHtml(request.mealInstructions || "없음")}</strong></div><div class="wide"><span>생활 루틴·인계</span><strong>${escapeHtml([request.routineNotes, request.pickupNotes].filter(Boolean).join(" · ") || "없음")}</strong></div>` : `<div class="wide"><span>산모 상태·회복 요청</span><strong>${escapeHtml(request.maternalNotes || "없음")}</strong></div>`}<div class="wide"><span>특이사항·요청</span><strong>${escapeHtml(request.specialNotes || "없음")}</strong></div></div>
+    const periodMarkup = serviceType === "MASSAGE"
+      ? `${request.sessionCount || 1}회 · ${formatDate(startAt)}${Number(request.sessionCount || 1) > 1 ? `–${formatDate(endAt)}` : ""}`
+      : `${request.weeks}주 · ${formatDate(startAt)}–${formatDate(endAt)}`;
+    const productMarkup = serviceType === "POSTPARTUM"
+      ? `<div><span>상품·예상 비용</span><strong>${postpartumModeFor(request) === "LIVE_IN" ? "입주형" : "출퇴근형"} · ${money(requestServiceTotal(request))} · 주 ${money(postpartumWeeklyRate(request))}</strong></div>`
+      : serviceType === "MASSAGE"
+        ? `<div><span>상품·결제 금액</span><strong>${request.durationMinutes || 60}분 × ${request.sessionCount || 1}회 · ${money(requestServiceTotal(request))}</strong></div><div><span>가격 구분</span><strong>${request.pricingTier === "POSTPARTUM_CLIENT" ? "산후조리 예약·이용 고객 우대가" : "일반 고객가"}</strong></div>`
+        : `<div><span>예상 서비스 비용</span><strong>${money(requestServiceTotal(request))} · 시간당 $${BABYSITTING_HOURLY_RATE}</strong></div>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal assignment-modal" role="dialog" aria-modal="true" aria-labelledby="client-request-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<h3 id="client-request-title">${serviceMetaFor(request.serviceType).label} 신청 검토·승인</h3><p>${escapeHtml(client.motherName)}${serviceType === "MASSAGE" ? "" : ` · ${escapeHtml(requestBabyName)}`}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-client-request-form>
+      <div class="request-review-grid"><div><span>${serviceType === "MASSAGE" ? "예약 구성" : "희망 기간"}</span><strong>${periodMarkup}</strong></div><div><span>방문 시간</span><strong>${request.dailyStart}–${request.dailyEnd}</strong></div><div><span>${serviceType === "MASSAGE" ? "예약 요일" : "희망 요일"}</span><strong>${escapeHtml((request.daysOfWeek || []).join(" · ") || "미지정")}</strong></div>${serviceType === "MASSAGE" ? "" : `<div><span>출생/출산(예정)일</span><strong>${formatDate(request.birthOrDueDate)}</strong></div><div><span>추가인원</span><strong>${request.extraHouseholdMembers}명</strong></div>`}${productMarkup}<div class="wide"><span>주소</span><strong>${escapeHtml(request.address)}</strong></div>${serviceType === "MASSAGE" ? "" : `<div class="wide"><span>알러지</span><strong>${escapeHtml(request.allergies)}</strong></div>`}${serviceType === "BABYSITTING" ? `<div class="wide"><span>식사·간식 지침</span><strong>${escapeHtml(request.mealInstructions || "없음")}</strong></div><div class="wide"><span>생활 루틴·인계</span><strong>${escapeHtml([request.routineNotes, request.pickupNotes].filter(Boolean).join(" · ") || "없음")}</strong></div>` : serviceType === "POSTPARTUM" ? `<div class="wide"><span>산모 상태·회복 요청</span><strong>${escapeHtml(request.maternalNotes || "없음")}</strong></div>` : ""}<div class="wide"><span>특이사항·요청</span><strong>${escapeHtml(request.specialNotes || "없음")}</strong></div></div>
       <div class="insured-contract-note"><strong>회사 운영 원칙</strong><span>책임보상보험 · 근로자재해보험 · W-2 정식 직원 운영 원칙이 서비스에 적용됩니다.</span></div>${lifecycleIssue ? `<div class="status-banner warning">${escapeHtml(lifecycleIssue.message)}</div>` : `<div class="privacy-boundary-note"><strong>승인 후 일정·배정 메뉴로 이동</strong><span>일정 중복 검증을 통과했습니다. 승인된 신청은 캘린더의 ‘일정 배치 대기’ 목록에 자동으로 표시됩니다.</span></div>`}
       <div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button" ${lifecycleIssue ? "disabled" : ""}>서비스 신청 승인</button></div>
     </form></section></div>`;
-    const requestDeposit = assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT;
-    const depositPolicyCopy = assignmentServiceType(request) === "POSTPARTUM" ? "시작 30일 전까지 취소 시 환불·30일 이내에는 환불 불가" : "시작 72시간 이전 취소 시 환불·72시간 이내 취소 또는 노쇼 시 환불 불가";
+    const requestDeposit = Number(request.depositAmount || (serviceType === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : serviceType === "BABYSITTING" ? BABYSITTING_DEPOSIT : requestServiceTotal(request)));
+    const depositPolicyCopy = serviceType === "POSTPARTUM" ? "시작 30일 전까지 취소 시 환불·30일 이내에는 환불 불가" : serviceType === "BABYSITTING" ? "시작 72시간 이전 취소 시 환불·72시간 이내 취소 또는 노쇼 시 환불 불가" : "예약 시작 24시간 이전까지 고객 변경·취소 가능";
     const reviewForm = modalRoot.querySelector("[data-client-request-form]");
     const reviewActions = reviewForm.querySelector(".form-actions");
     reviewActions.classList.add("request-review-actions");
@@ -6406,7 +6662,7 @@ import {
     if (!client) return showToast("신청의 고객 정보를 찾을 수 없습니다.", "error");
     const clientLinkIssue = requestClientLinkIssue(request);
     if (clientLinkIssue) return showToast(`${clientLinkIssue} 회원 관리에서 고객 권한과 고객 프로필 연결을 먼저 복구해 주세요.`, "error");
-    const depositAmount = Number(request.depositAmount || (assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT));
+    const depositAmount = Number(request.depositAmount || (assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : assignmentServiceType(request) === "BABYSITTING" ? BABYSITTING_DEPOSIT : requestServiceTotal(request)));
     modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal" role="dialog" aria-modal="true" aria-labelledby="approved-deposit-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<p class="eyebrow">DEPOSIT RECEIPT</p><h3 id="approved-deposit-title">예약금 수납 확인·기록</h3><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이 정보 없음")}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-approved-deposit-form><div class="request-review-grid"><div><span>승인 상태</span><strong>승인 완료</strong></div><div><span>필수 예약금</span><strong>${money(depositAmount)}</strong></div><div class="wide"><span>서비스</span><strong>${serviceMetaFor(request.serviceType).label} · ${formatDate(request.desiredStartDate)} 시작 예정</strong></div></div><div class="status-banner warning"><strong>실제 수납 내역만 기록하세요.</strong><span>이 화면은 결제를 실행하지 않습니다. 누락분은 실제 받은 날짜를 선택하면 해당 월·연도 수입에 소급 반영됩니다.</span></div><div class="form-grid three"><div class="field"><label for="approved-payment-date">실제 수납일</label><input id="approved-payment-date" name="paymentDate" type="date" value="${localDateKey(new Date())}" max="${localDateKey(new Date())}" required/></div><div class="field"><label for="approved-payment-method">결제 수단</label><select id="approved-payment-method" name="paymentMethod" required><option value="">선택해 주세요</option><option value="CARD">카드</option><option value="ACH">ACH 계좌이체</option><option value="CASH">현금</option><option value="CHECK">수표</option><option value="OTHER">기타</option></select></div><div class="field"><label for="approved-payment-reference">거래·영수증 번호</label><input id="approved-payment-reference" name="paymentReference" minlength="3" maxlength="255" autocomplete="off" placeholder="실제 거래번호 또는 수기 영수증 번호" required/></div></div><label class="consent-line"><input type="checkbox" name="evidenceConfirmed" required/><span>실제 예약금 수납 근거와 일치함을 확인합니다.</span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">예약금 수납 저장</button></div></form></section></div>`;
     bindModalFrame();
     const form = modalRoot.querySelector("[data-approved-deposit-form]");
@@ -6687,7 +6943,8 @@ import {
       const actionButtons = document.querySelectorAll(`[data-approve-adjustment="${adjustmentId}"], [data-reject-adjustment="${adjustmentId}"]`);
       actionButtons.forEach((button) => { button.disabled = true; });
       try {
-        await reviewServiceAdjustmentCloud(adjustmentId, decision === "APPROVE");
+        const reviewAdjustment = assignmentServiceType(target) === "MASSAGE" ? reviewMassageAdjustmentCloud : reviewServiceAdjustmentCloud;
+        await reviewAdjustment(adjustmentId, decision === "APPROVE");
         await refreshCloudState();
         showToast(decision === "APPROVE" ? `${serviceMetaFor(adjustment.serviceType).label} 요청을 승인하고 운영 일정에 반영했습니다.` : "변경·취소 요청을 반려했습니다. 기존 일정은 유지됩니다.");
       } catch (error) {
@@ -6705,8 +6962,8 @@ import {
       target.status = "CANCELLED";
       target.cancelledAt = new Date().toISOString();
       target.cancellationReason = adjustment.reason;
-      target.depositAmount = target.depositAmount || (adjustment.serviceType === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT);
-      target.depositStatus = ["DEPOSIT_REFUNDABLE", "BABYSITTING_DEPOSIT_REFUNDABLE"].includes(adjustment.policyCode) ? "REFUND_DUE" : "NON_REFUNDABLE";
+      target.depositAmount = target.depositAmount || (adjustment.serviceType === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : adjustment.serviceType === "BABYSITTING" ? BABYSITTING_DEPOSIT : requestServiceTotal(target));
+      target.depositStatus = ["DEPOSIT_REFUNDABLE", "BABYSITTING_DEPOSIT_REFUNDABLE", "MASSAGE_STANDARD_24H"].includes(adjustment.policyCode) ? "REFUND_DUE" : "NON_REFUNDABLE";
       if (adjustment.policyCode === "POSTPARTUM_ACTIVE_PRORATED") Object.assign(target, { cancellationSettlementAmount: adjustment.cancellationSettlementAmount, remainingCareDaysAtCancellation: adjustment.remainingCareDays, originalContractValueAtCancellation: adjustment.originalContractValue, cancellationFormula: "(original_total - deposit) / remaining_care_days" });
       if (adjustment.targetType === "ASSIGNMENT") {
         const linkedRequest = state.serviceRequests.find((item) => item.id === target.serviceRequestId);
@@ -6714,21 +6971,25 @@ import {
         if (state.session.assignmentId === target.id) Object.assign(state.session, { active: false, endedAt: new Date().toISOString() });
       }
     } else {
-      const window = assignmentWindow(adjustment.proposedStartDate, adjustment.proposedDailyStart, adjustment.proposedDailyEnd, adjustment.proposedWeeks);
+      const window = serviceWindow(target, adjustment.proposedStartDate, adjustment.proposedDailyStart, adjustment.proposedDailyEnd, adjustment.proposedWeeks);
       const excludedAssignmentId = adjustment.targetType === "ASSIGNMENT" ? target.id : null;
       const excludedRequestId = adjustment.targetType === "REQUEST" ? target.id : null;
-      const issue = serviceLifecycleIssue(target.clientId, adjustment.serviceType, window.startAt, window.endAt, excludedAssignmentId, excludedRequestId, target.babyId, target.babyName);
+      const issue = adjustment.serviceType === "MASSAGE" ? null : serviceLifecycleIssue(target.clientId, adjustment.serviceType, window.startAt, window.endAt, excludedAssignmentId, excludedRequestId, target.babyId, target.babyName);
       if (issue) return showToast(`승인할 수 없습니다: ${issue.message}`);
-      if (adjustment.targetType === "ASSIGNMENT" && target.caregiverUserId && !caregiverIsAvailable(target.caregiverUserId, window.startAt, window.endAt, target.id, target.daysOfWeek || [], adjustment.proposedDailyStart, adjustment.proposedDailyEnd)) return showToast("현재 관리사가 변경 일정에 배정되어 있습니다. 일정·배정에서 관리사를 먼저 조정해 주세요.");
+      const currentCaregiver = state.users.find((user) => user.id === target.caregiverUserId);
+      const caregiverAvailable = adjustment.serviceType === "MASSAGE"
+        ? massageTherapistIsAvailable(currentCaregiver, target.clientId, window.startAt, window.endAt, target.id, target.daysOfWeek || [], adjustment.proposedDailyStart, adjustment.proposedDailyEnd)
+        : caregiverIsAvailable(target.caregiverUserId, window.startAt, window.endAt, target.id, target.daysOfWeek || [], adjustment.proposedDailyStart, adjustment.proposedDailyEnd);
+      if (adjustment.targetType === "ASSIGNMENT" && target.caregiverUserId && !caregiverAvailable) return showToast("현재 담당자의 변경 일정과 겹치는 배정이 있습니다. 일정·배정에서 담당자를 먼저 조정해 주세요.");
       const scheduleChanges = { weeks: adjustment.proposedWeeks, dailyStart: adjustment.proposedDailyStart, dailyEnd: adjustment.proposedDailyEnd };
       if (adjustment.targetType === "ASSIGNMENT") {
         Object.assign(target, scheduleChanges, { startAt: window.startAt.toISOString(), endAt: window.endAt.toISOString(), status: window.startAt > new Date() ? "SCHEDULED" : "ACTIVE", scheduleChangedAt: new Date().toISOString() });
-        if (adjustment.serviceType === "POSTPARTUM") Object.assign(target, { contractValue: postpartumEstimate(adjustment.proposedWeeks), weeklyRate: POSTPARTUM_WEEKLY_RATE });
+        if (adjustment.serviceType === "POSTPARTUM") Object.assign(target, { contractValue: postpartumEstimate(adjustment.proposedWeeks, postpartumModeFor(target)), weeklyRate: postpartumWeeklyRate(target) });
         const linkedRequest = state.serviceRequests.find((item) => item.id === target.serviceRequestId);
         if (linkedRequest) Object.assign(linkedRequest, scheduleChanges, { desiredStartDate: window.startAt.toISOString() });
       } else {
         Object.assign(target, scheduleChanges, { desiredStartDate: window.startAt.toISOString(), scheduleChangedAt: new Date().toISOString() });
-        if (adjustment.serviceType === "POSTPARTUM") Object.assign(target, { estimatedTotal: postpartumEstimate(adjustment.proposedWeeks), weeklyRate: POSTPARTUM_WEEKLY_RATE });
+        if (adjustment.serviceType === "POSTPARTUM") Object.assign(target, { estimatedTotal: postpartumEstimate(adjustment.proposedWeeks, postpartumModeFor(target)), weeklyRate: postpartumWeeklyRate(target) });
       }
     }
     Object.assign(adjustment, { status: "APPROVED", reviewedAt: new Date().toISOString(), reviewedBy: authUser().id });
@@ -6746,9 +7007,10 @@ import {
     if (!paymentDate || paymentDate > localDateKey(new Date())) return showToast("실제 수납일은 오늘 또는 지난 날짜로 선택해 주세요.", "error");
     const request = state.serviceRequests.find((item) => item.id === requestId && item.status === "PENDING");
     if (!request) return showToast("이미 처리되었거나 존재하지 않는 신청입니다.");
+    const serviceType = assignmentServiceType(request);
     const startDate = dateInputValue(request.desiredStartDate);
-    const { startAt, endAt } = assignmentWindow(startDate, request.dailyStart, request.dailyEnd, request.weeks);
-    const lifecycleIssue = serviceLifecycleIssue(request.clientId, assignmentServiceType(request), startAt, endAt, null, request.id, request.babyId, request.babyName);
+    const { startAt, endAt } = serviceWindow(request, startDate, request.dailyStart, request.dailyEnd, request.weeks);
+    const lifecycleIssue = serviceType === "MASSAGE" ? null : serviceLifecycleIssue(request.clientId, serviceType, startAt, endAt, null, request.id, request.babyId, request.babyName);
     if (lifecycleIssue) return showToast(lifecycleIssue.message);
     const client = clientById(request.clientId);
     if (!client) return showToast("연결된 고객 정보를 찾을 수 없어 신청을 승인하지 않았습니다.", "error");
@@ -6769,7 +7031,8 @@ import {
       return;
     }
     const depositPaidAt = new Date(`${paymentDate}T12:00:00`).toISOString();
-    Object.assign(request, { status: "APPROVED", approvedAssignmentId: null, approvedAt: new Date().toISOString(), approvedBy: authUser().id, depositAmount: assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT, depositStatus: "PAID", depositPaidAt, depositTransaction: { paymentMethod, externalReference: paymentReference, capturedAt: depositPaidAt, status: "CAPTURED" } });
+    const depositAmount = Number(request.depositAmount || (serviceType === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : serviceType === "BABYSITTING" ? BABYSITTING_DEPOSIT : requestServiceTotal(request)));
+    Object.assign(request, { status: "APPROVED", approvedAssignmentId: null, approvedAt: new Date().toISOString(), approvedBy: authUser().id, depositAmount, depositStatus: "PAID", depositPaidAt, depositTransaction: { amount: depositAmount, paymentMethod, externalReference: paymentReference, capturedAt: depositPaidAt, status: "CAPTURED" } });
     Object.assign(client, { approvalStatus: "APPROVED_AWAITING_SCHEDULE", clientStatus: "LEAD", address: request.address, allergies: request.allergies, extraHouseholdMembers: request.extraHouseholdMembers, requestNote: request.specialNotes });
     saveState();
     closeModal();

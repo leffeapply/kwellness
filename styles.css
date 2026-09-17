@@ -4084,8 +4084,9 @@ body:has(#modal-root:not(:empty)) {
 .about-metrics strong { color: var(--green); font-family: Georgia, serif; font-size: 29px; }
 .about-metrics span { margin-top: 8px; color: #657a76; font-size: 11px; }
 
-.public-service-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
-.public-service-card { position: relative; overflow: hidden; padding: 42px; border: 1px solid #dbe7e0; border-radius: 26px; background: white; box-shadow: 0 14px 44px rgba(28, 73, 67, .07); }
+.public-service-scroll-shell { position: relative; }
+.public-service-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(310px, 390px); gap: 18px; overflow-x: auto; padding: 4px 4px 20px; scroll-snap-type: x mandatory; scrollbar-width: thin; scrollbar-color: #6c9990 #edf3ef; }
+.public-service-card { position: relative; overflow: hidden; min-height: 610px; padding: 42px; border: 1px solid #dbe7e0; border-radius: 26px; background: white; box-shadow: 0 14px 44px rgba(28, 73, 67, .07); scroll-snap-align: start; }
 .public-service-card.featured { color: #f8f6ef; border: 0; background: linear-gradient(145deg, #174f4a, #2c6861); }
 .service-number { position: absolute; top: 28px; right: 32px; color: rgba(23,79,74,.18); font-family: Georgia, serif; font-size: 55px; }
 .featured .service-number { color: rgba(255,255,255,.14); }
@@ -4104,6 +4105,13 @@ body:has(#modal-root:not(:empty)) {
 .service-price small { margin-left: 4px; font-family: inherit; font-size: 11px; font-weight: 500; }
 .public-service-card .primary-button { width: 100%; }
 .featured .primary-button { color: var(--green); background: #faf7ef; }
+.public-service-card.live-in { background: linear-gradient(150deg, #fffaf3, #f4e9dc); }
+.public-service-card.massage { background: linear-gradient(150deg, #fff, #edf5f1); }
+.massage-price-table { display: grid; gap: 9px; margin: 24px 0; }
+.massage-price-table div { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid rgba(23,79,74,.12); border-radius: 13px; background: rgba(255,255,255,.7); }
+.massage-price-table span { color: #6b7c78; font-size: 10px; }
+.massage-price-table strong { color: var(--green); font-size: 13px; }
+.horizontal-scroll-hint { margin: 0; text-align: center; color: #6b7c78; font-size: 11px; }
 .premium-coming-soon { border-style: dashed; background: linear-gradient(150deg, #fff, #f3efe7); }
 .premium-coming-soon .service-symbol { color: #8c6a51 !important; background: #efe0cf !important; }
 .premium-coming-soon .secondary-button { width: 100%; }
@@ -4189,9 +4197,11 @@ body:has(#modal-root:not(:empty)) {
 .service-type-badge { display: inline-flex; width: fit-content; align-items: center; gap: 5px; margin-bottom: 7px; padding: 5px 9px; border-radius: 30px; font-size: 9px; font-weight: 800; letter-spacing: .2px; }
 .service-type-badge.postpartum { color: #8b5945; background: #f7ded2; }
 .service-type-badge.babysitting { color: #1f6058; background: #dcece5; }
+.service-type-badge.massage { color: #73513f; background: #f3e6dc; }
 .request-title-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .request-title-line .service-type-badge { margin: 0; }
 .month-event.babysitting { border-left-color: #3b8378; background: #e1f0e9; }
+.month-event.massage { border-left-color: #bc8064; background: #f7ebe4; }
 .month-event.postpartum { border-left-color: #d08368; }
 .assignment-row .service-type-badge { margin-right: 8px; }
 
@@ -4225,6 +4235,35 @@ body:has(#modal-root:not(:empty)) {
 .application-price-summary > span { font-size: 10px; font-weight: 700; }
 .application-price-summary > strong { grid-row: 1 / 3; grid-column: 2; font-family: Georgia, serif; font-size: 27px; }
 .application-price-summary > small { color: rgba(255,255,255,.65); font-size: 9px; }
+
+.massage-plan-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.massage-plan-options label { position: relative; }
+.massage-plan-options input { position: absolute; opacity: 0; pointer-events: none; }
+.massage-plan-options span {
+  display: grid;
+  min-height: 86px;
+  gap: 6px;
+  place-content: center;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+  text-align: center;
+  cursor: pointer;
+}
+.massage-plan-options small { color: var(--ink-soft); }
+.massage-plan-options input:checked + span {
+  border-color: var(--green-2);
+  color: var(--green);
+  background: var(--mint-light);
+  box-shadow: inset 0 0 0 1px var(--green-2);
+}
+.massage-plan-options input:focus-visible + span { outline: 3px solid rgba(36, 106, 99, .28); outline-offset: 2px; }
 .babysitting-minimum-note { position: relative; z-index: 0; display: flex; min-height: 42px; align-items: center; justify-content: space-between; gap: 14px; margin: 12px 0 4px; padding: 12px 14px; border: 1px solid #cfe2da; border-radius: 12px; color: #174f4a; background: #edf7f2; }
 .babysitting-minimum-note strong { font-size: 10px; }
 .babysitting-minimum-note span { color: #57736e; font-size: 9px; }
@@ -4321,6 +4360,7 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
 .service-workspace-nav [role="tab"].active { color: white; background: var(--green); }
 
 .service-request-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.service-request-columns.three-service-columns { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .request-service-column { border-top: 4px solid #cf866d; }
 .request-service-column.babysitting { border-top-color: #3d8378; }
 .request-service-column .client-request-row { grid-template-columns: 1fr; align-items: start; }
@@ -4388,7 +4428,7 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   .public-account-actions { justify-self: end; }
   .public-hero { grid-template-columns: 1fr .75fr; padding-inline: 55px; }
   .public-caregiver-section { grid-template-columns: 1fr; }
-  .public-service-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .public-service-grid { grid-auto-columns: minmax(300px, 43vw); }
 }
 
 @media (max-width: 820px) {
@@ -4398,7 +4438,9 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   .public-hero-visual { min-height: 385px; margin-top: 30px; }
   .public-content { width: min(100% - 30px, 680px); }
   .public-about, .public-contact { grid-template-columns: 1fr; gap: 35px; }
-  .public-service-grid, .public-location, .service-overview-grid, .service-request-columns, .approved-schedule-strip, .insured-staffing-panel { grid-template-columns: 1fr; }
+  .public-location, .service-overview-grid, .service-request-columns, .approved-schedule-strip, .insured-staffing-panel { grid-template-columns: 1fr; }
+  .public-service-grid { grid-auto-columns: minmax(282px, 86vw); margin-inline: -15px; padding-inline: 15px; }
+  .public-service-card { min-height: 590px; padding: 32px 28px; }
   .service-workspace-nav { align-items: stretch; flex-direction: column; }
   .service-workspace-nav > div:last-child { overflow-x: auto; }
   .location-map { min-height: 340px; }
@@ -4453,6 +4495,7 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   .location-card { padding: 32px 22px; }
   .public-footer { align-items: flex-start; flex-direction: column; }
   .service-choice-grid, .service-choice-grid { grid-template-columns: 1fr; }
+  .massage-plan-options { grid-template-columns: 1fr; }
   .weekday-options { grid-template-columns: repeat(4, 1fr); }
   .option-grid.four { grid-template-columns: repeat(2, 1fr); }
   .sitter-summary-grid { grid-template-columns: 1fr; }

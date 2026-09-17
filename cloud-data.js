@@ -431,6 +431,7 @@ async function loadCloudStateOnce(session) {
       careerYears: Number(hr?.career_years || 0),
       employmentStatus: hr?.employment_status || (caregiverApproved ? "INACTIVE" : "APPLICANT"),
       hasHrProfile: Boolean(hr),
+      isMassageTherapist: Boolean(hr?.is_massage_therapist),
       specialties: hr?.specialties || "",
       residentialArea: hr?.residential_area || "",
       serviceArea: hr?.service_area_notes || "",
@@ -554,6 +555,10 @@ async function loadCloudStateOnce(session) {
       caregiverCertification: brief?.caregiver_certification_summary || "",
       caregiverId: assignment.caregiver_id,
       weeks: assignment.contract_weeks || request?.requested_weeks || 2,
+      postpartumMode: assignment.postpartum_mode || request?.postpartum_mode || null,
+      durationMinutes: assignment.massage_duration_minutes || request?.massage_duration_minutes || null,
+      sessionCount: assignment.massage_session_count || request?.massage_session_count || null,
+      pricingTier: assignment.massage_pricing_tier || request?.massage_pricing_tier || null,
       weeklyRate: Number(assignment.weekly_rate || 0) || null,
       contractValue: Number(assignment.contract_value || 0) || null,
       depositAmount: Number(assignment.deposit_amount || 0) || null,
@@ -636,6 +641,11 @@ async function loadCloudStateOnce(session) {
     userId: request.requested_by,
     status: request.status,
     weeks: request.requested_weeks,
+    postpartumMode: request.postpartum_mode || null,
+    durationMinutes: request.massage_duration_minutes || null,
+    sessionCount: request.massage_session_count || null,
+    pricingTier: request.massage_pricing_tier || null,
+    linkedPostpartumAssignmentId: request.massage_linked_postpartum_assignment_id || null,
     weeklyRate: Number(request.weekly_rate || 0) || null,
     estimatedTotal: Number(request.estimated_total || 0) || null,
     ownerDiscountAmount: Number(request.owner_discount_amount || 0),
@@ -880,7 +890,7 @@ export async function loadCloudState(session) {
 }
 
 export async function submitServiceRequestCloud(values, derived) {
-  return throwIfError(await supabase.rpc("submit_client_service_request", {
+  return throwIfError(await supabase.rpc("submit_promoms_service_request", {
     p_service_type: values.serviceType,
     p_baby_id: derived.babyId || null,
     p_baby_name: values.babyName.trim(),
@@ -901,11 +911,44 @@ export async function submitServiceRequestCloud(values, derived) {
     p_request_kind: derived.requestKind,
     p_sequence_policy_accepted: values.requestConsent === "on",
     p_insured_staffing_acknowledged: values.requestConsent === "on",
+    p_postpartum_mode: values.serviceType === "POSTPARTUM" ? values.postpartumMode || "COMMUTE" : null,
+    p_massage_duration_minutes: null,
+    p_massage_session_count: null,
   }), "서비스 신청 저장");
 }
 
+export async function submitMassageServiceRequestCloud(values) {
+  const startDate = new Date(`${values.desiredStartDate}T12:00:00`);
+  const weekday = ["일", "월", "화", "수", "목", "금", "토"][startDate.getDay()];
+  return throwIfError(await supabase.rpc("submit_promoms_service_request", {
+    p_service_type: "MASSAGE",
+    p_baby_id: null,
+    p_baby_name: null,
+    p_birth_or_due_date: null,
+    p_requested_weeks: Number(values.sessionCount),
+    p_desired_start_date: values.desiredStartDate,
+    p_daily_start_time: values.requestedDailyStart,
+    p_daily_end_time: values.requestedDailyEnd,
+    p_requested_days: [weekday],
+    p_service_address: values.requestAddress.trim(),
+    p_household_extra_people: 0,
+    p_allergy_notes: "없음",
+    p_special_notes: values.requestSpecialNotes?.trim() || null,
+    p_maternal_notes: null,
+    p_meal_instructions: null,
+    p_routine_notes: null,
+    p_pickup_notes: null,
+    p_request_kind: "NEW",
+    p_sequence_policy_accepted: values.requestConsent === "on",
+    p_insured_staffing_acknowledged: values.requestConsent === "on",
+    p_postpartum_mode: null,
+    p_massage_duration_minutes: Number(values.durationMinutes),
+    p_massage_session_count: Number(values.sessionCount),
+  }), "마사지 예약 요청 저장");
+}
+
 export async function reviewServiceRequestCloud(requestId, approve, note = null, payment = null) {
-  return throwIfError(await supabase.rpc("review_service_request_with_dated_deposit", {
+  return throwIfError(await supabase.rpc("review_promoms_service_request", {
     p_request_id: requestId,
     p_approve: approve,
     p_review_note: note,
@@ -977,7 +1020,7 @@ export async function recordRetrospectiveCareReportCloud({ assignmentId, service
 }
 
 export async function scheduleServiceRequestCloud(requestId, caregiverId) {
-  return throwIfError(await supabase.rpc("schedule_approved_client_request", {
+  return throwIfError(await supabase.rpc("schedule_promoms_service_request", {
     p_request_id: requestId,
     p_caregiver_id: caregiverId,
   }), "관리사 일정 배정");
@@ -1078,6 +1121,13 @@ export async function setMemberAccessRolesCloud(userId, roles) {
     p_user_id: userId,
     p_roles: roles,
   }), "회원 접근 권한 구성");
+}
+
+export async function setMassageTherapistCapabilityCloud(userId, enabled) {
+  return throwIfError(await supabase.rpc("admin_set_massage_therapist_capability", {
+    p_user_id: userId,
+    p_enabled: Boolean(enabled),
+  }), "마사지 테라피스트 자격 설정");
 }
 
 export async function archiveMemberCloud(userId) {
@@ -1416,4 +1466,35 @@ export async function reviewServiceAdjustmentCloud(adjustmentId, approve, review
     p_approve: approve,
     p_review_note: reviewNote,
   }), "서비스 변경·취소 요청 검토");
+}
+
+export async function submitMassageAdjustmentCloud({
+  targetType,
+  targetId,
+  action,
+  proposedStartDate,
+  proposedDailyStart,
+  proposedDailyEnd,
+  proposedWeeks,
+  reason,
+}) {
+  await authenticatedUserId();
+  return throwIfError(await supabase.rpc("submit_massage_adjustment", {
+    p_target_type: targetType,
+    p_target_id: targetId,
+    p_action: action,
+    p_reason: reason.trim(),
+    p_proposed_start_date: action === "CHANGE" ? proposedStartDate : null,
+    p_proposed_daily_start_time: action === "CHANGE" ? proposedDailyStart : null,
+    p_proposed_daily_end_time: action === "CHANGE" ? proposedDailyEnd : null,
+    p_proposed_weeks: action === "CHANGE" ? Number(proposedWeeks) : null,
+  }), "마사지 변경·취소 요청 저장");
+}
+
+export async function reviewMassageAdjustmentCloud(adjustmentId, approve, reviewNote = null) {
+  return throwIfError(await supabase.rpc("review_massage_adjustment", {
+    p_adjustment_id: adjustmentId,
+    p_approve: approve,
+    p_review_note: reviewNote,
+  }), "마사지 변경·취소 요청 검토");
 }
