@@ -153,7 +153,64 @@
 }
 
 .caregiver-public-photo {
+  position: relative;
   aspect-ratio: 4 / 3;
+}
+
+.caregiver-service-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.caregiver-service-badges span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 25px;
+  padding: 5px 9px;
+  border: 1px solid rgba(33, 77, 59, .12);
+  border-radius: 999px;
+  color: var(--green);
+  background: #eef5f1;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.caregiver-service-badges span i {
+  font-size: 11px;
+  font-style: normal;
+}
+
+.caregiver-service-badges span.postpartum {
+  border-color: rgba(196, 116, 85, .22);
+  background: #f9e8e0;
+}
+
+.caregiver-service-badges span.babysitting {
+  border-color: rgba(47, 119, 104, .2);
+  background: #e3f2ec;
+}
+
+.caregiver-service-badges span.massage {
+  border-color: rgba(162, 119, 48, .22);
+  background: #f8efd9;
+}
+
+.caregiver-service-badges.on-photo {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  z-index: 1;
+}
+
+.caregiver-service-badges.on-photo span {
+  border-color: rgba(255, 255, 255, .78);
+  box-shadow: 0 4px 14px rgba(20, 55, 46, .14);
+  backdrop-filter: blur(8px);
 }
 
 .caregiver-public-photo img,
@@ -333,6 +390,19 @@
 .caregiver-public-detail-hero p {
   color: var(--ink-soft);
   line-height: 1.75;
+}
+
+.caregiver-public-detail-services {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.caregiver-public-detail-services > small {
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
 }
 
 .caregiver-public-profile-details h4,
@@ -673,6 +743,20 @@
   }
   .public-caregiver-profile-card .caregiver-public-photo img {
     object-position: center 24%;
+  }
+  .public-caregiver-profile-card .caregiver-service-badges.on-photo {
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    gap: 4px;
+  }
+  .public-caregiver-profile-card .caregiver-service-badges.on-photo span {
+    min-height: 21px;
+    padding: 3px 6px;
+    font-size: 8px;
+  }
+  .public-caregiver-profile-card .caregiver-service-badges.on-photo span i {
+    font-size: 9px;
   }
   .public-caregiver-profile-card .caregiver-public-initials {
     min-height: 118px;

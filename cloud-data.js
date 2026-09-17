@@ -157,6 +157,9 @@ function normalizePublicCaregiver(row) {
     ? row.rating_distribution
     : {};
   const competencyAverages = reviewCompetencyScoresFromRow({ competency_scores: distribution.competencies });
+  const supportedServiceCapabilities = new Set(["POSTPARTUM", "BABYSITTING", "MASSAGE"]);
+  const serviceCapabilities = (Array.isArray(row?.service_capabilities) ? row.service_capabilities : ["POSTPARTUM", "BABYSITTING"])
+    .filter((serviceType) => supportedServiceCapabilities.has(serviceType));
   return {
     caregiverId: row.caregiver_id,
     caregiverUserId: row.user_id || null,
@@ -179,6 +182,7 @@ function normalizePublicCaregiver(row) {
     ratingDistribution: distribution,
     competencyAverages,
     competencyReviewCount: Number(distribution.competency_review_count || 0),
+    serviceCapabilities: [...new Set(serviceCapabilities)],
     reviews: reviews.map((review) => ({
       id: review.id,
       source: review.source || "CLIENT",
@@ -200,8 +204,17 @@ function normalizePublicCaregiver(row) {
 
 export async function loadPublicCaregiverDirectoryCloud() {
   if (!cloudEnabled) return [];
-  const rows = throwIfError(await supabase.rpc("public_caregiver_directory"), "관리사 공개 프로필 조회");
-  return (Array.isArray(rows) ? rows : []).map(normalizePublicCaregiver);
+  const [directoryResponse, capabilityResponse] = await Promise.all([
+    supabase.rpc("public_caregiver_directory"),
+    supabase.rpc("public_caregiver_service_capabilities"),
+  ]);
+  const rows = throwIfError(directoryResponse, "관리사 공개 프로필 조회");
+  const capabilityRows = capabilityResponse.error ? [] : (Array.isArray(capabilityResponse.data) ? capabilityResponse.data : []);
+  const capabilitiesByCaregiver = new Map(capabilityRows.map((row) => [row.caregiver_id, row.service_capabilities]));
+  return (Array.isArray(rows) ? rows : []).map((row) => normalizePublicCaregiver({
+    ...row,
+    service_capabilities: capabilitiesByCaregiver.get(row.caregiver_id) || row.service_capabilities,
+  }));
 }
 
 export async function currentCloudSession() {

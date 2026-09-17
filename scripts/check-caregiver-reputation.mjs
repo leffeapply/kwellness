@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [app, styles, cloud, migration, moderationMigration, photoMigration, profileSyncMigration, competencyMigration, optionalExternalPhotoMigration, derivedRatingMigration, derivedRatingBackfillMigration] = await Promise.all([
+const [app, styles, cloud, migration, moderationMigration, photoMigration, profileSyncMigration, competencyMigration, optionalExternalPhotoMigration, derivedRatingMigration, derivedRatingBackfillMigration, serviceCapabilityMigration] = await Promise.all([
   readFile(new URL("../app.js", import.meta.url), "utf8"),
   readFile(new URL("../styles.css", import.meta.url), "utf8"),
   readFile(new URL("../cloud-data.js", import.meta.url), "utf8"),
@@ -13,6 +13,7 @@ const [app, styles, cloud, migration, moderationMigration, photoMigration, profi
   readFile(new URL("../supabase/migrations/040_optional_external_review_photos.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/041_derived_caregiver_overall_rating.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/042_backfill_derived_caregiver_ratings.sql", import.meta.url), "utf8"),
+  readFile(new URL("../supabase/migrations/045_public_caregiver_service_capabilities.sql", import.meta.url), "utf8"),
 ]);
 
 const requiredSql = [
@@ -258,6 +259,19 @@ assert.ok(app.includes("6개 점수의 평균이 소수점 한 자리 종합평�
 assert.ok(styles.includes("grid-template-rows: 118px auto"), "mobile caregiver cards must use a compact fixed photo row");
 assert.ok(styles.includes("height: 126px") && styles.includes("max-height: 126px"), "mobile caregiver competency charts must fit inside the compact card");
 assert.ok(styles.includes(".public-caregiver-profile-card .caregiver-public-bio") && styles.includes("-webkit-line-clamp: 2"), "mobile caregiver biographies must be clamped to keep the full card visible");
+assert.ok(app.includes("function caregiverServiceBadgesMarkup"), "public caregiver service badges are missing");
+assert.ok(app.includes('label: "산후조리"') && app.includes('label: "베이비시팅"') && app.includes('label: "마사지 테라피스트"'), "all three public caregiver service labels are required");
+assert.ok(app.includes("caregiverServiceBadgesMarkup(profile, true)"), "service badges must be overlaid on the compact caregiver card");
+assert.ok(app.includes("caregiver-public-detail-services") && app.includes("caregiverServiceBadgesMarkup(profile)"), "service badges must also appear in the caregiver profile and review detail");
+assert.ok(styles.includes(".caregiver-service-badges.on-photo"), "compact photo-overlay styling for service badges is missing");
+assert.ok(cloud.includes('supabase.rpc("public_caregiver_service_capabilities"'), "public caregiver service capabilities must be loaded from the sanitized RPC");
+[
+  "create or replace function public.public_caregiver_service_capabilities()",
+  "array['POSTPARTUM', 'BABYSITTING']::text[]",
+  "hr.is_massage_therapist",
+  "public.has_role_for_user(caregiver.user_id, 'CAREGIVER')",
+  "grant execute on function public.public_caregiver_service_capabilities() to anon, authenticated",
+].forEach((snippet) => assert.ok(serviceCapabilityMigration.includes(snippet), `caregiver service-capability migration is missing: ${snippet}`));
 [
   'key: "meal_preparation"',
   'key: "attentiveness"',
