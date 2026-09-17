@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [app, cloud, migration, moderationMigration, photoMigration, profileSyncMigration, competencyMigration, optionalExternalPhotoMigration, derivedRatingMigration, derivedRatingBackfillMigration] = await Promise.all([
+const [app, styles, cloud, migration, moderationMigration, photoMigration, profileSyncMigration, competencyMigration, optionalExternalPhotoMigration, derivedRatingMigration, derivedRatingBackfillMigration] = await Promise.all([
   readFile(new URL("../app.js", import.meta.url), "utf8"),
+  readFile(new URL("../styles.css", import.meta.url), "utf8"),
   readFile(new URL("../cloud-data.js", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/033_caregiver_reputation_marketing.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/034_review_moderation_integrity.sql", import.meta.url), "utf8"),
@@ -254,6 +255,9 @@ assert.ok(app.includes("total / REVIEW_COMPETENCIES.length"), "overall rating mu
 assert.ok(app.includes("6개 전문 역량과 후기 내용을 모두 입력해 주세요."), "customer reviews must require all six competencies");
 assert.ok(!app.includes('name="rating"'), "the independent five-star overall-rating input must be removed");
 assert.ok(app.includes("6개 점수의 평균이 소수점 한 자리 종합평점으로 저장됩니다."), "the automatic overall-rating rule must be explained in the review form");
+assert.ok(styles.includes("grid-template-rows: 118px auto"), "mobile caregiver cards must use a compact fixed photo row");
+assert.ok(styles.includes("height: 126px") && styles.includes("max-height: 126px"), "mobile caregiver competency charts must fit inside the compact card");
+assert.ok(styles.includes(".public-caregiver-profile-card .caregiver-public-bio") && styles.includes("-webkit-line-clamp: 2"), "mobile caregiver biographies must be clamped to keep the full card visible");
 [
   'key: "meal_preparation"',
   'key: "attentiveness"',

@@ -663,6 +663,95 @@
 @media (max-width: 720px) {
   .public-caregiver-section > .public-section-heading { margin-bottom: 24px; text-align: left; }
   .public-caregiver-profile-grid { grid-auto-columns: minmax(278px, 86vw); gap: 14px; padding-bottom: 15px; }
+  .public-caregiver-profile-card {
+    align-self: start;
+    grid-template-rows: 118px auto;
+  }
+  .public-caregiver-profile-card .caregiver-public-photo {
+    height: 118px;
+    aspect-ratio: auto;
+  }
+  .public-caregiver-profile-card .caregiver-public-photo img {
+    object-position: center 24%;
+  }
+  .public-caregiver-profile-card .caregiver-public-initials {
+    min-height: 118px;
+    font-size: 42px;
+  }
+  .public-caregiver-profile-card .caregiver-public-card-copy {
+    gap: 8px;
+    padding: 14px;
+  }
+  .public-caregiver-profile-card .caregiver-public-name {
+    gap: 8px;
+  }
+  .public-caregiver-profile-card .caregiver-public-name small {
+    line-height: 1.3;
+  }
+  .public-caregiver-profile-card .caregiver-public-name h3 {
+    margin-top: 2px;
+    font-size: 22px;
+    line-height: 1.1;
+  }
+  .public-caregiver-profile-card .caregiver-public-rating {
+    gap: 3px;
+  }
+  .public-caregiver-profile-card .caregiver-public-rating span {
+    font-size: 13px;
+    letter-spacing: 0;
+  }
+  .public-caregiver-profile-card .caregiver-public-rating strong {
+    font-size: 13px;
+  }
+  .public-caregiver-profile-card .caregiver-public-headline {
+    display: -webkit-box;
+    overflow: hidden;
+    min-height: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+  }
+  .public-caregiver-profile-card .caregiver-public-facts,
+  .public-caregiver-profile-card .caregiver-public-tags {
+    gap: 4px;
+  }
+  .public-caregiver-profile-card .caregiver-public-facts span,
+  .public-caregiver-profile-card .caregiver-public-tags span {
+    padding: 4px 7px;
+    font-size: 9px;
+  }
+  .public-caregiver-profile-card .caregiver-competency-radar.compact {
+    margin: 3px 0 1px;
+    padding: 7px 6px 2px;
+  }
+  .public-caregiver-profile-card .caregiver-competency-radar.compact figcaption {
+    padding: 0 2px;
+  }
+  .public-caregiver-profile-card .caregiver-competency-radar.compact figcaption strong {
+    font-size: 12px;
+  }
+  .public-caregiver-profile-card .caregiver-competency-radar.compact figcaption span {
+    font-size: 9px;
+  }
+  .public-caregiver-profile-card .caregiver-competency-radar.compact svg {
+    height: 126px;
+    max-height: 126px;
+  }
+  .public-caregiver-profile-card .caregiver-competency-empty {
+    gap: 3px;
+    padding: 10px 12px;
+  }
+  .public-caregiver-profile-card .caregiver-public-bio {
+    min-height: 0;
+    font-size: 10.5px;
+    line-height: 1.45;
+    -webkit-line-clamp: 2;
+  }
+  .public-caregiver-profile-card .caregiver-public-card-copy > .secondary-button {
+    min-height: 40px;
+    padding: 10px 12px;
+  }
   .public-caregiver-carousel-toolbar > div:first-child { display: grid; gap: 3px; }
   .public-caregiver-carousel-toolbar span { font-size: 10px; }
   .public-caregiver-carousel-controls button { width: 38px; height: 38px; }
