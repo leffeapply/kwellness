@@ -86,6 +86,9 @@ const TABLE_ORDER_COLUMNS = Object.freeze({
   caregiver_hr_profiles: ["caregiver_id"],
   caregiver_public_profiles: ["caregiver_id"],
   caregiver_review_publications: ["review_id"],
+  massage_therapist_availability: ["available_date", "start_time"],
+  massage_booking_sessions: ["starts_at", "session_number"],
+  massage_booking_changes: ["created_at"],
 });
 
 async function table(name, columns = "*") {
@@ -297,6 +300,9 @@ async function loadCloudStateOnce(session) {
     clientManagement,
     caregiverHr,
     caregiverPublicProfiles,
+    massageAvailability,
+    massageBookings,
+    massageBookingChanges,
     serviceRequests,
     contracts,
     assignments,
@@ -324,6 +330,9 @@ async function loadCloudStateOnce(session) {
     table("client_management_profiles"),
     table("caregiver_hr_profiles"),
     table("caregiver_public_profiles"),
+    table("massage_therapist_availability"),
+    table("massage_booking_sessions"),
+    table("massage_booking_changes"),
     table("client_service_requests"),
     table("care_contracts"),
     table("care_assignments"),
@@ -594,6 +603,58 @@ async function loadCloudStateOnce(session) {
     };
   });
 
+  const appMassageAvailability = massageAvailability.map((availability) => {
+    const caregiver = caregiverById.get(availability.caregiver_id);
+    return {
+      id: availability.id,
+      caregiverId: availability.caregiver_id,
+      caregiverUserId: caregiver?.user_id || null,
+      availableDate: availability.available_date,
+      startTime: shortTime(availability.start_time),
+      endTime: shortTime(availability.end_time),
+      createdAt: availability.created_at,
+      updatedAt: availability.updated_at,
+    };
+  });
+  const appMassageBookings = massageBookings.map((booking) => {
+    const caregiver = caregiverById.get(booking.caregiver_id);
+    const request = serviceRequests.find((item) => item.id === booking.client_service_request_id);
+    return {
+      id: booking.id,
+      requestId: booking.client_service_request_id,
+      clientId: booking.client_id,
+      caregiverId: booking.caregiver_id,
+      caregiverUserId: caregiver?.user_id || null,
+      sessionNumber: Number(booking.session_number || 1),
+      startsAt: booking.starts_at,
+      endsAt: booking.ends_at,
+      status: booking.status,
+      durationMinutes: Number(request?.massage_duration_minutes || 60),
+      pricingTier: request?.massage_pricing_tier || "GENERAL",
+      address: request?.service_address || "",
+      specialNotes: request?.special_notes || "",
+      confirmedAt: booking.confirmed_at,
+      cancelledAt: booking.cancelled_at,
+      cancellationReason: booking.cancellation_reason || "",
+      createdAt: booking.created_at,
+    };
+  });
+  const appMassageBookingChanges = massageBookingChanges.map((change) => ({
+    id: change.id,
+    sessionId: change.massage_booking_session_id,
+    requestedBy: change.requested_by,
+    action: change.action,
+    proposedCaregiverId: change.proposed_caregiver_id,
+    proposedStartsAt: change.proposed_starts_at,
+    proposedEndsAt: change.proposed_ends_at,
+    reason: change.reason,
+    status: change.status,
+    reviewedBy: change.reviewed_by,
+    reviewedAt: change.reviewed_at,
+    reviewNote: change.review_note || "",
+    createdAt: change.created_at,
+  }));
+
   const appDeposits = deposits.map((item) => ({
     ...item,
     requestId: item.client_service_request_id,
@@ -736,6 +797,9 @@ async function loadCloudStateOnce(session) {
     users: appUsers,
     clients: appClients,
     assignments: appAssignments,
+    massageAvailability: appMassageAvailability,
+    massageBookings: appMassageBookings,
+    massageBookingChanges: appMassageBookingChanges,
     serviceRequests: appRequests,
     depositTransactions: appDeposits,
     balanceTransactions: appBalanceTransactions,
@@ -918,33 +982,63 @@ export async function submitServiceRequestCloud(values, derived) {
 }
 
 export async function submitMassageServiceRequestCloud(values) {
-  const startDate = new Date(`${values.desiredStartDate}T12:00:00`);
-  const weekday = ["일", "월", "화", "수", "목", "금", "토"][startDate.getDay()];
-  return throwIfError(await supabase.rpc("submit_promoms_service_request", {
-    p_service_type: "MASSAGE",
-    p_baby_id: null,
-    p_baby_name: null,
-    p_birth_or_due_date: null,
-    p_requested_weeks: Number(values.sessionCount),
-    p_desired_start_date: values.desiredStartDate,
-    p_daily_start_time: values.requestedDailyStart,
-    p_daily_end_time: values.requestedDailyEnd,
-    p_requested_days: [weekday],
+  return throwIfError(await supabase.rpc("submit_massage_service_request", {
+    p_duration_minutes: Number(values.durationMinutes),
     p_service_address: values.requestAddress.trim(),
-    p_household_extra_people: 0,
-    p_allergy_notes: "없음",
     p_special_notes: values.requestSpecialNotes?.trim() || null,
-    p_maternal_notes: null,
-    p_meal_instructions: null,
-    p_routine_notes: null,
-    p_pickup_notes: null,
-    p_request_kind: "NEW",
-    p_sequence_policy_accepted: values.requestConsent === "on",
-    p_insured_staffing_acknowledged: values.requestConsent === "on",
-    p_postpartum_mode: null,
-    p_massage_duration_minutes: Number(values.durationMinutes),
-    p_massage_session_count: Number(values.sessionCount),
+    p_slots: values.slots,
+    p_policy_accepted: values.requestConsent === "on",
   }), "마사지 예약 요청 저장");
+}
+
+export async function loadMassageAvailableSlotsCloud(durationMinutes, dateFrom, dateTo) {
+  const rows = throwIfError(await supabase.rpc("available_massage_slots", {
+    p_duration_minutes: Number(durationMinutes),
+    p_date_from: dateFrom,
+    p_date_to: dateTo,
+  }), "마사지 예약 가능시간 조회");
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    id: `${row.availability_id}:${row.slot_starts_at}`,
+    availabilityId: row.availability_id,
+    caregiverId: row.caregiver_id,
+    caregiverUserId: row.caregiver_user_id,
+    therapistName: row.therapist_name || "ProMoms 테라피스트",
+    startsAt: row.slot_starts_at,
+    endsAt: row.slot_ends_at,
+  }));
+}
+
+export async function saveMassageAvailabilityCloud({ weekStart, weekdays, startTime, endTime }) {
+  return throwIfError(await supabase.rpc("save_my_massage_availability", {
+    p_week_start: weekStart,
+    p_weekdays: weekdays.map(Number),
+    p_start_time: startTime,
+    p_end_time: endTime,
+  }), "마사지 근무 가능시간 저장");
+}
+
+export async function deleteMassageAvailabilityCloud(availabilityId) {
+  return throwIfError(await supabase.rpc("delete_my_massage_availability", {
+    p_availability_id: availabilityId,
+  }), "마사지 근무 가능시간 삭제");
+}
+
+export async function submitMassageBookingChangeCloud({ sessionId, action, reason, slot = null }) {
+  return throwIfError(await supabase.rpc("submit_massage_booking_change", {
+    p_session_id: sessionId,
+    p_action: action,
+    p_reason: reason.trim(),
+    p_availability_id: action === "CHANGE" ? slot?.availabilityId || null : null,
+    p_starts_at: action === "CHANGE" ? slot?.startsAt || null : null,
+  }), "마사지 일정 변경·취소 요청 저장");
+}
+
+export async function reviewMassageBookingChangeCloud(changeId, approve, reviewNote = null) {
+  return throwIfError(await supabase.rpc("review_massage_booking_change", {
+    p_change_id: changeId,
+    p_approve: approve,
+    p_review_note: reviewNote,
+  }), "마사지 일정 변경·취소 요청 검토");
 }
 
 export async function reviewServiceRequestCloud(requestId, approve, note = null, payment = null) {

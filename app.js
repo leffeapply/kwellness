@@ -20,7 +20,9 @@ import {
   cloudEnabled,
   createHistoricalCaregiverReviewCloud,
   currentCloudSession,
+  deleteMassageAvailabilityCloud,
   loadCloudState,
+  loadMassageAvailableSlotsCloud,
   loadPublicCaregiverDirectoryCloud,
   publishCareReportCloud,
   reassignCaregiverCloud,
@@ -50,6 +52,8 @@ import {
   submitServiceAdjustmentCloud,
   submitMassageAdjustmentCloud,
   reviewMassageAdjustmentCloud,
+  reviewMassageBookingChangeCloud,
+  saveMassageAvailabilityCloud,
   updateCaregiverManagementCloud,
   updateCaregiverPublicProfileCloud,
   updateCareEventCloud,
@@ -59,6 +63,7 @@ import {
   updatePasswordCloud,
   uploadCaregiverPublicPhotoCloud,
   setMassageTherapistCapabilityCloud,
+  submitMassageBookingChangeCloud,
 } from "./cloud-data.js";
 
 (function () {
@@ -75,6 +80,7 @@ import {
   const ROLE_META = {
     admin: { label: "관리자", name: "운영 관리자", initials: "운" },
     caregiver: { label: "관리사", name: "관리사", initials: "관" },
+    therapist: { label: "마사지 테라피스트", name: "마사지 테라피스트", initials: "마" },
     client: { label: "고객", name: "고객", initials: "고" },
     retail: { label: "리테일 직원", name: "리테일 직원", initials: "리" },
   };
@@ -131,6 +137,7 @@ import {
     admin: [
       { id: "overview", label: "운영 현황", icon: "◫" },
       { id: "schedule", label: "일정·배정", icon: "◷" },
+      { id: "massage", label: "마사지 일정", icon: "✦" },
       { id: "requests", label: "서비스 신청·승인", icon: "✓" },
       { id: "finance", label: "수납·수익 관리", icon: "$" },
       { id: "history", label: "서비스 히스토리", icon: "≡" },
@@ -145,6 +152,10 @@ import {
       { id: "babysitting", label: "나의 베이비시팅 케어기빙", icon: "☆" },
       { id: "reports", label: "케어 리포트", icon: "▤" },
       { id: "profile", label: "내 정보", icon: "♙" },
+    ],
+    therapist: [
+      { id: "availability", label: "근무 가능시간", icon: "◷" },
+      { id: "calendar", label: "마사지 예약 캘린더", icon: "✦" },
     ],
     client: [
       { id: "services", label: "나의 서비스", icon: "⌂" },
@@ -313,11 +324,14 @@ import {
       adminSelectedReportSessionId: null,
       shiftChecklists: {},
       serviceCatalog: { MASSAGE: { ...PREMIUM_ADD_ONS.MASSAGE } },
-      views: { admin: "overview", caregiver: "caregiving", client: "services", retail: "pos" },
+      views: { admin: "overview", caregiver: "caregiving", therapist: "availability", client: "services", retail: "pos" },
       auth: { currentUserId: null, screen: "public", termsVersion: CURRENT_CONSENT_VERSION },
       users: [],
       clients: [],
       assignments: [],
+      massageAvailability: [],
+      massageBookings: [],
+      massageBookingChanges: [],
       serviceRequests: [],
       depositTransactions: [],
       balanceTransactions: [],
@@ -372,7 +386,7 @@ import {
       adminSelectedReportSessionId: null,
       shiftChecklists: {},
       serviceCatalog: { MASSAGE: { ...PREMIUM_ADD_ONS.MASSAGE } },
-      views: { admin: "overview", caregiver: "caregiving", client: "services", retail: "pos" },
+      views: { admin: "overview", caregiver: "caregiving", therapist: "availability", client: "services", retail: "pos" },
       auth: { currentUserId: null, screen: "public", termsVersion: CURRENT_CONSENT_VERSION },
       users: [
         { id: "user-admin", login: "admin-preview@localhost.invalid", email: "admin-preview@localhost.invalid", password: null, role: "admin", status: "approved", fullName: "운영 관리자", initials: "운", mustChangePassword: false, createdAt: dateOffset(-120) },
@@ -392,6 +406,9 @@ import {
         { id: "assignment-ava", serviceRequestId: "request-sophia", serviceType: "BABYSITTING", clientId: "client-sophia", babyId: "baby-ava", caregiverUserId: "user-caregiver-jane", weeks: 3, depositAmount: BABYSITTING_DEPOSIT, depositStatus: "PAID", depositPaidAt: dateOffset(-25), startAt: dateOffset(-10, 9), endAt: dateOffset(10, 17), dailyStart: "09:00", dailyEnd: "17:00", address: "Sandy Springs, Georgia", extraHouseholdMembers: 2, allergies: "견과류", requestNote: "식사 전 알러지 확인과 오후 그림책 놀이를 부탁드립니다.", mealInstructions: "견과류 완전 제외 · 점심 12시 · 간식 3시", routineNotes: "식후 양치, 오후 1시 낮잠", pickupNotes: "보호자에게 식사량과 활동을 인계", status: "ACTIVE" },
         { id: "assignment-next-mina", serviceType: "BABYSITTING", clientId: "client-sophia", babyId: "baby-ava", caregiverUserId: "user-caregiver-mina", weeks: 2, depositAmount: BABYSITTING_DEPOSIT, depositStatus: "PAID", depositPaidAt: dateOffset(-2), startAt: dateOffset(28, 9), endAt: dateOffset(41, 17), dailyStart: "09:00", dailyEnd: "17:00", address: "Sandy Springs, Georgia", extraHouseholdMembers: 2, allergies: "견과류", requestNote: "대체 베이비시팅 일정", status: "SCHEDULED" },
       ],
+      massageAvailability: [],
+      massageBookings: [],
+      massageBookingChanges: [],
       serviceRequests: [
         { id: "request-sarah", serviceType: "POSTPARTUM", clientId: "client-sarah", userId: "user-client-sarah", status: "APPROVED", weeks: 4, weeklyRate: POSTPARTUM_WEEKLY_RATE, estimatedTotal: POSTPARTUM_WEEKLY_RATE * 4, depositAmount: POSTPARTUM_DEPOSIT, depositStatus: "PAID", depositPaidAt: dateOffset(-36), desiredStartDate: dateOffset(-2, 10), dailyStart: "10:00", dailyEnd: "18:00", daysOfWeek: ["월", "화", "수", "목", "금"], address: "Duluth, Georgia", extraHouseholdMembers: 1, allergies: "없음", specialNotes: "수유 후 트림과 수면 패턴을 자세히 기록해 주세요.", birthOrDueDate: dateOffset(-34), approvedAssignmentId: "assignment-emma", createdAt: dateOffset(-35) },
         { id: "request-sarah-sitting", serviceType: "BABYSITTING", clientId: "client-sarah", userId: "user-client-sarah", status: "APPROVED", weeks: 3, depositAmount: BABYSITTING_DEPOSIT, depositStatus: "PAID", depositPaidAt: dateOffset(-1), desiredStartDate: dateOffset(28, 14), dailyStart: "14:00", dailyEnd: "18:00", daysOfWeek: ["화", "목", "토"], address: "Duluth, Georgia", extraHouseholdMembers: 1, allergies: "없음", specialNotes: "놀이와 간식 중심의 베이비시팅을 희망합니다.", mealInstructions: "오후 3시 간식 · 새로운 식품은 보호자 확인 후 제공", routineNotes: "그림책과 바닥 놀이, 오후 4시 짧은 휴식", pickupNotes: "보호자에게 간식량과 놀이 활동을 인계", birthOrDueDate: dateOffset(-34), approvedAssignmentId: null, approvedAt: dateOffset(-1), createdAt: dateOffset(-7) },
@@ -810,6 +827,7 @@ import {
     const workspaces = [];
     if (["OWNER", "ADMIN", "CARE_MANAGER"].some((role) => roles.has(role))) workspaces.push("admin");
     if (roles.has("CAREGIVER")) workspaces.push("caregiver");
+    if (user.isMassageTherapist) workspaces.push("therapist");
     if (roles.has("CLIENT")) workspaces.push("client");
     if (roles.has("RETAIL_STAFF")) workspaces.push("retail");
     return workspaces.length ? workspaces : [user.role];
@@ -1007,12 +1025,16 @@ import {
 
   function serviceWindow(source, startDate, dailyStart, dailyEnd, weeks) {
     if (assignmentServiceType(source) !== "MASSAGE") return assignmentWindow(startDate, dailyStart, dailyEnd, weeks);
-    const sessionCount = Number(source?.sessionCount || weeks || 1);
-    const finalSessionDate = new Date(`${startDate}T12:00:00`);
-    finalSessionDate.setDate(finalSessionDate.getDate() + (Math.max(1, sessionCount) - 1) * 7);
+    const sessions = (state.massageBookings || []).filter((booking) => booking.requestId === source?.id && booking.status !== "CANCELLED");
+    if (sessions.length) {
+      return {
+        startAt: new Date(Math.min(...sessions.map((booking) => new Date(booking.startsAt).getTime()))),
+        endAt: new Date(Math.max(...sessions.map((booking) => new Date(booking.endsAt).getTime()))),
+      };
+    }
     return {
       startAt: new Date(`${startDate}T${dailyStart}:00`),
-      endAt: new Date(`${localDateKey(finalSessionDate)}T${dailyEnd}:00`),
+      endAt: new Date(`${startDate}T${dailyEnd}:00`),
     };
   }
 
@@ -1589,8 +1611,9 @@ import {
     let items = NAV[role] || [];
     if (usingCloudData()) {
       const liveViews = {
-        admin: new Set(["overview", "schedule", "requests", "finance", "history", "people", "reports"]),
+        admin: new Set(["overview", "schedule", "massage", "requests", "finance", "history", "people", "reports"]),
         caregiver: new Set(["caregiving", "postpartum", "babysitting", "reports", "profile"]),
+        therapist: new Set(["availability", "calendar"]),
         client: new Set(["services", "postpartum", "babysitting", "reports"]),
         retail: new Set(["pos"]),
       };
@@ -1631,6 +1654,7 @@ import {
     const roleTitles = {
       admin: ["Operations", "오늘의 운영 흐름을 한눈에 확인하세요."],
       caregiver: [view === "caregiving" ? "My Caregiving" : view === "reports" ? "Care Reports" : serviceType === "BABYSITTING" ? "Babysitting Caregiving" : "Postpartum Caregiving", view === "caregiving" ? "두 서비스의 현재·다음 배정을 한눈에 확인하세요." : view === "reports" ? "내가 입력한 케어 기록을 기간별로 확인하세요." : serviceType === "BABYSITTING" ? "식사와 생활 이벤트를 간결하게 기록하세요." : "산모와 신생아의 케어 기록에 집중하세요."],
+      therapist: [view === "availability" ? "My Availability" : "Massage Calendar", view === "availability" ? "이번 주와 다음 주의 마사지 가능시간을 간편하게 등록하세요." : "확정된 마사지 방문 일정만 분리해 확인하세요."],
       client: [view === "services" ? "My Services" : view === "reports" ? "Care Reports" : serviceType === "BABYSITTING" ? "My Babysitting" : "My Postpartum Care", view === "services" ? "이용 중인 서비스와 신청·배정 상태를 한눈에 확인하세요." : view === "reports" ? "나와 아이의 케어 기록을 기간별로 확인하세요." : "선택한 서비스의 일정과 돌봄 기록만 안전하게 표시됩니다."],
       retail: ["Retail Workspace", "판매·재고·고객 관계를 하나의 흐름으로 관리하세요."],
     };
@@ -1792,20 +1816,76 @@ import {
     return `<button class="secondary-button mini-button" data-edit-assignment="${assignment.id}">변경</button><button class="danger-button mini-button" data-cancel-assignment="${assignment.id}">삭제</button>`;
   }
 
+  function massageBookingStatusLabel(status) {
+    return { PENDING: "관리자 승인 대기", CONFIRMED: "예약 확정", CANCELLED: "취소", COMPLETED: "완료" }[status] || status;
+  }
+
+  function massageBookingDateTime(booking) {
+    const start = new Date(booking.startsAt);
+    const end = new Date(booking.endsAt);
+    return `${start.toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" })} · ${timeLabel(start)}–${timeLabel(end)}`;
+  }
+
+  function pendingMassageBookingChange(sessionId) {
+    return (state.massageBookingChanges || []).find((change) => change.sessionId === sessionId && change.status === "PENDING") || null;
+  }
+
+  function massageBookingCardMarkup(booking, context = "admin") {
+    const client = clientById(booking.clientId);
+    const therapist = state.users.find((user) => user.caregiverId === booking.caregiverId || user.id === booking.caregiverUserId);
+    const change = pendingMassageBookingChange(booking.id);
+    const adjustable = booking.status === "CONFIRMED" && hoursUntil(booking.startsAt) > MASSAGE_CHANGE_NOTICE_HOURS && !change;
+    const actions = context === "client" && booking.status === "CONFIRMED"
+      ? `<button type="button" class="secondary-button mini-button" data-massage-session-change="${booking.id}" ${adjustable ? "" : "disabled"}>${change ? "변경·취소 검토 중" : adjustable ? "변경·취소" : "24시간 이내 변경 불가"}</button>`
+      : "";
+    return `<article class="massage-booking-card ${String(booking.status).toLowerCase()}"><div class="massage-booking-date"><strong>${escapeHtml(massageBookingDateTime(booking))}</strong><span>${booking.durationMinutes || 60}분 · ${booking.sessionNumber}회차</span></div><div><strong>${escapeHtml(context === "therapist" ? client?.motherName || "고객" : therapist?.fullName || "테라피스트")}</strong><span>${context === "therapist" ? escapeHtml(booking.address || "방문 주소 확인") : "마사지 테라피스트"}</span></div><div><span class="status-chip ${booking.status === "PENDING" ? "gold" : booking.status === "CANCELLED" ? "coral" : ""}">${massageBookingStatusLabel(booking.status)}</span>${change ? `<small>${change.action === "CHANGE" ? "일정 변경" : "취소"} 요청 검토 중</small>` : ""}</div>${actions}</article>`;
+  }
+
+  function massageMonthCalendarMarkup(bookings) {
+    const viewMonth = new Date(new Date().getFullYear(), new Date().getMonth() + state.calendarMonthOffset, 1);
+    const gridStart = new Date(viewMonth);
+    gridStart.setDate(gridStart.getDate() - gridStart.getDay());
+    const days = Array.from({ length: 42 }, (_, index) => { const day = new Date(gridStart); day.setDate(day.getDate() + index); return day; });
+    const weekdayHeader = ["일", "월", "화", "수", "목", "금", "토"].map((day) => `<div>${day}</div>`).join("");
+    return `<div class="month-calendar massage-calendar"><div class="month-weekdays">${weekdayHeader}</div><div class="month-grid">${days.map((day) => { const dateKey = localDateKey(day); const daily = bookings.filter((booking) => localDateKey(booking.startsAt) === dateKey && booking.status !== "CANCELLED"); return `<div class="month-day ${day.getMonth() !== viewMonth.getMonth() ? "outside" : ""} ${dateKey === localDateKey(new Date()) ? "today" : ""}"><header>${day.getDate()}</header><div class="month-events">${daily.slice(0, 4).map((booking) => { const client = clientById(booking.clientId); return `<div class="month-event massage"><strong>✦ ${escapeHtml(client?.motherName || "고객")}</strong><span>${timeLabel(booking.startsAt)} · ${massageBookingStatusLabel(booking.status)}</span></div>`; }).join("")}${daily.length > 4 ? `<small>+${daily.length - 4}개</small>` : ""}</div></div>`; }).join("")}</div></div>`;
+  }
+
+  function adminMassageCalendar() {
+    const bookings = [...(state.massageBookings || [])].sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+    const upcoming = bookings.filter((booking) => booking.status !== "CANCELLED" && new Date(booking.endsAt) >= new Date());
+    const pendingChanges = (state.massageBookingChanges || []).filter((change) => change.status === "PENDING");
+    return `<section class="page massage-operations-page">${demoBanner()}${pageHeading("MASSAGE OPERATIONS", "마사지 전용 일정", "고객이 선택한 슬롯과 관리자 승인 후 확정된 방문 일정을 돌봄 캘린더와 분리해 관리합니다.")}<div class="grid stats">${statCard("Pending", bookings.filter((item) => item.status === "PENDING").length, "신청 승인 대기 슬롯", "◷")}${statCard("Confirmed", upcoming.filter((item) => item.status === "CONFIRMED").length, "예정된 마사지", "✦")}${statCard("Changes", pendingChanges.length, "변경·취소 검토", "↺")}${statCard("Therapists", state.users.filter((user) => user.isMassageTherapist).length, "활성 테라피스트", "♙")}</div><article class="card calendar-card" style="margin-top:18px"><div class="section-header calendar-head"><div><h3>마사지 월간 캘린더</h3><p>${calendarMonthLabel()} · 이동시간 버퍼는 예약 전후 1시간입니다.</p></div><div class="calendar-actions"><button class="secondary-button mini-button" data-calendar-month="-1">← 이전 달</button><button class="secondary-button mini-button" data-calendar-today>이번 달</button><button class="secondary-button mini-button" data-calendar-month="1">다음 달 →</button></div></div>${massageMonthCalendarMarkup(bookings)}</article>${pendingChanges.length ? `<article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">CHANGE REQUESTS</p><h3>마사지 변경·취소 요청</h3></div><span class="status-chip gold">${pendingChanges.length}건</span></div><div class="massage-booking-list">${pendingChanges.map((change) => { const booking = bookings.find((item) => item.id === change.sessionId); const client = clientById(booking?.clientId); return `<div class="massage-change-row"><div><strong>${escapeHtml(client?.motherName || "고객")} · ${change.action === "CHANGE" ? "일정 변경" : "취소"}</strong><span>${booking ? massageBookingDateTime(booking) : "기존 일정 확인 필요"}</span><small>${escapeHtml(change.reason)}</small></div><div><strong>${change.action === "CHANGE" && change.proposedStartsAt ? massageBookingDateTime({ startsAt: change.proposedStartsAt, endsAt: change.proposedEndsAt }) : "예약 취소"}</strong></div><div class="management-actions"><button class="secondary-button mini-button" data-review-massage-change="${change.id}:reject">반려</button><button class="primary-button mini-button" data-review-massage-change="${change.id}:approve">승인</button></div></div>`; }).join("")}</div></article>` : ""}<article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>전체 마사지 방문 일정</h3><p>신청 슬롯과 확정 슬롯을 시간순으로 확인합니다.</p></div><span class="status-chip">${bookings.length}건</span></div><div class="massage-booking-list">${bookings.length ? bookings.map((booking) => massageBookingCardMarkup(booking, "admin")).join("") : `<div class="empty-state"><strong>등록된 마사지 일정이 없습니다.</strong></div>`}</div></article></section>`;
+  }
+
+  function therapistAvailabilityPage() {
+    const user = authUser();
+    const monday = startOfLocalDay(new Date());
+    monday.setDate(monday.getDate() + (monday.getDay() === 1 ? 0 : (8 - monday.getDay()) % 7));
+    const weekStart = localDateKey(monday);
+    const ownAvailability = (state.massageAvailability || []).filter((item) => item.caregiverUserId === user?.id && item.availableDate >= localDateKey(new Date())).sort((a, b) => `${a.availableDate}${a.startTime}`.localeCompare(`${b.availableDate}${b.startTime}`));
+    return `<section class="page therapist-availability-page">${demoBanner()}${pageHeading("THERAPIST AVAILABILITY", "주간 근무 가능시간", "매주 가능한 날짜와 시간을 등록하면 고객에게 실제 예약 가능한 슬롯만 표시됩니다.")}<div class="status-banner info"><strong>운영 가능시간 09:00–20:00</strong><span>확정된 마사지 전후 1시간은 이동시간으로 자동 차단되며, 다른 고객의 케어 일정과 겹치는 슬롯도 고객에게 표시되지 않습니다.</span></div><article class="card card-pad availability-editor"><form data-massage-availability-form><div class="form-grid three"><div class="field"><label for="massage-week-start">등록할 주</label><input id="massage-week-start" name="weekStart" type="date" value="${weekStart}" required/><small>해당 주의 월요일을 선택합니다.</small></div><div class="field"><label for="massage-available-start">시작시간</label><input id="massage-available-start" name="startTime" type="time" min="09:00" max="19:30" value="09:00" required/></div><div class="field"><label for="massage-available-end">종료시간</label><input id="massage-available-end" name="endTime" type="time" min="09:30" max="20:00" value="20:00" required/></div></div><div class="field"><span class="field-label">근무 가능한 요일</span><div class="weekday-options">${[1,2,3,4,5,6,7].map((day, index) => `<label><input type="checkbox" name="weekday" value="${day}" ${day <= 5 ? "checked" : ""}/><span>${["월","화","수","목","금","토","일"][index]}</span></label>`).join("")}</div></div><div class="form-actions"><button type="submit" class="primary-button">이 주의 가능시간 저장</button></div></form></article><article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>등록된 가능시간</h3><p>같은 날짜를 다시 저장하면 해당 날짜의 시간이 새 값으로 교체됩니다.</p></div><span class="status-chip">${ownAvailability.length}개</span></div><div class="availability-list">${ownAvailability.length ? ownAvailability.map((item) => `<div class="availability-row"><div><strong>${formatDate(`${item.availableDate}T12:00:00`)}</strong><span>${item.startTime}–${item.endTime}</span></div><button type="button" class="danger-button mini-button" data-delete-massage-availability="${item.id}">삭제</button></div>`).join("") : `<div class="empty-state"><strong>등록된 근무 가능시간이 없습니다.</strong><span>다음 주 일정을 먼저 등록해 주세요.</span></div>`}</div></article></section>`;
+  }
+
+  function therapistMassageCalendar() {
+    const user = authUser();
+    const bookings = (state.massageBookings || []).filter((booking) => booking.caregiverUserId === user?.id && booking.status === "CONFIRMED").sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+    return `<section class="page therapist-calendar-page">${demoBanner()}${pageHeading("MASSAGE CALENDAR", "나의 마사지 예약", "관리자 승인이 완료된 마사지 일정만 일반 케어기빙과 분리해 표시합니다.")}<article class="card calendar-card">${massageMonthCalendarMarkup(bookings)}</article><article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>예정된 방문</h3><p>고객·방문 주소·예약시간을 확인하세요.</p></div><span class="status-chip">${bookings.length}건</span></div><div class="massage-booking-list">${bookings.length ? bookings.map((booking) => massageBookingCardMarkup(booking, "therapist")).join("") : `<div class="empty-state"><strong>확정된 마사지 예약이 없습니다.</strong></div>`}</div></article></section>`;
+  }
+
   function adminSchedule() {
     const caregivers = state.users.filter(isCaregiverAssignable);
-    const approvedUnscheduled = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && clientById(request.clientId));
+    const approvedUnscheduled = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && assignmentServiceType(request) !== "MASSAGE" && clientById(request.clientId));
     const approvedQueue = approvedUnscheduled.filter(requestHasCapturedDepositEvidence);
     const depositEvidenceQueue = approvedUnscheduled.filter((request) => !requestHasCapturedDepositEvidence(request));
-    const filter = ["POSTPARTUM", "BABYSITTING", "MASSAGE"].includes(state.adminScheduleFilter) ? state.adminScheduleFilter : "ALL";
-    const assignments = state.assignments.filter((item) => item.status !== "CANCELLED" && (filter === "ALL" || assignmentServiceType(item) === filter));
+    const filter = ["POSTPARTUM", "BABYSITTING"].includes(state.adminScheduleFilter) ? state.adminScheduleFilter : "ALL";
+    const assignments = state.assignments.filter((item) => item.status !== "CANCELLED" && assignmentServiceType(item) !== "MASSAGE" && (filter === "ALL" || assignmentServiceType(item) === filter));
     return `
       <section class="page">
         ${demoBanner()}
         ${pageHeading("SCHEDULE & ASSIGNMENTS", "승인 신청 기반 일정·배정", "승인된 고객 서비스 신청을 불러와 관리사만 선택하고 월간 캘린더에 배치합니다.")}
         <div class="grid stats">${statCard("Active", state.assignments.filter(isAssignmentCurrent).length, "현재 진행 중", "◷")}${statCard("Postpartum", state.assignments.filter((item) => isAssignmentCurrent(item) && assignmentServiceType(item) === "POSTPARTUM").length, "산후조리 진행", "♡")}${statCard("Babysitting", state.assignments.filter((item) => isAssignmentCurrent(item) && assignmentServiceType(item) === "BABYSITTING").length, "베이비시팅 진행", "☆")}${statCard("Ready to schedule", approvedQueue.length, "승인·예약금 확인 완료", "→")}</div>
         <article class="card card-pad schedule-source-card" style="margin-top:18px"><div class="section-header"><div><p class="eyebrow">APPROVED SERVICE REQUESTS</p><h3>일정 배치 대기</h3><p>승인과 예약금 수납이 확인된 신청을 캘린더에 배치할 수 있습니다.</p></div><span class="status-chip gold">${approvedQueue.length} ready</span></div>${depositEvidenceQueue.length ? `<div class="status-banner warning"><strong>${depositEvidenceQueue.length}건의 예약금 증빙을 먼저 보완해 주세요.</strong><span>실제 수납 근거가 없는 기존 승인 건은 일정 배치에서 제외됩니다.</span></div><div class="approved-schedule-strip evidence-schedule-strip">${depositEvidenceQueue.map((request) => { const client = clientById(request.clientId); return `<button type="button" class="approved-schedule-card ${serviceMetaFor(request.serviceType).tone}" data-record-approved-deposit="${request.id}">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이")}</strong><span>${money(Number(request.depositAmount || (assignmentServiceType(request) === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : BABYSITTING_DEPOSIT)))} 수납 증빙 필요</span><em>증빙 보완 →</em></button>`; }).join("")}</div>` : ""}<div class="approved-schedule-strip">${approvedQueue.length ? approvedQueue.map((request) => { const client = clientById(request.clientId); return `<button type="button" class="approved-schedule-card ${serviceMetaFor(request.serviceType).tone}" data-open-assignment data-request-id="${request.id}">${serviceBadgeMarkup(request.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyNameFor(request, client) || "아이")}</strong><span>${formatDate(request.desiredStartDate)} · ${request.dailyStart}–${request.dailyEnd} · ${request.weeks}주</span><em>일정 배치 →</em></button>`; }).join("") : `<div class="empty-state"><strong>배치 가능한 승인 신청이 없습니다.</strong><span>${depositEvidenceQueue.length ? "위 승인 건의 실제 예약금 증빙을 보완해 주세요." : "서비스 신청·승인 메뉴에서 먼저 고객 신청을 승인해 주세요."}</span></div>`}</div></article>
-        <div class="schedule-filter-bar" role="group" aria-label="캘린더 서비스 필터"><span>표시 서비스</span>${[["ALL", "전체"], ["POSTPARTUM", "♡ 산후조리"], ["BABYSITTING", "☆ 베이비시팅"], ["MASSAGE", "✦ 마사지"]].map(([value, label]) => `<button type="button" class="${filter === value ? "active" : ""}" data-schedule-filter="${value}">${label}</button>`).join("")}</div>
+        <div class="schedule-filter-bar" role="group" aria-label="돌봄 서비스 필터"><span>돌봄 서비스</span>${[["ALL", "전체"], ["POSTPARTUM", "♡ 산후조리"], ["BABYSITTING", "☆ 베이비시팅"]].map(([value, label]) => `<button type="button" class="${filter === value ? "active" : ""}" data-schedule-filter="${value}">${label}</button>`).join("")}</div>
         <article class="card calendar-card" style="margin-top:12px"><div class="section-header calendar-head"><div><h3>${filter === "ALL" ? "전체 관리사" : serviceMetaFor(filter).label} 월간 일정</h3><p>${calendarMonthLabel()} · ${assignments.length}개 계약·배정</p></div><div class="calendar-actions"><button class="secondary-button mini-button" data-calendar-month="-1">← 이전 달</button><button class="secondary-button mini-button" data-calendar-today>이번 달</button><button class="secondary-button mini-button" data-calendar-month="1">다음 달 →</button><button class="primary-button" data-open-assignment ${approvedQueue.length ? "" : "disabled"}>+ 승인 신청에서 배치</button></div></div>${assignmentMonthCalendarMarkup()}</article>
         <article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>${filter === "ALL" ? "전체" : serviceMetaFor(filter).label} 계약·배정 목록</h3><p>${usingCloudData() ? "확정 일정은 고객 변경·취소 요청 승인 절차를 통해서만 바뀌며, 기록 보존을 위해 직접 삭제하지 않습니다." : "로컬 데이터의 일정 수정·삭제가 캘린더와 연동됩니다."}</p></div><span class="status-chip">${assignments.length} records</span></div><div class="assignment-list">${assignments.sort((a,b) => new Date(a.startAt)-new Date(b.startAt)).map((assignment) => { const client = clientById(assignment.clientId); const caregiver = state.users.find((user) => user.id === assignment.caregiverUserId); const status = isAssignmentCurrent(assignment) ? "진행 중" : new Date(assignment.startAt) > new Date() ? "예정" : "종료"; return `<div class="assignment-row"><div>${serviceBadgeMarkup(assignment.serviceType)}<strong>${escapeHtml(client?.motherName || "고객 정보 확인 필요")} · ${escapeHtml(babyNameFor(assignment, client) || "아이 미등록")}</strong><span>${formatDate(assignment.startAt)} – ${formatDate(assignment.endAt)} · ${assignment.weeks}주</span></div><div><strong>${escapeHtml(caregiver?.fullName || assignment.caregiverName || "관리사 미배정")}</strong><span>${assignment.dailyStart} – ${assignment.dailyEnd}</span></div><div><strong>${escapeHtml(assignment.address)}</strong><span>알러지: ${escapeHtml(assignment.allergies)}</span></div><span class="status-chip ${status === "진행 중" ? "" : "gold"}">${status}</span><div class="assignment-actions">${adminAssignmentActionsMarkup(assignment)}</div></div>`; }).join("")}</div></article>
       </section>`;
@@ -2179,7 +2259,7 @@ import {
 
   function adminRequests() {
     const pending = state.serviceRequests.filter((request) => request.status === "PENDING");
-    const approvedQueue = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId);
+    const approvedQueue = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && assignmentServiceType(request) !== "MASSAGE");
     const refundDueRequests = state.serviceRequests.filter((request) => request.status === "CANCELLED" && request.depositStatus === "REFUND_DUE");
     const pendingPostpartum = pending.filter((request) => assignmentServiceType(request) === "POSTPARTUM");
     const pendingBabysitting = pending.filter((request) => assignmentServiceType(request) === "BABYSITTING");
@@ -2961,26 +3041,32 @@ import {
     return `<article class="card service-overview-card ${meta.tone}"><div class="service-overview-top"><div>${serviceBadgeMarkup(serviceType)}<h3>${status}</h3></div><span class="status-chip ${status === "이용 중" ? "" : "gold"}">${assignmentCountdown(assignment)}</span></div><strong class="service-overview-family">${escapeHtml(client.motherName)}${serviceType === "MASSAGE" ? "" : ` · ${escapeHtml(babyNameFor(assignment, client) || "아이")}`}</strong><p>${new Date(assignment.startAt).toLocaleDateString("ko-KR")}–${new Date(assignment.endAt).toLocaleDateString("ko-KR")} · ${assignment.dailyStart}–${assignment.dailyEnd}</p><div class="service-overview-meta"><span>담당 ${escapeHtml(caregiver?.fullName || "배정 대기")}</span><span>${escapeHtml(assignment.address)}</span>${serviceType === "POSTPARTUM" ? `<span>예약금 $${Number(assignment.depositAmount || POSTPARTUM_DEPOSIT).toLocaleString("en-US")} 납부 · 계약 $${Number(assignment.contractValue || requestServiceTotal(assignment)).toLocaleString("en-US")}</span>` : serviceType === "MASSAGE" ? `<span>${assignment.durationMinutes || 60}분 · ${assignment.sessionCount || 1}회 · ${money(assignment.contractValue || massagePrice(assignment))}</span>` : ""}</div>${adjustment ? `<small class="adjustment-state">변경·취소 요청 관리자 검토 중</small>` : ""}${extensionPending ? `<small class="adjustment-state">기간 연장 신청 관리자 검토 중</small>` : ""}<div class="service-overview-actions">${serviceType === "MASSAGE" ? "" : `<button class="primary-button" data-enter-client-service="${serviceType}" data-assignment-id="${assignment.id}">${serviceType === "BABYSITTING" ? "나의 베이비시팅" : "나의 산후조리"} 보기</button>`}<button class="secondary-button" data-service-adjust="ASSIGNMENT:${assignment.id}" ${adjustment ? "disabled" : ""}>${adjustment ? "요청 검토 중" : "일정 변경·취소"}</button>${serviceType === "BABYSITTING" ? `<button class="secondary-button" data-service-extend="${assignment.id}" ${extensionPending ? "disabled" : ""}>${extensionPending ? "연장 검토 중" : "기간 연장 신청"}</button>` : ""}</div></article>`;
   }
 
+  function clientMassageAppointmentsMarkup(client) {
+    const bookings = (state.massageBookings || []).filter((booking) => booking.clientId === client.id && booking.status !== "CANCELLED").sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+    if (!bookings.length) return "";
+    return `<article class="card card-pad client-massage-appointments"><div class="section-header"><div>${serviceBadgeMarkup("MASSAGE")}<h3>선택한 마사지 일정</h3><p>고객이 선택한 슬롯은 관리자 승인 후 확정됩니다. 각 방문은 시작 24시간 전까지만 변경·취소를 요청할 수 있습니다.</p></div><span class="status-chip">${bookings.length}회</span></div><div class="massage-booking-list">${bookings.map((booking) => massageBookingCardMarkup(booking, "client")).join("")}</div></article>`;
+  }
+
   function clientServicesHub() {
     const client = clientForUser(authUser().id);
     if (!client) return `<section class="page">${demoBanner()}<div class="empty-state"><strong>고객 정보를 찾을 수 없습니다.</strong></div></section>`;
     const currentService = clientCurrentService(client.id);
     const activeCount = state.assignments.filter((assignment) => assignment.clientId === client.id && isAssignmentCurrent(assignment)).length;
-    const pendingCount = state.serviceRequests.filter((request) => request.clientId === client.id && (request.status === "PENDING" || (request.status === "APPROVED" && !request.approvedAssignmentId))).length;
+    const pendingCount = state.serviceRequests.filter((request) => request.clientId === client.id && (request.status === "PENDING" || (request.status === "APPROVED" && !request.approvedAssignmentId && assignmentServiceType(request) !== "MASSAGE"))).length;
     const postpartumAssignments = currentAndUpcomingAssignmentsForClient(client.id, "POSTPARTUM");
     const babysittingAssignments = currentAndUpcomingAssignmentsForClient(client.id, "BABYSITTING");
     const massageAssignments = currentAndUpcomingAssignmentsForClient(client.id, "MASSAGE");
     const openRequests = state.serviceRequests.filter((request) => request.clientId === client.id && ["PENDING", "APPROVED"].includes(request.status) && !request.approvedAssignmentId);
     const postpartumRequests = openRequests.filter((request) => assignmentServiceType(request) === "POSTPARTUM");
     const babysittingRequests = openRequests.filter((request) => assignmentServiceType(request) === "BABYSITTING");
-    const massageRequests = openRequests.filter((request) => assignmentServiceType(request) === "MASSAGE");
+    const massageRequests = openRequests.filter((request) => assignmentServiceType(request) === "MASSAGE" && request.status === "PENDING");
     const postpartumCards = [...postpartumAssignments.map((assignment) => clientServiceOverviewCard(client, "POSTPARTUM", assignment)), ...postpartumRequests.map((request) => clientServiceOverviewCard(client, "POSTPARTUM", null, request))];
     const babysittingCards = [...babysittingAssignments.map((assignment) => clientServiceOverviewCard(client, "BABYSITTING", assignment)), ...babysittingRequests.map((request) => clientServiceOverviewCard(client, "BABYSITTING", null, request))];
     const massage = state.serviceCatalog.MASSAGE;
     const massageTier = clientQualifiesForMassageMemberRate(client.id) ? "POSTPARTUM_CLIENT" : "GENERAL";
     const massageStatusCards = [...massageAssignments.map((assignment) => clientServiceOverviewCard(client, "MASSAGE", assignment)), ...massageRequests.map((request) => clientServiceOverviewCard(client, "MASSAGE", null, request))];
     const profileSetup = clientProfileComplete(client) ? "" : `<article class="card client-profile-onboarding"><div><p class="eyebrow">PROFILE SETUP</p><h3>서비스 신청 전에 가족 프로필을 완성해 주세요.</h3><p>아기 이름·출생일 또는 예정일과 기본 서비스 주소를 한 번 저장하면 신청서에 자동으로 불러옵니다.</p></div><button class="primary-button" type="button" data-edit-profile>고객·아기 프로필 작성</button></article>`;
-    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY SERVICES", `${escapeHtml(client.motherName)}님의 서비스`, "돌봄과 마사지 신청·배정 상태를 한눈에 확인하세요.")}${profileSetup}<div class="grid stats">${statCard("Active service", activeCount, "현재 진행 중인 전체 배정", "✓")}${statCard("Current service", activeCount > 1 ? `${activeCount}건 이용 중` : currentService ? serviceMetaFor(currentService).label : "대기", "현재 케어", currentService === "BABYSITTING" ? "☆" : "♡")}${statCard("Pending requests", pendingCount ? `${pendingCount}건` : "없음", "승인·일정 배정 대기", "◷")}</div><div class="service-overview-grid" style="margin-top:18px">${postpartumCards.length ? postpartumCards.join("") : clientServiceOverviewCard(client, "POSTPARTUM")}${babysittingCards.length ? babysittingCards.join("") : clientServiceOverviewCard(client, "BABYSITTING")}</div>${massageStatusCards.length ? `<div class="service-overview-grid" style="margin-top:18px">${massageStatusCards.join("")}</div>` : ""}${clientCompletedReviewCenterMarkup(client)}<div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, null, true)}</div><article class="card premium-addon-card" style="margin-top:18px"><div class="premium-addon-icon">${massage.icon}</div><div><p class="eyebrow">PRENATAL · POSTPARTUM MASSAGE</p><h3>${massage.label}</h3><p>${massage.description}</p><div class="premium-addon-tags"><span>${massageTier === "POSTPARTUM_CLIENT" ? "산후조리 고객 우대가 자동 적용" : "일반 고객 요금"}</span><span>60분·90분</span><span>24시간 전까지 변경·취소</span></div></div><button class="primary-button" data-massage-book>마사지 예약</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>돌봄과 마사지는 일정 충돌을 자동으로 확인합니다.</strong><p>마사지 테라피스트가 해당 고객의 담당 관리사인 경우에만 그 고객의 케어 시간 안에 마사지를 배정할 수 있습니다. 다른 고객 일정이나 다른 마사지 예약과 겹치면 선택할 수 없습니다.</p></article></section>`;
+    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY SERVICES", `${escapeHtml(client.motherName)}님의 서비스`, "돌봄과 마사지 신청·배정 상태를 한눈에 확인하세요.")}${profileSetup}<div class="grid stats">${statCard("Active service", activeCount, "현재 진행 중인 전체 배정", "✓")}${statCard("Current service", activeCount > 1 ? `${activeCount}건 이용 중` : currentService ? serviceMetaFor(currentService).label : "대기", "현재 케어", currentService === "BABYSITTING" ? "☆" : "♡")}${statCard("Pending requests", pendingCount ? `${pendingCount}건` : "없음", "승인·일정 배정 대기", "◷")}</div><div class="service-overview-grid" style="margin-top:18px">${postpartumCards.length ? postpartumCards.join("") : clientServiceOverviewCard(client, "POSTPARTUM")}${babysittingCards.length ? babysittingCards.join("") : clientServiceOverviewCard(client, "BABYSITTING")}</div>${massageStatusCards.length ? `<div class="service-overview-grid" style="margin-top:18px">${massageStatusCards.join("")}</div>` : ""}${clientMassageAppointmentsMarkup(client)}${clientCompletedReviewCenterMarkup(client)}<div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, null, true)}</div><article class="card premium-addon-card" style="margin-top:18px"><div class="premium-addon-icon">${massage.icon}</div><div><p class="eyebrow">PRENATAL · POSTPARTUM MASSAGE</p><h3>${massage.label}</h3><p>${massage.description}</p><div class="premium-addon-tags"><span>${massageTier === "POSTPARTUM_CLIENT" ? "산후조리 고객 우대가 자동 적용" : "일반 고객 요금"}</span><span>60분·90분</span><span>24시간 전까지 변경·취소</span></div></div><button class="primary-button" data-massage-book>마사지 예약</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>돌봄과 마사지는 일정 충돌을 자동으로 확인합니다.</strong><p>마사지 테라피스트가 해당 고객의 담당 관리사인 경우에만 그 고객의 케어 시간 안에 마사지를 배정할 수 있습니다. 다른 고객 일정이나 다른 마사지 예약과 겹치면 선택할 수 없습니다.</p></article></section>`;
   }
 
   function clientBabysittingSummary(client, assignment, workspaceNav = "") {
@@ -4447,14 +4533,16 @@ import {
       return `<section class="page">${pageHeading("RETAIL", "리테일 백엔드 연결 준비 중", "결제·주문·재고 데이터가 운영 시스템과 안전하게 연결된 후 제공됩니다.")}<article class="card card-pad"><div class="empty-state"><span>◇</span><strong>주문·결제·재고 백엔드 연결 준비 중입니다.</strong><p>연결이 완료될 때까지 조회와 변경 기능은 비활성화됩니다.</p></div></article></section>`;
     }
     const operationalPages = {
-      admin: { overview: adminOverview, schedule: adminSchedule, requests: adminRequests, finance: adminFinance, history: adminServiceHistory, people: adminPeople, reports: adminReports },
+      admin: { overview: adminOverview, schedule: adminSchedule, massage: adminMassageCalendar, requests: adminRequests, finance: adminFinance, history: adminServiceHistory, people: adminPeople, reports: adminReports },
       caregiver: { caregiving: caregiverCaregivingHub, postpartum: () => caregiverServiceWorkspace("POSTPARTUM"), babysitting: () => caregiverServiceWorkspace("BABYSITTING"), reports: () => objectiveReportPage("caregiver", null), profile: caregiverProfile },
+      therapist: { availability: therapistAvailabilityPage, calendar: therapistMassageCalendar },
       client: { services: clientServicesHub, postpartum: () => clientServiceWorkspace("POSTPARTUM"), babysitting: () => clientServiceWorkspace("BABYSITTING"), reports: () => objectiveReportPage("client", null) },
       retail: {},
     };
     const previewPages = import.meta.env.DEV ? {
       admin: { ...operationalPages.admin, retail: adminRetail, analytics: adminAnalytics },
       caregiver: operationalPages.caregiver,
+      therapist: operationalPages.therapist,
       client: { ...operationalPages.client, shop: clientShop, purchases: clientPurchases },
       retail: { pos: retailPos, products: retailProducts, inventory: retailInventory, orders: retailOrders },
     } : operationalPages;
@@ -5012,6 +5100,13 @@ import {
     document.querySelectorAll("[data-archive-service-request]").forEach((button) => button.addEventListener("click", () => openArchiveServiceRequestModal(button.dataset.archiveServiceRequest)));
     document.querySelectorAll("[data-record-approved-deposit]").forEach((button) => button.addEventListener("click", () => openApprovedDepositEvidenceModal(button.dataset.recordApprovedDeposit)));
     document.querySelectorAll("[data-record-service-balance]").forEach((button) => button.addEventListener("click", () => openServiceBalancePaymentModal(button.dataset.recordServiceBalance)));
+    document.querySelectorAll("[data-massage-session-change]").forEach((button) => button.addEventListener("click", () => openMassageSessionChangeModal(button.dataset.massageSessionChange)));
+    document.querySelectorAll("[data-review-massage-change]").forEach((button) => button.addEventListener("click", () => {
+      const [changeId, decision] = button.dataset.reviewMassageChange.split(":");
+      reviewMassageBookingChange(changeId, decision === "approve");
+    }));
+    document.querySelectorAll("[data-massage-availability-form]").forEach((form) => form.addEventListener("submit", saveMassageAvailability));
+    document.querySelectorAll("[data-delete-massage-availability]").forEach((button) => button.addEventListener("click", () => deleteMassageAvailability(button.dataset.deleteMassageAvailability)));
     document.querySelectorAll("[data-finance-filter]").forEach((form) => {
       const periodSelect = form.elements.period;
       const yearSelect = form.elements.year;
@@ -6110,7 +6205,7 @@ import {
     if (assignmentId && !assignment) return showToast("일정 정보를 찾을 수 없습니다.");
     const requestedRequest = requestId ? state.serviceRequests.find((request) => request.id === requestId && request.status === "APPROVED" && !request.approvedAssignmentId) : null;
     if (!assignment && requestedRequest && !requestHasCapturedDepositEvidence(requestedRequest)) return openApprovedDepositEvidenceModal(requestedRequest.id);
-    const approvedQueue = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && clientById(request.clientId) && requestHasCapturedDepositEvidence(request));
+    const approvedQueue = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && assignmentServiceType(request) !== "MASSAGE" && clientById(request.clientId) && requestHasCapturedDepositEvidence(request));
     if (!assignment && !approvedQueue.length) return showToast("승인과 예약금 수납 증빙이 완료된 신청이 없습니다.");
     const linkedRequest = assignment?.serviceRequestId ? state.serviceRequests.find((request) => request.id === assignment.serviceRequestId) : null;
     const selectedRequest = assignment ? linkedRequest : approvedQueue.find((request) => request.id === requestId) || approvedQueue[0];
@@ -6396,7 +6491,41 @@ import {
     showToast(`${serviceMetaFor(serviceType).label} ${values.adjustmentAction === "CANCEL" ? "취소" : "변경"} 요청을 접수했습니다.`);
   }
 
-  function openMassageBookingModal() {
+  function localMassageAvailableSlots(durationMinutes, dateFrom, dateTo) {
+    const now = new Date();
+    const rangeStart = new Date(`${dateFrom}T00:00:00`);
+    const rangeEnd = new Date(`${dateTo}T23:59:59`);
+    return (state.massageAvailability || []).flatMap((availability) => {
+      const user = state.users.find((item) => item.caregiverId === availability.caregiverId || item.id === availability.caregiverUserId);
+      if (!user?.isMassageTherapist) return [];
+      const day = new Date(`${availability.availableDate}T00:00:00`);
+      if (day < rangeStart || day > rangeEnd) return [];
+      const windowStart = new Date(`${availability.availableDate}T${availability.startTime}:00`);
+      const windowEnd = new Date(`${availability.availableDate}T${availability.endTime}:00`);
+      const slots = [];
+      for (let cursor = new Date(windowStart); cursor.getTime() + durationMinutes * 60000 <= windowEnd.getTime(); cursor = new Date(cursor.getTime() + 30 * 60000)) {
+        const endsAt = new Date(cursor.getTime() + durationMinutes * 60000);
+        if ((cursor.getTime() - now.getTime()) / 3600000 <= MASSAGE_CHANGE_NOTICE_HOURS) continue;
+        const conflicts = (state.massageBookings || []).some((booking) => booking.caregiverId === availability.caregiverId && ["PENDING", "CONFIRMED"].includes(booking.status) && cursor < new Date(new Date(booking.endsAt).getTime() + 60 * 60000) && endsAt > new Date(new Date(booking.startsAt).getTime() - 60 * 60000));
+        if (!conflicts) slots.push({ id: `${availability.id}:${cursor.toISOString()}`, availabilityId: availability.id, caregiverId: availability.caregiverId, caregiverUserId: user.id, therapistName: user.fullName || "ProMoms 테라피스트", startsAt: cursor.toISOString(), endsAt: endsAt.toISOString() });
+      }
+      return slots;
+    }).sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+  }
+
+  async function massageAvailableSlots(durationMinutes, dateFrom, dateTo) {
+    return usingCloudData()
+      ? loadMassageAvailableSlotsCloud(durationMinutes, dateFrom, dateTo)
+      : localMassageAvailableSlots(durationMinutes, dateFrom, dateTo);
+  }
+
+  function massageSlotLabel(slot) {
+    const start = new Date(slot.startsAt);
+    const end = new Date(slot.endsAt);
+    return `${start.toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" })} · ${timeLabel(start)}–${timeLabel(end)} · ${slot.therapistName}`;
+  }
+
+  async function openMassageBookingModal() {
     const user = authUser();
     if (!user) {
       state.auth.screen = "signup";
@@ -6412,22 +6541,70 @@ import {
     const earliest = new Date();
     earliest.setDate(earliest.getDate() + 2);
     const earliestDate = localDateKey(earliest);
-    const packageOption = memberPricing ? `<label><input type="radio" name="massagePlan" value="PACKAGE_4"/><span><strong>60분 × 4회</strong><small>$520 · 매주 같은 요일·시간</small></span></label>` : "";
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal service-application-modal massage-booking-modal" role="dialog" aria-modal="true" aria-labelledby="massage-booking-title"><header class="modal-header"><div>${serviceBadgeMarkup("MASSAGE")}<p class="eyebrow">MASSAGE BOOKING</p><h3 id="massage-booking-title">산전·산후 마사지 예약</h3><p>전문 테라피스트의 일정 확인 후 관리자가 최종 확정합니다.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-massage-booking-form><input type="hidden" name="pricingTier" value="${pricingTier}"/><div class="status-banner ${memberPricing ? "success" : "info"}"><strong>${memberPricing ? "ProMoms 산후조리 고객 우대가" : "일반 고객 요금"}</strong><span>${memberPricing ? "현재 또는 예약된 산후조리 서비스가 확인되어 우대가가 자동 적용됩니다." : "산후조리 서비스 승인·예약이 확인되면 우대가가 자동 적용됩니다."}</span></div><section class="application-block"><h4>서비스 선택</h4><div class="massage-plan-options"><label><input type="radio" name="massagePlan" value="SINGLE_60" checked/><span><strong>60분 1회</strong><small>${money(MASSAGE_PRICES[pricingTier][60])}</small></span></label><label><input type="radio" name="massagePlan" value="SINGLE_90"/><span><strong>90분 1회</strong><small>${money(MASSAGE_PRICES[pricingTier][90])}</small></span></label>${packageOption}</div></section><section class="application-block"><h4>희망 일정</h4><div class="form-grid two"><div class="field"><label for="massage-start-date">희망 시작일</label><input id="massage-start-date" type="date" name="desiredStartDate" min="${earliestDate}" value="${earliestDate}" required/><small>변경·취소는 예약 시작 24시간 이전까지만 가능합니다.</small></div><div class="field"><label for="massage-start-time">희망 시작시간</label><input id="massage-start-time" type="time" name="requestedDailyStart" value="10:00" min="07:00" max="20:00" required/></div></div></section><section class="application-block"><h4>방문 정보</h4><div class="field"><label for="massage-address">서비스 주소</label><input id="massage-address" name="requestAddress" value="${escapeHtml(client.address || "")}" placeholder="Street, City, State ZIP" required/></div><div class="field"><label for="massage-notes">요청사항</label><textarea id="massage-notes" name="requestSpecialNotes" maxlength="1000" placeholder="임신 주수, 회복 상태, 집중을 원하는 부위 등 테라피스트가 알아야 할 내용을 적어주세요."></textarea></div></section><div class="application-price-summary" data-massage-price><span>${memberPricing ? "산후조리 고객 우대가" : "일반 고객가"}</span><strong>${money(MASSAGE_PRICES[pricingTier][60])}</strong><small>예약 승인 시 선택한 서비스 금액을 수납 확인합니다.</small></div><label class="consent-row application-consent"><input type="checkbox" name="requestConsent" required/><span><strong>예약 정보 활용 및 24시간 변경·취소 규정에 동의합니다.</strong><small>관리자는 자격이 부여된 테라피스트의 케어기빙·마사지 일정을 함께 확인한 뒤 배정합니다.</small></span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">마사지 예약 요청</button></div></form></section></div>`;
+    const latest = new Date(earliest);
+    latest.setDate(latest.getDate() + 55);
+    const latestDate = localDateKey(latest);
+    let slots60 = [];
+    let slots90 = [];
+    try {
+      [slots60, slots90] = await Promise.all([
+        massageAvailableSlots(60, earliestDate, latestDate),
+        massageAvailableSlots(90, earliestDate, latestDate),
+      ]);
+    } catch (error) {
+      return showToast(friendlyErrorMessage(error, "마사지 예약 가능시간을 불러오지 못했습니다."), "error");
+    }
+    const packageOption = memberPricing ? `<label><input type="radio" name="massagePlan" value="PACKAGE_4"/><span><strong>60분 × 4회</strong><small>$520 · 가능한 슬롯 4개를 각각 선택</small></span></label>` : "";
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal service-application-modal massage-booking-modal" role="dialog" aria-modal="true" aria-labelledby="massage-booking-title"><header class="modal-header"><div>${serviceBadgeMarkup("MASSAGE")}<p class="eyebrow">MASSAGE BOOKING</p><h3 id="massage-booking-title">산전·산후 마사지 예약</h3><p>테라피스트가 등록한 09:00–20:00 근무 가능시간에서 예약할 수 있습니다.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-massage-booking-form><input type="hidden" name="pricingTier" value="${pricingTier}"/><div class="status-banner ${memberPricing ? "success" : "info"}"><strong>${memberPricing ? "ProMoms 산후조리 고객 우대가" : "일반 고객 요금"}</strong><span>${memberPricing ? "현재 또는 예약된 산후조리 서비스가 확인되어 우대가가 자동 적용됩니다." : "산후조리 서비스 승인·예약이 확인되면 우대가가 자동 적용됩니다."}</span></div><section class="application-block"><h4>서비스 선택</h4><div class="massage-plan-options"><label><input type="radio" name="massagePlan" value="SINGLE_60" checked/><span><strong>60분 1회</strong><small>${money(MASSAGE_PRICES[pricingTier][60])}</small></span></label><label><input type="radio" name="massagePlan" value="SINGLE_90"/><span><strong>90분 1회</strong><small>${money(MASSAGE_PRICES[pricingTier][90])}</small></span></label>${packageOption}</div></section><section class="application-block massage-slot-section"><div class="section-header"><div><h4>테라피스트 가능시간 선택</h4><p>예약 전후 1시간은 이동시간으로 자동 제외됩니다.</p></div><span class="status-chip" data-massage-slot-count>0개 선택</span></div><div class="field"><label for="massage-slot-date">예약 가능한 날짜</label><select id="massage-slot-date" data-massage-slot-date></select></div><div class="massage-slot-grid" data-massage-slot-grid></div><div class="massage-selected-slots" data-massage-selected-slots></div></section><section class="application-block"><h4>방문 정보</h4><div class="field"><label for="massage-address">서비스 주소</label><input id="massage-address" name="requestAddress" value="${escapeHtml(client.address || "")}" placeholder="Street, City, State ZIP" required/></div><div class="field"><label for="massage-notes">요청사항</label><textarea id="massage-notes" name="requestSpecialNotes" maxlength="1000" placeholder="임신 주수, 회복 상태, 집중을 원하는 부위 등 테라피스트가 알아야 할 내용을 적어주세요."></textarea></div></section><div class="application-price-summary" data-massage-price><span>${memberPricing ? "산후조리 고객 우대가" : "일반 고객가"}</span><strong>${money(MASSAGE_PRICES[pricingTier][60])}</strong><small>고객 신청 후 관리자가 승인해야 일정이 최종 확정됩니다.</small></div><label class="consent-row application-consent"><input type="checkbox" name="requestConsent" required/><span><strong>예약 정보 활용 및 24시간 변경·취소 규정에 동의합니다.</strong><small>선택 슬롯은 관리자 승인 전까지 대기 상태이며, 승인 시 테라피스트 일정으로 확정됩니다.</small></span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">마사지 예약 요청</button></div></form></section></div>`;
     const form = modalRoot.querySelector("[data-massage-booking-form]");
+    const selectedSlotIds = new Set();
+    const slotDateSelect = form.querySelector("[data-massage-slot-date]");
+    const slotGrid = form.querySelector("[data-massage-slot-grid]");
+    const selectedSlots = form.querySelector("[data-massage-selected-slots]");
+    const activeSlots = () => form.elements.massagePlan.value === "SINGLE_90" ? slots90 : slots60;
+    const refreshSlots = (keepDate = true) => {
+      const plan = form.elements.massagePlan.value;
+      const pool = activeSlots();
+      const multiple = plan === "PACKAGE_4";
+      const previousDate = keepDate ? slotDateSelect.value : "";
+      const dates = [...new Set(pool.map((slot) => localDateKey(slot.startsAt)))];
+      slotDateSelect.innerHTML = dates.length ? dates.map((date) => `<option value="${date}" ${date === previousDate ? "selected" : ""}>${formatDate(`${date}T12:00:00`)}</option>`).join("") : `<option value="">예약 가능시간 없음</option>`;
+      if (previousDate && dates.includes(previousDate)) slotDateSelect.value = previousDate;
+      const currentDate = slotDateSelect.value;
+      const dailySlots = pool.filter((slot) => localDateKey(slot.startsAt) === currentDate);
+      slotGrid.innerHTML = dailySlots.length ? dailySlots.map((slot) => `<label class="massage-slot-option ${selectedSlotIds.has(slot.id) ? "selected" : ""}"><input type="${multiple ? "checkbox" : "radio"}" name="massageSlot" value="${escapeHtml(slot.id)}" ${selectedSlotIds.has(slot.id) ? "checked" : ""} ${multiple && selectedSlotIds.size >= 4 && !selectedSlotIds.has(slot.id) ? "disabled" : ""}/><span><strong>${timeLabel(slot.startsAt)}–${timeLabel(slot.endsAt)}</strong><small>${escapeHtml(slot.therapistName)}</small></span></label>`).join("") : `<div class="empty-state compact"><strong>이 날짜에 예약 가능한 시간이 없습니다.</strong></div>`;
+      const chosen = pool.filter((slot) => selectedSlotIds.has(slot.id)).sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+      form.querySelector("[data-massage-slot-count]").textContent = `${chosen.length}${multiple ? "/4" : "/1"}개 선택`;
+      selectedSlots.innerHTML = chosen.length ? `<strong>선택한 일정</strong>${chosen.map((slot, index) => `<div><span>${multiple ? `${index + 1}회차 · ` : ""}${escapeHtml(massageSlotLabel(slot))}</span><button type="button" class="text-button" data-remove-massage-slot="${escapeHtml(slot.id)}">삭제</button></div>`).join("")}` : `<small>${multiple ? "서로 다른 예약 가능시간 4개를 선택해 주세요." : "예약 가능시간 1개를 선택해 주세요."}</small>`;
+      slotGrid.querySelectorAll('input[name="massageSlot"]').forEach((input) => input.addEventListener("change", () => {
+        if (multiple) {
+          if (input.checked && selectedSlotIds.size >= 4) input.checked = false;
+          else if (input.checked) selectedSlotIds.add(input.value);
+          else selectedSlotIds.delete(input.value);
+        } else {
+          selectedSlotIds.clear();
+          if (input.checked) selectedSlotIds.add(input.value);
+        }
+        refreshSlots();
+      }));
+      selectedSlots.querySelectorAll("[data-remove-massage-slot]").forEach((button) => button.addEventListener("click", () => { selectedSlotIds.delete(button.dataset.removeMassageSlot); refreshSlots(); }));
+    };
     const refreshPrice = () => {
       const plan = form.elements.massagePlan.value;
       const values = plan === "PACKAGE_4" ? { pricingTier, durationMinutes: 60, sessionCount: 4 } : { pricingTier, durationMinutes: plan === "SINGLE_90" ? 90 : 60, sessionCount: 1 };
       const price = form.querySelector("[data-massage-price]");
       price.querySelector("strong").textContent = money(massagePrice(values));
-      price.querySelector("small").textContent = values.sessionCount === 4 ? "60분 마사지 4회 · 매주 같은 요일과 시간으로 배정" : `${values.durationMinutes}분 1회 · 승인 시 전액 수납 확인`;
+      price.querySelector("small").textContent = values.sessionCount === 4 ? "60분 마사지 4회 · 회차별 가능한 날짜와 시간을 각각 선택" : `${values.durationMinutes}분 1회 · 승인 시 전액 수납 확인`;
     };
-    form.querySelectorAll('input[name="massagePlan"]').forEach((input) => input.addEventListener("change", refreshPrice));
-    form.addEventListener("submit", submitMassageBooking);
+    form.querySelectorAll('input[name="massagePlan"]').forEach((input) => input.addEventListener("change", () => { selectedSlotIds.clear(); refreshPrice(); refreshSlots(false); }));
+    slotDateSelect.addEventListener("change", () => refreshSlots());
+    form.addEventListener("submit", (event) => submitMassageBooking(event, { slots60, slots90, selectedSlotIds }));
     bindModalFrame();
+    refreshPrice();
+    refreshSlots(false);
   }
 
-  async function submitMassageBooking(event) {
+  async function submitMassageBooking(event, slotState) {
     event.preventDefault();
     const user = authUser();
     const client = clientForUser(user?.id);
@@ -6437,24 +6614,20 @@ import {
     const plan = values.massagePlan;
     const durationMinutes = plan === "SINGLE_90" ? 90 : 60;
     const sessionCount = plan === "PACKAGE_4" ? 4 : 1;
-    const startMinutes = timeMinutes(values.requestedDailyStart);
-    const requestedDailyEnd = timeFromMinutes(startMinutes + durationMinutes);
-    if (startMinutes + durationMinutes > 23 * 60 + 59) return showToast("마사지는 당일 안에 종료되는 시간을 선택해 주세요.", "error");
+    const pool = durationMinutes === 90 ? slotState.slots90 : slotState.slots60;
+    const selected = pool.filter((slot) => slotState.selectedSlotIds.has(slot.id)).sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+    if (selected.length !== sessionCount) return showToast(sessionCount === 4 ? "4회권은 예약 가능한 일정 4개를 선택해 주세요." : "예약 가능한 일정 1개를 선택해 주세요.", "error");
     const expectedTier = clientQualifiesForMassageMemberRate(client.id) ? "POSTPARTUM_CLIENT" : "GENERAL";
     if (sessionCount === 4 && expectedTier !== "POSTPARTUM_CLIENT") return showToast("4회 패키지는 산후조리 예약·이용 고객에게만 제공됩니다.", "error");
-    const desiredStart = new Date(`${values.desiredStartDate}T${values.requestedDailyStart}:00`);
-    if (hoursUntil(desiredStart) <= MASSAGE_CHANGE_NOTICE_HOURS) return showToast("마사지 예약은 시작 24시간보다 여유 있게 신청해 주세요.", "error");
+    if (selected.some((slot) => hoursUntil(slot.startsAt) <= MASSAGE_CHANGE_NOTICE_HOURS)) return showToast("마사지 예약은 시작 24시간보다 여유 있게 신청해 주세요.", "error");
     const button = form.querySelector('button[type="submit"]');
     button.disabled = true;
     button.textContent = "예약 요청 저장 중…";
     try {
       if (usingCloudData()) {
         await submitMassageServiceRequestCloud({
-          desiredStartDate: values.desiredStartDate,
-          requestedDailyStart: values.requestedDailyStart,
-          requestedDailyEnd,
           durationMinutes,
-          sessionCount,
+          slots: selected.map((slot) => ({ availability_id: slot.availabilityId, starts_at: slot.startsAt })),
           requestAddress: values.requestAddress,
           requestSpecialNotes: values.requestSpecialNotes,
           requestConsent: values.requestConsent,
@@ -6462,8 +6635,11 @@ import {
         closeModal();
         await refreshCloudState();
       } else {
-        const day = KOREAN_WEEKDAYS[desiredStart.getDay()];
-        state.serviceRequests.push({ id: `massage-request-${Date.now()}`, requestKind: "NEW", serviceType: "MASSAGE", clientId: client.id, userId: user.id, status: "PENDING", weeks: sessionCount, durationMinutes, sessionCount, pricingTier: expectedTier, estimatedTotal: massagePrice({ pricingTier: expectedTier, durationMinutes, sessionCount }), depositAmount: massagePrice({ pricingTier: expectedTier, durationMinutes, sessionCount }), depositStatus: "DUE_ON_APPROVAL", desiredStartDate: desiredStart.toISOString(), dailyStart: values.requestedDailyStart, dailyEnd: requestedDailyEnd, daysOfWeek: [day], address: values.requestAddress.trim(), specialNotes: values.requestSpecialNotes?.trim() || "", createdAt: new Date().toISOString() });
+        const requestId = `massage-request-${Date.now()}`;
+        const first = selected[0];
+        state.serviceRequests.push({ id: requestId, requestKind: "NEW", serviceType: "MASSAGE", clientId: client.id, userId: user.id, status: "PENDING", weeks: sessionCount, durationMinutes, sessionCount, pricingTier: expectedTier, estimatedTotal: massagePrice({ pricingTier: expectedTier, durationMinutes, sessionCount }), depositAmount: massagePrice({ pricingTier: expectedTier, durationMinutes, sessionCount }), depositStatus: "DUE_ON_APPROVAL", desiredStartDate: first.startsAt, dailyStart: timeLabel(first.startsAt), dailyEnd: timeLabel(first.endsAt), daysOfWeek: [...new Set(selected.map((slot) => KOREAN_WEEKDAYS[new Date(slot.startsAt).getDay()]))], address: values.requestAddress.trim(), specialNotes: values.requestSpecialNotes?.trim() || "", createdAt: new Date().toISOString() });
+        state.massageBookings = state.massageBookings || [];
+        selected.forEach((slot, index) => state.massageBookings.push({ id: `massage-session-${Date.now()}-${index}`, requestId, clientId: client.id, caregiverId: slot.caregiverId, caregiverUserId: slot.caregiverUserId, sessionNumber: index + 1, startsAt: slot.startsAt, endsAt: slot.endsAt, status: "PENDING", durationMinutes, pricingTier: expectedTier, address: values.requestAddress.trim(), specialNotes: values.requestSpecialNotes?.trim() || "", createdAt: new Date().toISOString() }));
         saveState();
         closeModal();
         render();
@@ -6473,6 +6649,152 @@ import {
       showToast(friendlyErrorMessage(error, "마사지 예약 요청을 저장하지 못했습니다."), "error");
       button.disabled = false;
       button.textContent = "마사지 예약 요청";
+    }
+  }
+
+  function mondayDateKey(value) {
+    const date = startOfLocalDay(new Date(`${value}T12:00:00`));
+    const day = date.getDay();
+    date.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
+    return localDateKey(date);
+  }
+
+  async function saveMassageAvailability(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const weekdays = formData.getAll("weekday").map(Number);
+    const weekStart = mondayDateKey(formData.get("weekStart"));
+    const startTime = String(formData.get("startTime"));
+    const endTime = String(formData.get("endTime"));
+    if (!weekdays.length) return showToast("근무 가능한 요일을 한 개 이상 선택해 주세요.", "error");
+    if (startTime < "09:00" || endTime > "20:00" || startTime >= endTime) return showToast("마사지 근무시간은 09:00–20:00 안에서 설정해 주세요.", "error");
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    button.textContent = "저장 중…";
+    try {
+      if (usingCloudData()) {
+        await saveMassageAvailabilityCloud({ weekStart, weekdays, startTime, endTime });
+        await refreshCloudState();
+      } else {
+        const user = authUser();
+        const caregiverId = user?.caregiverId;
+        state.massageAvailability = state.massageAvailability || [];
+        const selectedDates = weekdays.map((weekday) => { const date = new Date(`${weekStart}T12:00:00`); date.setDate(date.getDate() + weekday - 1); return localDateKey(date); });
+        state.massageAvailability = state.massageAvailability.filter((item) => item.caregiverId !== caregiverId || !selectedDates.includes(item.availableDate));
+        selectedDates.forEach((availableDate, index) => state.massageAvailability.push({ id: `massage-availability-${Date.now()}-${index}`, caregiverId, caregiverUserId: user.id, availableDate, startTime, endTime, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }));
+        saveState();
+        render();
+      }
+      showToast("주간 마사지 근무 가능시간을 저장했습니다.");
+    } catch (error) {
+      showToast(friendlyErrorMessage(error, "근무 가능시간을 저장하지 못했습니다."), "error");
+      button.disabled = false;
+      button.textContent = "이 주의 가능시간 저장";
+    }
+  }
+
+  async function deleteMassageAvailability(availabilityId) {
+    try {
+      if (usingCloudData()) {
+        await deleteMassageAvailabilityCloud(availabilityId);
+        await refreshCloudState();
+      } else {
+        state.massageAvailability = (state.massageAvailability || []).filter((item) => item.id !== availabilityId);
+        saveState();
+        render();
+      }
+      showToast("근무 가능시간을 삭제했습니다.");
+    } catch (error) {
+      showToast(friendlyErrorMessage(error, "근무 가능시간을 삭제하지 못했습니다."), "error");
+    }
+  }
+
+  async function openMassageSessionChangeModal(sessionId) {
+    const user = authUser();
+    const client = clientForUser(user?.id);
+    const booking = (state.massageBookings || []).find((item) => item.id === sessionId && item.clientId === client?.id);
+    if (!booking || booking.status !== "CONFIRMED") return showToast("변경할 수 있는 마사지 일정이 아닙니다.", "error");
+    if (hoursUntil(booking.startsAt) <= MASSAGE_CHANGE_NOTICE_HOURS) return showToast("마사지 변경·취소는 시작 24시간 이전까지만 가능합니다.", "error");
+    const earliest = new Date();
+    earliest.setDate(earliest.getDate() + 2);
+    const latest = new Date(earliest);
+    latest.setDate(latest.getDate() + 55);
+    let slots = [];
+    try {
+      slots = await massageAvailableSlots(booking.durationMinutes || 60, localDateKey(earliest), localDateKey(latest));
+    } catch (error) {
+      return showToast(friendlyErrorMessage(error, "변경 가능한 시간을 불러오지 못했습니다."), "error");
+    }
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal compact-modal" role="dialog" aria-modal="true" aria-labelledby="massage-change-title"><header class="modal-header"><div><p class="eyebrow">MASSAGE CHANGE</p><h3 id="massage-change-title">마사지 일정 변경·취소</h3><p>${escapeHtml(massageBookingDateTime(booking))}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-massage-session-change-form><div class="option-grid two"><label class="radio-option"><input type="radio" name="action" value="CHANGE" checked/><span><strong>일정 변경</strong><small>다른 예약 가능시간 선택</small></span></label><label class="radio-option"><input type="radio" name="action" value="CANCEL"/><span><strong>예약 취소</strong><small>해당 회차만 취소 요청</small></span></label></div><div class="field" data-massage-change-slot><label for="massage-change-slot">새 예약 가능시간</label><select id="massage-change-slot" name="slotId" required>${slots.length ? slots.map((slot) => `<option value="${escapeHtml(slot.id)}">${escapeHtml(massageSlotLabel(slot))}</option>`).join("") : `<option value="">예약 가능한 시간이 없습니다</option>`}</select></div><div class="field"><label for="massage-change-reason">변경·취소 사유</label><textarea id="massage-change-reason" name="reason" minlength="2" maxlength="500" required></textarea></div><div class="status-banner info"><strong>24시간 이전 요청</strong><span>요청은 관리자가 승인한 뒤 일정에 반영됩니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">관리자에게 요청</button></div></form></section></div>`;
+    const form = modalRoot.querySelector("[data-massage-session-change-form]");
+    const toggle = () => {
+      const changing = form.elements.action.value === "CHANGE";
+      form.querySelector("[data-massage-change-slot]").hidden = !changing;
+      form.elements.slotId.required = changing;
+    };
+    form.querySelectorAll('input[name="action"]').forEach((input) => input.addEventListener("change", toggle));
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(form).entries());
+      const slot = slots.find((item) => item.id === values.slotId) || null;
+      if (values.action === "CHANGE" && !slot) return showToast("변경할 예약 가능시간을 선택해 주세요.", "error");
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      button.textContent = "요청 저장 중…";
+      try {
+        if (usingCloudData()) {
+          await submitMassageBookingChangeCloud({ sessionId, action: values.action, reason: values.reason, slot });
+          closeModal();
+          await refreshCloudState();
+        } else {
+          state.massageBookingChanges = state.massageBookingChanges || [];
+          state.massageBookingChanges.push({ id: `massage-change-${Date.now()}`, sessionId, requestedBy: user.id, action: values.action, proposedCaregiverId: slot?.caregiverId || null, proposedStartsAt: slot?.startsAt || null, proposedEndsAt: slot?.endsAt || null, reason: values.reason.trim(), status: "PENDING", createdAt: new Date().toISOString() });
+          saveState();
+          closeModal();
+          render();
+        }
+        showToast("마사지 일정 변경·취소 요청을 접수했습니다.");
+      } catch (error) {
+        showToast(friendlyErrorMessage(error, "마사지 일정 요청을 저장하지 못했습니다."), "error");
+        button.disabled = false;
+        button.textContent = "관리자에게 요청";
+      }
+    });
+    bindModalFrame();
+    toggle();
+  }
+
+  async function reviewMassageBookingChange(changeId, approve) {
+    const change = (state.massageBookingChanges || []).find((item) => item.id === changeId && item.status === "PENDING");
+    if (!change) return showToast("이미 처리되었거나 찾을 수 없는 요청입니다.", "error");
+    try {
+      if (usingCloudData()) {
+        await reviewMassageBookingChangeCloud(changeId, approve, approve ? "관리자 승인" : "관리자 반려");
+        await refreshCloudState();
+      } else {
+        const booking = (state.massageBookings || []).find((item) => item.id === change.sessionId);
+        change.status = approve ? "APPROVED" : "REJECTED";
+        change.reviewedAt = new Date().toISOString();
+        change.reviewedBy = authUser()?.id;
+        if (approve && booking) {
+          if (change.action === "CANCEL") {
+            booking.status = "CANCELLED";
+            booking.cancelledAt = new Date().toISOString();
+            booking.cancellationReason = change.reason;
+          } else {
+            booking.caregiverId = change.proposedCaregiverId;
+            booking.caregiverUserId = state.users.find((item) => item.caregiverId === change.proposedCaregiverId)?.id || booking.caregiverUserId;
+            booking.startsAt = change.proposedStartsAt;
+            booking.endsAt = change.proposedEndsAt;
+          }
+        }
+        saveState();
+        render();
+      }
+      showToast(`마사지 일정 요청을 ${approve ? "승인" : "반려"}했습니다.`);
+    } catch (error) {
+      showToast(friendlyErrorMessage(error, "마사지 일정 요청을 처리하지 못했습니다."), "error");
     }
   }
 
@@ -6632,14 +6954,22 @@ import {
     const periodMarkup = serviceType === "MASSAGE"
       ? `${request.sessionCount || 1}회 · ${formatDate(startAt)}${Number(request.sessionCount || 1) > 1 ? `–${formatDate(endAt)}` : ""}`
       : `${request.weeks}주 · ${formatDate(startAt)}–${formatDate(endAt)}`;
+    const massageSessions = serviceType === "MASSAGE"
+      ? (state.massageBookings || []).filter((booking) => booking.requestId === request.id && booking.status === "PENDING").sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt))
+      : [];
+    const massageSlotReviewMarkup = serviceType === "MASSAGE"
+      ? `<div class="wide"><span>고객 선택 슬롯</span><strong class="massage-review-slots">${massageSessions.length ? massageSessions.map((booking) => `${booking.sessionNumber}회차 · ${escapeHtml(massageBookingDateTime(booking))} · ${escapeHtml(state.users.find((user) => user.caregiverId === booking.caregiverId)?.fullName || "테라피스트")}`).join("<br/>") : "선택 슬롯을 찾을 수 없음"}</strong></div>`
+      : "";
+    const approvalNoticeTitle = serviceType === "MASSAGE" ? "승인과 동시에 마사지 일정 확정" : "승인 후 일정·배정 메뉴로 이동";
+    const approvalNoticeDetail = serviceType === "MASSAGE" ? "선택된 모든 슬롯을 다시 검증한 뒤 해당 테라피스트의 마사지 캘린더에 확정합니다." : "일정 중복 검증을 통과했습니다. 승인된 신청은 캘린더의 ‘일정 배치 대기’ 목록에 자동으로 표시됩니다.";
     const productMarkup = serviceType === "POSTPARTUM"
       ? `<div><span>상품·예상 비용</span><strong>${postpartumModeFor(request) === "LIVE_IN" ? "입주형" : "출퇴근형"} · ${money(requestServiceTotal(request))} · 주 ${money(postpartumWeeklyRate(request))}</strong></div>`
       : serviceType === "MASSAGE"
         ? `<div><span>상품·결제 금액</span><strong>${request.durationMinutes || 60}분 × ${request.sessionCount || 1}회 · ${money(requestServiceTotal(request))}</strong></div><div><span>가격 구분</span><strong>${request.pricingTier === "POSTPARTUM_CLIENT" ? "산후조리 예약·이용 고객 우대가" : "일반 고객가"}</strong></div>`
         : `<div><span>예상 서비스 비용</span><strong>${money(requestServiceTotal(request))} · 시간당 $${BABYSITTING_HOURLY_RATE}</strong></div>`;
     modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal assignment-modal" role="dialog" aria-modal="true" aria-labelledby="client-request-title"><header class="modal-header"><div>${serviceBadgeMarkup(request.serviceType)}<h3 id="client-request-title">${serviceMetaFor(request.serviceType).label} 신청 검토·승인</h3><p>${escapeHtml(client.motherName)}${serviceType === "MASSAGE" ? "" : ` · ${escapeHtml(requestBabyName)}`}</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-client-request-form>
-      <div class="request-review-grid"><div><span>${serviceType === "MASSAGE" ? "예약 구성" : "희망 기간"}</span><strong>${periodMarkup}</strong></div><div><span>방문 시간</span><strong>${request.dailyStart}–${request.dailyEnd}</strong></div><div><span>${serviceType === "MASSAGE" ? "예약 요일" : "희망 요일"}</span><strong>${escapeHtml((request.daysOfWeek || []).join(" · ") || "미지정")}</strong></div>${serviceType === "MASSAGE" ? "" : `<div><span>출생/출산(예정)일</span><strong>${formatDate(request.birthOrDueDate)}</strong></div><div><span>추가인원</span><strong>${request.extraHouseholdMembers}명</strong></div>`}${productMarkup}<div class="wide"><span>주소</span><strong>${escapeHtml(request.address)}</strong></div>${serviceType === "MASSAGE" ? "" : `<div class="wide"><span>알러지</span><strong>${escapeHtml(request.allergies)}</strong></div>`}${serviceType === "BABYSITTING" ? `<div class="wide"><span>식사·간식 지침</span><strong>${escapeHtml(request.mealInstructions || "없음")}</strong></div><div class="wide"><span>생활 루틴·인계</span><strong>${escapeHtml([request.routineNotes, request.pickupNotes].filter(Boolean).join(" · ") || "없음")}</strong></div>` : serviceType === "POSTPARTUM" ? `<div class="wide"><span>산모 상태·회복 요청</span><strong>${escapeHtml(request.maternalNotes || "없음")}</strong></div>` : ""}<div class="wide"><span>특이사항·요청</span><strong>${escapeHtml(request.specialNotes || "없음")}</strong></div></div>
-      <div class="insured-contract-note"><strong>회사 운영 원칙</strong><span>책임보상보험 · 근로자재해보험 · W-2 정식 직원 운영 원칙이 서비스에 적용됩니다.</span></div>${lifecycleIssue ? `<div class="status-banner warning">${escapeHtml(lifecycleIssue.message)}</div>` : `<div class="privacy-boundary-note"><strong>승인 후 일정·배정 메뉴로 이동</strong><span>일정 중복 검증을 통과했습니다. 승인된 신청은 캘린더의 ‘일정 배치 대기’ 목록에 자동으로 표시됩니다.</span></div>`}
+      <div class="request-review-grid"><div><span>${serviceType === "MASSAGE" ? "예약 구성" : "희망 기간"}</span><strong>${periodMarkup}</strong></div>${serviceType === "MASSAGE" ? "" : `<div><span>방문 시간</span><strong>${request.dailyStart}–${request.dailyEnd}</strong></div><div><span>희망 요일</span><strong>${escapeHtml((request.daysOfWeek || []).join(" · ") || "미지정")}</strong></div>`}${serviceType === "MASSAGE" ? "" : `<div><span>출생/출산(예정)일</span><strong>${formatDate(request.birthOrDueDate)}</strong></div><div><span>추가인원</span><strong>${request.extraHouseholdMembers}명</strong></div>`}${productMarkup}<div class="wide"><span>주소</span><strong>${escapeHtml(request.address)}</strong></div>${serviceType === "MASSAGE" ? "" : `<div class="wide"><span>알러지</span><strong>${escapeHtml(request.allergies)}</strong></div>`}${serviceType === "BABYSITTING" ? `<div class="wide"><span>식사·간식 지침</span><strong>${escapeHtml(request.mealInstructions || "없음")}</strong></div><div class="wide"><span>생활 루틴·인계</span><strong>${escapeHtml([request.routineNotes, request.pickupNotes].filter(Boolean).join(" · ") || "없음")}</strong></div>` : serviceType === "POSTPARTUM" ? `<div class="wide"><span>산모 상태·회복 요청</span><strong>${escapeHtml(request.maternalNotes || "없음")}</strong></div>` : ""}<div class="wide"><span>특이사항·요청</span><strong>${escapeHtml(request.specialNotes || "없음")}</strong></div>${massageSlotReviewMarkup}</div>
+      <div class="insured-contract-note"><strong>회사 운영 원칙</strong><span>책임보상보험 · 근로자재해보험 · W-2 정식 직원 운영 원칙이 서비스에 적용됩니다.</span></div>${lifecycleIssue ? `<div class="status-banner warning">${escapeHtml(lifecycleIssue.message)}</div>` : `<div class="privacy-boundary-note"><strong>${approvalNoticeTitle}</strong><span>${approvalNoticeDetail}</span></div>`}
       <div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button" ${lifecycleIssue ? "disabled" : ""}>서비스 신청 승인</button></div>
     </form></section></div>`;
     const requestDeposit = Number(request.depositAmount || (serviceType === "POSTPARTUM" ? POSTPARTUM_DEPOSIT : serviceType === "BABYSITTING" ? BABYSITTING_DEPOSIT : requestServiceTotal(request)));
@@ -6647,7 +6977,7 @@ import {
     const reviewForm = modalRoot.querySelector("[data-client-request-form]");
     const reviewActions = reviewForm.querySelector(".form-actions");
     reviewActions.classList.add("request-review-actions");
-    reviewActions.insertAdjacentHTML("beforebegin", `<div class="field"><label for="request-review-note">검토 메모·반려 사유</label><textarea id="request-review-note" name="reviewNote" placeholder="반려할 때는 고객이 이해할 수 있는 사유를 반드시 입력해 주세요."></textarea></div><fieldset class="deposit-confirmation"><legend>예약금 수납 기록</legend><p><strong>$${requestDeposit.toLocaleString("en-US")} 수납 근거를 기록해야 승인할 수 있습니다.</strong><small>${depositPolicyCopy} 정책이 적용됩니다.</small></p><div class="form-grid three"><div class="field"><label for="request-payment-date">실제 수납일</label><input id="request-payment-date" name="paymentDate" type="date" value="${localDateKey(new Date())}" max="${localDateKey(new Date())}" required/><small>뒤늦게 입력해도 실제 받은 날짜로 수입에 반영됩니다.</small></div><div class="field"><label for="request-payment-method">결제 수단</label><select id="request-payment-method" name="paymentMethod" required><option value="">선택해 주세요</option><option value="CARD">카드</option><option value="ACH">ACH 계좌이체</option><option value="CASH">현금</option><option value="CHECK">수표</option><option value="OTHER">기타</option></select></div><div class="field"><label for="request-payment-reference">거래·영수증 번호</label><input id="request-payment-reference" name="paymentReference" minlength="3" maxlength="255" autocomplete="off" placeholder="결제사 거래번호 또는 수기 영수증 번호" required/><small>고유한 번호를 입력해 중복 수납을 방지합니다.</small></div></div></fieldset>`);
+    reviewActions.insertAdjacentHTML("beforebegin", `<div class="field"><label for="request-review-note">검토 메모·반려 사유</label><textarea id="request-review-note" name="reviewNote" placeholder="반려할 때는 고객이 이해할 수 있는 사유를 반드시 입력해 주세요."></textarea></div><fieldset class="deposit-confirmation"><legend>${serviceType === "MASSAGE" ? "마사지 서비스 결제 수납 기록" : "예약금 수납 기록"}</legend><p><strong>$${requestDeposit.toLocaleString("en-US")} 수납 근거를 기록해야 승인할 수 있습니다.</strong><small>${depositPolicyCopy} 정책이 적용됩니다.</small></p><div class="form-grid three"><div class="field"><label for="request-payment-date">실제 수납일</label><input id="request-payment-date" name="paymentDate" type="date" value="${localDateKey(new Date())}" max="${localDateKey(new Date())}" required/><small>뒤늦게 입력해도 실제 받은 날짜로 수입에 반영됩니다.</small></div><div class="field"><label for="request-payment-method">결제 수단</label><select id="request-payment-method" name="paymentMethod" required><option value="">선택해 주세요</option><option value="CARD">카드</option><option value="ACH">ACH 계좌이체</option><option value="CASH">현금</option><option value="CHECK">수표</option><option value="OTHER">기타</option></select></div><div class="field"><label for="request-payment-reference">거래·영수증 번호</label><input id="request-payment-reference" name="paymentReference" minlength="3" maxlength="255" autocomplete="off" placeholder="결제사 거래번호 또는 수기 영수증 번호" required/><small>고유한 번호를 입력해 중복 수납을 방지합니다.</small></div></div></fieldset>`);
     reviewActions.querySelector('button[type="submit"]').insertAdjacentHTML("beforebegin", `<button type="button" class="secondary-button" data-reject-client-request="${request.id}">신청 반려</button>`);
     bindModalFrame();
     reviewForm.addEventListener("submit", (event) => approveClientRequest(event, request.id));

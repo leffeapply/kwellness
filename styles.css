@@ -7147,3 +7147,194 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
     font-size: 40px;
   }
 }
+
+.massage-slot-section .section-header {
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.massage-slot-section .section-header h4 {
+  margin: 0 0 5px;
+}
+
+.massage-slot-section .section-header p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.massage-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.massage-slot-option {
+  position: relative;
+}
+
+.massage-slot-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.massage-slot-option span {
+  display: grid;
+  min-height: 68px;
+  align-content: center;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
+
+.massage-slot-option span:hover {
+  border-color: var(--green-2);
+  transform: translateY(-1px);
+}
+
+.massage-slot-option strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.massage-slot-option small {
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+
+.massage-slot-option.selected span,
+.massage-slot-option input:checked + span {
+  border-color: var(--green-2);
+  background: var(--mint-light);
+  box-shadow: inset 0 0 0 1px var(--green-2);
+}
+
+.massage-slot-option input:disabled + span {
+  opacity: .42;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.massage-selected-slots {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  padding: 13px 14px;
+  border: 1px solid #d4e5de;
+  border-radius: 14px;
+  color: var(--ink-soft);
+  background: #f2f8f5;
+}
+
+.massage-selected-slots > strong {
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.massage-selected-slots > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(22, 82, 74, .1);
+  font-size: 10px;
+}
+
+.massage-booking-list,
+.availability-list {
+  display: grid;
+  gap: 10px;
+}
+
+.massage-review-slots {
+  line-height: 1.8;
+}
+
+.massage-booking-card,
+.massage-change-row,
+.availability-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(160px, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.massage-change-row {
+  grid-template-columns: minmax(240px, 1.5fr) minmax(200px, 1fr) auto;
+}
+
+.availability-row {
+  grid-template-columns: 1fr auto;
+}
+
+.massage-booking-card > div,
+.massage-change-row > div,
+.availability-row > div {
+  display: grid;
+  gap: 4px;
+}
+
+.massage-booking-card span,
+.massage-booking-card small,
+.massage-change-row span,
+.massage-change-row small,
+.availability-row span {
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+
+.massage-booking-card.pending {
+  border-color: #e9d4a5;
+  background: #fffaf0;
+}
+
+.massage-booking-card.cancelled {
+  opacity: .62;
+}
+
+.month-event.massage {
+  border-left-color: #a96a85;
+  background: #f8eef3;
+}
+
+.availability-editor {
+  margin-top: 18px;
+}
+
+@media (max-width: 860px) {
+  .massage-slot-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .massage-booking-card,
+  .massage-change-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .massage-booking-card .management-actions,
+  .massage-change-row .management-actions {
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .massage-slot-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .massage-selected-slots > div {
+    align-items: flex-start;
+  }
+}

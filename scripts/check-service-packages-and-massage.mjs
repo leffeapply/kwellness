@@ -4,7 +4,8 @@ import { strict as assert } from "node:assert";
 const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const cloud = readFileSync(new URL("../cloud-data.js", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
-const migration = readFileSync(new URL("../supabase/migrations/043_service_packages_and_massage_booking.sql", import.meta.url), "utf8");
+const enumMigration = readFileSync(new URL("../supabase/migrations/043_add_massage_service_type.sql", import.meta.url), "utf8");
+const migration = readFileSync(new URL("../supabase/migrations/044_service_packages_and_massage_booking.sql", import.meta.url), "utf8");
 
 const appRules = [
   "const POSTPARTUM_WEEKLY_RATE = 1800",
@@ -15,8 +16,10 @@ const appRules = [
   "data-postpartum-mode=\"LIVE_IN\"",
   "data-massage-book",
   "name=\"massageTherapist\"",
-  "massageTherapistIsAvailable",
-  "(Math.max(1, sessionCount) - 1) * 7",
+  "therapistAvailabilityPage",
+  "therapistMassageCalendar",
+  "data-massage-slot",
+  "data-massage-session-change",
   "MASSAGE_CHANGE_NOTICE_HOURS = 24",
 ];
 appRules.forEach((rule) => assert.ok(app.includes(rule), `app.js is missing: ${rule}`));
@@ -24,8 +27,14 @@ appRules.forEach((rule) => assert.ok(app.includes(rule), `app.js is missing: ${r
 assert.ok(css.includes("grid-auto-flow: column"), "service cards must flow horizontally");
 assert.ok(css.includes("scroll-snap-type: x mandatory"), "service cards must use horizontal snap scrolling");
 assert.ok(css.includes(".massage-plan-options"), "massage product selector styles are missing");
+assert.ok(css.includes(".massage-slot-grid"), "massage availability slot styles are missing");
 
 [
+  "available_massage_slots",
+  "save_my_massage_availability",
+  "submit_massage_service_request",
+  "submit_massage_booking_change",
+  "review_massage_booking_change",
   "submit_promoms_service_request",
   "review_promoms_service_request",
   "schedule_promoms_service_request",
@@ -35,8 +44,12 @@ assert.ok(css.includes(".massage-plan-options"), "massage product selector style
 ].forEach((rpc) => assert.ok(cloud.includes(`\"${rpc}\"`), `cloud-data.js is missing RPC ${rpc}`));
 
 [
-  "alter type public.care_service_type add value if not exists 'MASSAGE'",
   "is_massage_therapist",
+  "massage_therapist_availability",
+  "massage_booking_sessions",
+  "interval '1 hour'",
+  "time '09:00'",
+  "time '20:00'",
   "client_has_postpartum_member_rate",
   "massage_therapist_schedule_is_available",
   "existing_contract.client_id <> p_client_id or existing_assignment.service_type::text = 'MASSAGE'",
@@ -45,4 +58,7 @@ assert.ok(css.includes(".massage-plan-options"), "massage product selector style
   "new.weekly_rate := 2100.00",
 ].forEach((rule) => assert.ok(migration.includes(rule), `migration is missing: ${rule}`));
 
-console.log("Service package, pricing, therapist capability, scheduling, and 24-hour massage policy checks passed.");
+assert.ok(enumMigration.includes("alter type public.care_service_type add value if not exists 'MASSAGE'"), "MASSAGE enum migration is missing");
+assert.ok(!app.includes("매주 같은 요일·시간"), "massage packages must not force a recurring weekday and time");
+
+console.log("Service packages, therapist weekly availability, buffered slots, dedicated calendars, and approval workflow checks passed.");
