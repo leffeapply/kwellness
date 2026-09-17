@@ -269,6 +269,11 @@ import {
         caregiver: { POSTPARTUM: "today", BABYSITTING: "today" },
       },
       peopleDirectory: {
+        activeSection: "members",
+        memberQuery: "",
+        memberSort: "newest",
+        memberPage: 1,
+        memberPageSize: 10,
         clientQuery: "",
         clientSort: "mother-asc",
         clientPage: 1,
@@ -323,6 +328,11 @@ import {
         caregiver: { POSTPARTUM: "today", BABYSITTING: "today" },
       },
       peopleDirectory: {
+        activeSection: "members",
+        memberQuery: "",
+        memberSort: "newest",
+        memberPage: 1,
+        memberPageSize: 10,
         clientQuery: "",
         clientSort: "mother-asc",
         clientPage: 1,
@@ -1809,15 +1819,22 @@ import {
       if (isVisible) pageItems.push(page);
       else if (pageItems[pageItems.length - 1] !== null) pageItems.push(null);
     }
-    return `<footer class="directory-pagination"><span class="directory-count">총 ${pagination.totalItems}명 · ${pagination.page}/${pagination.totalPages} 페이지</span><nav class="pagination-pages" aria-label="${scope === "client" ? "고객" : "관리사"} 목록 페이지"><button type="button" class="page-button page-arrow" data-directory-page="${scope}" data-page="${pagination.page - 1}" ${pagination.page === 1 ? "disabled" : ""} aria-label="이전 페이지">‹</button>${pageItems.map((page, index) => page === null ? `<span class="page-ellipsis" aria-hidden="true" data-ellipsis-index="${index}">…</span>` : `<button type="button" class="page-button ${page === pagination.page ? "current" : ""}" data-directory-page="${scope}" data-page="${page}" ${page === pagination.page ? 'aria-current="page"' : ""}>${page}</button>`).join("")}<button type="button" class="page-button page-arrow" data-directory-page="${scope}" data-page="${pagination.page + 1}" ${pagination.page === pagination.totalPages ? "disabled" : ""} aria-label="다음 페이지">›</button></nav></footer>`;
+    const scopeLabel = scope === "client" ? "고객" : scope === "caregiver" ? "관리사" : "회원";
+    return `<footer class="directory-pagination"><span class="directory-count">총 ${pagination.totalItems}명 · ${pagination.page}/${pagination.totalPages} 페이지</span><nav class="pagination-pages" aria-label="${scopeLabel} 목록 페이지"><button type="button" class="page-button page-arrow" data-directory-page="${scope}" data-page="${pagination.page - 1}" ${pagination.page === 1 ? "disabled" : ""} aria-label="이전 페이지">‹</button>${pageItems.map((page, index) => page === null ? `<span class="page-ellipsis" aria-hidden="true" data-ellipsis-index="${index}">…</span>` : `<button type="button" class="page-button ${page === pagination.page ? "current" : ""}" data-directory-page="${scope}" data-page="${page}" ${page === pagination.page ? 'aria-current="page"' : ""}>${page}</button>`).join("")}<button type="button" class="page-button page-arrow" data-directory-page="${scope}" data-page="${pagination.page + 1}" ${pagination.page === pagination.totalPages ? "disabled" : ""} aria-label="다음 페이지">›</button></nav></footer>`;
   }
 
   function directoryToolbarMarkup(scope, query, sort, pageSize) {
     const isClient = scope === "client";
-    const sortOptions = isClient
+    const isMember = scope === "member";
+    const directoryLabel = isClient ? "고객·아기" : isMember ? "회원" : "관리사";
+    const sortOptions = isMember
+      ? [["newest", "최근 가입순"], ["oldest", "오래된 가입순"], ["name-asc", "회원 이름 가나다순"], ["name-desc", "회원 이름 역순"]]
+      : isClient
       ? [["mother-asc", "고객 이름 가나다순"], ["mother-desc", "고객 이름 역순"], ["baby-asc", "아기 이름 가나다순"], ["baby-desc", "아기 이름 역순"], ["care-newest", "관리 년월 최신순"], ["care-oldest", "관리 년월 오래된순"]]
       : [["name-asc", "관리사 이름 가나다순"], ["name-desc", "관리사 이름 역순"], ["hire-newest", "입사년월 최신순"], ["hire-oldest", "입사년월 오래된순"], ["residence-asc", "거주지역 가나다순"], ["residence-desc", "거주지역 역순"]];
-    return `<div class="directory-toolbar"><form class="directory-search-form" data-directory-search="${scope}"><label class="sr-only" for="${scope}-directory-search">${isClient ? "고객·아기" : "관리사"} 검색</label><input id="${scope}-directory-search" name="query" type="search" value="${escapeHtml(query)}" placeholder="${isClient ? "고객·아기 이름, 연락처 검색" : "이름, 지역, 자격 검색"}" /><button type="submit" class="secondary-button mini-button">검색</button>${query ? `<button type="button" class="text-button directory-clear" data-clear-directory-search="${scope}">초기화</button>` : ""}</form><div class="directory-filter-group"><label for="${scope}-directory-sort">정렬</label><select id="${scope}-directory-sort" data-directory-sort="${scope}">${sortOptions.map(([value, label]) => `<option value="${value}" ${value === sort ? "selected" : ""}>${label}</option>`).join("")}</select><label for="${scope}-directory-size">표시</label><select id="${scope}-directory-size" data-directory-size="${scope}">${[2, 5, 10, 20].map((size) => `<option value="${size}" ${Number(pageSize) === size ? "selected" : ""}>${size}명</option>`).join("")}</select></div></div>`;
+    const searchPlaceholder = isClient ? "고객·아기 이름, 연락처 검색" : isMember ? "이름, 이메일, 권한, 상태 검색" : "이름, 지역, 자격 검색";
+    const pageSizes = isMember ? [5, 10, 20, 50] : [2, 5, 10, 20];
+    return `<div class="directory-toolbar"><form class="directory-search-form" data-directory-search="${scope}"><label class="sr-only" for="${scope}-directory-search">${directoryLabel} 검색</label><input id="${scope}-directory-search" name="query" type="search" value="${escapeHtml(query)}" placeholder="${searchPlaceholder}" /><button type="submit" class="secondary-button mini-button">검색</button>${query ? `<button type="button" class="text-button directory-clear" data-clear-directory-search="${scope}">초기화</button>` : ""}</form><div class="directory-filter-group"><label for="${scope}-directory-sort">정렬</label><select id="${scope}-directory-sort" data-directory-sort="${scope}">${sortOptions.map(([value, label]) => `<option value="${value}" ${value === sort ? "selected" : ""}>${label}</option>`).join("")}</select><label for="${scope}-directory-size">표시</label><select id="${scope}-directory-size" data-directory-size="${scope}">${pageSizes.map((size) => `<option value="${size}" ${Number(pageSize) === size ? "selected" : ""}>${size}명</option>`).join("")}</select></div></div>`;
   }
 
   function clientManagementRowMarkup(client) {
@@ -2347,9 +2364,23 @@ import {
     const pendingCaregivers = state.users.filter(isCaregiverPendingApproval);
     const caregivers = state.users.filter((user) => usingCloudData() ? user.databaseRoles?.includes("CAREGIVER") : user.role === "caregiver");
     const activeClients = state.clients.filter((client) => (client.clientStatus || "ACTIVE") === "ACTIVE");
-    const directory = state.peopleDirectory;
+    const directory = state.peopleDirectory || {};
+    const activeSection = ["members", "clients", "caregivers"].includes(directory.activeSection) ? directory.activeSection : "members";
+    const memberQuery = normalizeDirectorySearch(directory.memberQuery);
     const clientQuery = normalizeDirectorySearch(directory.clientQuery);
     const caregiverQuery = normalizeDirectorySearch(directory.caregiverQuery);
+    const members = [...state.users]
+      .filter((user) => {
+        if (!memberQuery) return true;
+        const searchable = [user.fullName, user.email, user.login, user.phone, user.role, ...(user.databaseRoles || []), user.status, user.accountStatus].join(" ");
+        return normalizeDirectorySearch(searchable).includes(memberQuery);
+      })
+      .sort((first, second) => {
+        if (directory.memberSort === "oldest") return compareDirectoryDate(first.createdAt, second.createdAt, false);
+        if (directory.memberSort === "name-asc") return compareDirectoryText(first.fullName, second.fullName);
+        if (directory.memberSort === "name-desc") return compareDirectoryText(first.fullName, second.fullName, true);
+        return compareDirectoryDate(first.createdAt, second.createdAt, true);
+      });
     const clients = state.clients
       .filter((client) => {
         if (!clientQuery) return true;
@@ -2379,21 +2410,31 @@ import {
         if (directory.caregiverSort === "residence-desc") return compareDirectoryText(first.residentialArea, second.residentialArea, true);
         return compareDirectoryText(first.fullName, second.fullName);
       });
+    const memberPage = paginateDirectory(members, directory.memberPage, directory.memberPageSize || 10);
     const clientPage = paginateDirectory(clients, directory.clientPage, directory.clientPageSize);
     const caregiverPage = paginateDirectory(sortedCaregivers, directory.caregiverPage, directory.caregiverPageSize);
+    const memberCount = memberQuery ? `${members.length} / ${state.users.length} members` : `${state.users.length} members`;
     const clientCount = clientQuery ? `${clients.length} / ${state.clients.length} families` : `${state.clients.length} families`;
     const caregiverCount = caregiverQuery ? `${sortedCaregivers.length} / ${caregivers.length} people` : `${caregivers.length} people`;
-    const visibleMembers = [...state.users].sort((first, second) => new Date(second.createdAt || 0) - new Date(first.createdAt || 0));
-    const activeMemberCount = visibleMembers.filter((user) => user.accountStatus !== "REJECTED").length;
+    const activeMemberCount = state.users.filter((user) => user.accountStatus !== "REJECTED").length;
+    const sectionTabs = [
+      { id: "members", icon: "◎", label: "회원 데이터베이스", description: "권한·계정 상태", count: state.users.length },
+      { id: "clients", icon: "♡", label: "고객·아기 관리", description: "프로필·상담 정보", count: state.clients.length },
+      { id: "caregivers", icon: "♙", label: "관리사 관리", description: "인사·공개 프로필", count: caregivers.length },
+    ];
+    const sectionNav = `<nav class="people-section-tabs" role="tablist" aria-label="회원과 고객, 관리사 관리 메뉴">${sectionTabs.map((tab) => `<button type="button" id="people-tab-${tab.id}" class="people-section-tab ${activeSection === tab.id ? "active" : ""}" role="tab" aria-selected="${activeSection === tab.id}" aria-controls="people-panel" data-people-section="${tab.id}"><span class="people-section-tab-icon" aria-hidden="true">${tab.icon}</span><span><strong>${tab.label}</strong><small>${tab.description}</small></span><em>${tab.count}</em></button>`).join("")}</nav>`;
+    const memberPanel = `<article class="card card-pad management-directory member-governance"><div class="section-header"><div><p class="eyebrow">MEMBER DATABASE</p><h3>웹앱 회원 데이터베이스 관리</h3><p>회원 검색, 작업공간 권한 구성, 로그인 상태 관리를 이 화면에서 처리합니다.</p></div><span class="status-chip">${activeMemberCount} active · ${memberCount}</span></div>${directoryToolbarMarkup("member", directory.memberQuery || "", directory.memberSort || "newest", directory.memberPageSize || 10)}<div class="management-list">${memberPage.items.length ? memberPage.items.map(memberAccountRowMarkup).join("") : `<div class="directory-empty"><strong>검색 결과가 없습니다.</strong><span>회원 이름이나 이메일을 다시 확인해 주세요.</span></div>`}</div>${directoryPaginationMarkup("member", memberPage)}</article>`;
+    const clientPanel = `<article class="card card-pad management-directory"><div class="section-header"><div><p class="eyebrow">CLIENT CRM</p><h3>고객·아기 관리</h3><p>고객·아기 이름 또는 관리 년월로 찾고 상담·계약 정보를 관리합니다.</p></div><span class="status-chip">${clientCount}</span></div>${directoryToolbarMarkup("client", directory.clientQuery || "", directory.clientSort || "mother-asc", directory.clientPageSize || 5)}<div class="management-list">${clientPage.items.length ? clientPage.items.map(clientManagementRowMarkup).join("") : `<div class="directory-empty"><strong>검색 결과가 없습니다.</strong><span>검색어를 바꾸거나 초기화해 주세요.</span></div>`}</div>${directoryPaginationMarkup("client", clientPage)}</article>`;
+    const approvalPanel = pendingCaregivers.length ? `<article class="card card-pad approval-panel"><div class="section-header"><div><h3>승인 대기 관리사</h3><p>자격·경력 정보를 검토하고 인사정보를 보완한 후 승인하세요.</p></div><span class="status-chip coral">${pendingCaregivers.length} pending</span></div><div class="people-list">${pendingCaregivers.map((user) => `<div class="person-row pending-caregiver-row"><div class="mini-avatar">${escapeHtml(user.initials)}</div><div class="person-copy"><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email)} · ${escapeHtml(user.certification || "자격 정보 미입력")}</span></div><div class="management-actions"><button class="secondary-button mini-button" data-manage-caregiver="${user.id}">프로필 검토</button><button class="primary-button mini-button" data-approve-user="${user.id}">관리사 승인</button></div></div>`).join("")}</div></article>` : `<div class="status-banner success compact-status">✓ 현재 승인 대기 중인 관리사가 없습니다.</div>`;
+    const caregiverPanel = `${approvalPanel}<article class="card card-pad management-directory"><div class="section-header"><div><p class="eyebrow">CAREGIVER HR</p><h3>관리사 인사관리</h3><p>이름, 입사년월, 거주지역 기준으로 관리사를 빠르게 찾고 정렬합니다.</p></div><span class="status-chip">${caregiverCount}</span></div>${directoryToolbarMarkup("caregiver", directory.caregiverQuery || "", directory.caregiverSort || "name-asc", directory.caregiverPageSize || 5)}<div class="management-list">${caregiverPage.items.length ? caregiverPage.items.map(caregiverManagementRowMarkup).join("") : `<div class="directory-empty"><strong>검색 결과가 없습니다.</strong><span>검색어를 바꾸거나 초기화해 주세요.</span></div>`}</div>${directoryPaginationMarkup("caregiver", caregiverPage)}</article>`;
+    const activePanel = activeSection === "clients" ? clientPanel : activeSection === "caregivers" ? caregiverPanel : memberPanel;
     return `
-      <section class="page">
+      <section class="page people-admin-page">
         ${demoBanner()}
-        ${pageHeading("CLIENT CRM & PEOPLE", "고객·아기 관리 및 인사관리", "가입 승인부터 고객 상담 기록, 아기 정보, 관리사 경력과 근무 이력까지 한 곳에서 관리합니다.")}
+        ${pageHeading("PEOPLE OPERATIONS", "회원·고객·관리사 관리", "필요한 관리 항목만 선택해 집중해서 처리할 수 있습니다.")}
         <div class="grid stats people-stats">${statCard("Clients", state.clients.length, `${activeClients.length}명 서비스 관리 중`, "♡")}${statCard("Caregivers", caregivers.length, `${caregivers.filter((user) => user.status === "approved").length}명 승인됨`, "♙")}${statCard("Active assignments", state.assignments.filter(isAssignmentCurrent).length, "현재 진행 중", "◷")}${statCard("Caregiver approvals", pendingCaregivers.length, "관리사 계정 검토 필요", "!")}</div>
-        <article class="card card-pad management-directory member-governance"><div class="section-header"><div><p class="eyebrow">MEMBER DATABASE</p><h3>웹앱 회원 데이터베이스 관리</h3><p>권한 있는 운영 계정에서 회원 종류와 접근 상태를 관리합니다. 계정 보관은 운영 기록을 유지하면서 로그인과 데이터 접근을 차단합니다.</p></div><span class="status-chip">${activeMemberCount} active · ${visibleMembers.length} total</span></div><div class="management-list">${visibleMembers.length ? visibleMembers.map(memberAccountRowMarkup).join("") : `<div class="directory-empty"><strong>가입 회원이 없습니다.</strong></div>`}</div></article>
-        ${pendingCaregivers.length ? `<article class="card card-pad approval-panel"><div class="section-header"><div><h3>승인 대기 관리사</h3><p>자격·경력 정보를 검토하고 인사정보를 보완한 후 승인하세요.</p></div><span class="status-chip coral">${pendingCaregivers.length} pending</span></div><div class="people-list">${pendingCaregivers.map((user) => `<div class="person-row pending-caregiver-row"><div class="mini-avatar">${escapeHtml(user.initials)}</div><div class="person-copy"><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email)} · ${escapeHtml(user.certification || "자격 정보 미입력")}</span></div><div class="management-actions"><button class="secondary-button mini-button" data-manage-caregiver="${user.id}">프로필 검토</button><button class="primary-button mini-button" data-approve-user="${user.id}">관리사 승인</button></div></div>`).join("")}</div></article>` : `<div class="status-banner success">✓ 현재 승인 대기 중인 관리사가 없습니다.</div>`}
-        <article class="card card-pad management-directory"><div class="section-header"><div><p class="eyebrow">CLIENT CRM</p><h3>고객·아기 관리</h3><p>고객·아기 이름 또는 관리 년월로 찾고 정렬해 상담·계약 정보를 관리합니다.</p></div><span class="status-chip">${clientCount}</span></div>${directoryToolbarMarkup("client", directory.clientQuery, directory.clientSort, directory.clientPageSize)}<div class="management-list">${clientPage.items.length ? clientPage.items.map(clientManagementRowMarkup).join("") : `<div class="directory-empty"><strong>검색 결과가 없습니다.</strong><span>검색어를 바꾸거나 초기화해 주세요.</span></div>`}</div>${directoryPaginationMarkup("client", clientPage)}</article>
-        <article class="card card-pad management-directory"><div class="section-header"><div><p class="eyebrow">CAREGIVER HR</p><h3>관리사 인사관리</h3><p>이름, 입사년월, 거주지역 기준으로 관리사를 빠르게 찾고 정렬합니다.</p></div><span class="status-chip">${caregiverCount}</span></div>${directoryToolbarMarkup("caregiver", directory.caregiverQuery, directory.caregiverSort, directory.caregiverPageSize)}<div class="management-list">${caregiverPage.items.length ? caregiverPage.items.map(caregiverManagementRowMarkup).join("") : `<div class="directory-empty"><strong>검색 결과가 없습니다.</strong><span>검색어를 바꾸거나 초기화해 주세요.</span></div>`}</div>${directoryPaginationMarkup("caregiver", caregiverPage)}</article>
+        ${sectionNav}
+        <div id="people-panel" class="people-section-panel" role="tabpanel" aria-labelledby="people-tab-${activeSection}">${activePanel}</div>
       </section>`;
   }
 
@@ -3756,7 +3797,7 @@ import {
 
   function publicCaregiverDirectoryMarkup() {
     const caregivers = (state.publicCaregivers || []).filter((profile) => profile.isPublished !== false);
-    if (caregivers.length) return `<div class="public-caregiver-profile-grid">${caregivers.map(publicCaregiverCardMarkup).join("")}</div>`;
+    if (caregivers.length) return `<div class="public-caregiver-carousel"><div class="public-caregiver-carousel-toolbar"><div><strong>${caregivers.length}명의 관리사</strong><span>카드를 좌우로 넘겨 비교해 보세요.</span></div><div class="public-caregiver-carousel-controls" aria-label="관리사 카드 이동"><button type="button" data-caregiver-carousel="-1" aria-label="이전 관리사">←</button><button type="button" data-caregiver-carousel="1" aria-label="다음 관리사">→</button></div></div><div class="public-caregiver-profile-grid" data-caregiver-carousel-track tabindex="0" aria-label="ProMoms 관리사 소개 카드 목록">${caregivers.map(publicCaregiverCardMarkup).join("")}</div><p class="public-caregiver-carousel-hint" aria-hidden="true"><span>↔</span> 가로로 밀어서 더 많은 관리사를 확인할 수 있습니다.</p></div>`;
     return `<div class="public-caregiver-grid trust-fallback"><article><div class="public-person-art mint">✓</div><h3>신원·경력 확인</h3><span>IDENTITY & EXPERIENCE</span><p>지원 서류와 경력 정보를 확인하고 승인된 계정만 배정 후보에 포함합니다.</p></article><article><div class="public-person-art blush">CPR</div><h3>자격·안전 기준</h3><span>CREDENTIALS & SAFETY</span><p>서비스에 필요한 교육과 자격, 만료일을 확인한 뒤 업무 범위를 구분합니다.</p></article><article><div class="public-person-art mint">↔</div><h3>일정·가정 맞춤 배정</h3><span>SCHEDULE & FAMILY FIT</span><p>서비스 유형, 지역, 요일과 시간의 실제 가용성을 확인해 중복 없이 배정합니다.</p></article></div>`;
   }
 
@@ -3820,6 +3861,13 @@ import {
     document.querySelectorAll("[data-my-service]").forEach((button) => button.addEventListener("click", enterClientPortal));
     document.querySelectorAll("[data-enter-portal]").forEach((button) => button.addEventListener("click", () => { state.auth.screen = "portal"; saveState(); render(); }));
     document.querySelectorAll("[data-public-caregiver-detail]").forEach((button) => button.addEventListener("click", () => openPublicCaregiverDetail(button.dataset.publicCaregiverDetail)));
+    document.querySelectorAll("[data-caregiver-carousel]").forEach((button) => button.addEventListener("click", () => {
+      const track = document.querySelector("[data-caregiver-carousel-track]");
+      const card = track?.querySelector(".public-caregiver-profile-card");
+      if (!track) return;
+      const distance = (card?.getBoundingClientRect().width || track.clientWidth * 0.82) + 20;
+      track.scrollBy({ left: Number(button.dataset.caregiverCarousel) * distance, behavior: "smooth" });
+    }));
     document.querySelectorAll("[data-open-client-shop]").forEach((button) => button.addEventListener("click", () => { state.views.client = "shop"; state.auth.screen = "portal"; saveState(); render(); }));
     document.querySelectorAll("[data-notice], [data-demo-action]").forEach((button) => button.addEventListener("click", () => showToast(button.dataset.notice || button.dataset.demoAction, "info")));
   }
@@ -4733,6 +4781,13 @@ import {
     document.querySelectorAll("[data-reject-adjustment]").forEach((button) => button.addEventListener("click", () => reviewServiceAdjustment(button.dataset.rejectAdjustment, "REJECT")));
     document.querySelectorAll("[data-manage-client]").forEach((button) => button.addEventListener("click", () => openClientManagementModal(button.dataset.manageClient)));
     document.querySelectorAll("[data-manage-caregiver]").forEach((button) => button.addEventListener("click", () => openCaregiverManagementModal(button.dataset.manageCaregiver)));
+    document.querySelectorAll("[data-people-section]").forEach((button) => button.addEventListener("click", () => {
+      state.peopleDirectory = state.peopleDirectory || {};
+      state.peopleDirectory.activeSection = button.dataset.peopleSection;
+      saveState();
+      render();
+      window.requestAnimationFrame(() => document.querySelector(".people-section-tabs")?.scrollIntoView({ block: "start" }));
+    }));
     document.querySelectorAll("[data-directory-search]").forEach((form) => form.addEventListener("submit", (event) => {
       event.preventDefault();
       const scope = form.dataset.directorySearch;

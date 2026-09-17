@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
+    "test:interface": "node scripts/check-interface-efficiency.mjs",
     "test:report": "node scripts/check-objective-report.mjs",
     "test:reviews": "node scripts/check-caregiver-reputation.mjs",
     "preview": "vite preview --host 0.0.0.0"
