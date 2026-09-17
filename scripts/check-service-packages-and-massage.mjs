@@ -33,6 +33,8 @@ assert.ok(css.includes(".massage-slot-grid"), "massage availability slot styles 
 assert.ok(css.includes(".massage-calendar .month-weekdays"), "massage calendar mobile grid override is missing");
 assert.ok(css.includes("grid-template-columns: repeat(7, minmax(0, 1fr))"), "massage calendar must fit seven days within the mobile viewport");
 assert.ok(css.includes(".massage-day-summary"), "massage calendar mobile day summary styles are missing");
+assert.ok(css.includes(".service-request-columns.three-service-columns { grid-template-columns: 1fr; }"), "service approval sections must stack as full-width horizontal cards");
+assert.ok(css.includes(".request-service-column .client-request-row { grid-template-columns: minmax(210px, 1.2fr)"), "service approval request details must use a wide row layout");
 
 [
   "available_massage_slots",
