@@ -20,6 +20,8 @@ const appRules = [
   "therapistMassageCalendar",
   "data-massage-slot",
   "data-massage-session-change",
+  "massage-day-summary",
+  "therapist-massage-calendar-card",
   "MASSAGE_CHANGE_NOTICE_HOURS = 24",
 ];
 appRules.forEach((rule) => assert.ok(app.includes(rule), `app.js is missing: ${rule}`));
@@ -28,6 +30,9 @@ assert.ok(css.includes("grid-auto-flow: column"), "service cards must flow horiz
 assert.ok(css.includes("scroll-snap-type: x mandatory"), "service cards must use horizontal snap scrolling");
 assert.ok(css.includes(".massage-plan-options"), "massage product selector styles are missing");
 assert.ok(css.includes(".massage-slot-grid"), "massage availability slot styles are missing");
+assert.ok(css.includes(".massage-calendar .month-weekdays"), "massage calendar mobile grid override is missing");
+assert.ok(css.includes("grid-template-columns: repeat(7, minmax(0, 1fr))"), "massage calendar must fit seven days within the mobile viewport");
+assert.ok(css.includes(".massage-day-summary"), "massage calendar mobile day summary styles are missing");
 
 [
   "available_massage_slots",
