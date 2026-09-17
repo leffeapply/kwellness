@@ -4088,7 +4088,7 @@ body:has(#modal-root:not(:empty)) {
 
 .public-service-scroll-shell { position: relative; }
 .public-service-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(310px, 390px); gap: 18px; overflow-x: auto; padding: 4px 4px 20px; scroll-snap-type: x mandatory; scrollbar-width: thin; scrollbar-color: #6c9990 #edf3ef; }
-.public-service-card { position: relative; overflow: hidden; min-height: 610px; padding: 42px; border: 1px solid #dbe7e0; border-radius: 26px; background: white; box-shadow: 0 14px 44px rgba(28, 73, 67, .07); scroll-snap-align: start; }
+.public-service-card { position: relative; display: flex; overflow: hidden; min-height: 610px; padding: 42px; flex-direction: column; border: 1px solid #dbe7e0; border-radius: 26px; background: white; box-shadow: 0 14px 44px rgba(28, 73, 67, .07); scroll-snap-align: start; }
 .public-service-card.featured { color: #f8f6ef; border: 0; background: linear-gradient(145deg, #174f4a, #2c6861); }
 .service-number { position: absolute; top: 28px; right: 32px; color: rgba(23,79,74,.18); font-family: Georgia, serif; font-size: 55px; }
 .featured .service-number { color: rgba(255,255,255,.14); }
@@ -4100,7 +4100,7 @@ body:has(#modal-root:not(:empty)) {
 .public-service-card ul { display: grid; gap: 11px; margin: 27px 0 35px; padding: 24px 0; border-block: 1px solid rgba(23,79,74,.1); list-style: none; }
 .public-service-card.featured ul { border-color: rgba(255,255,255,.14); }
 .public-service-card li::before { margin-right: 9px; color: #d48d70; content: "✓"; font-weight: 800; }
-.service-price { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 25px; }
+.service-price { display: flex; align-items: flex-end; justify-content: space-between; margin-top: auto; margin-bottom: 25px; }
 .service-price span { color: #758783; font-size: 11px; }
 .featured .service-price span { color: rgba(255,255,255,.58); }
 .service-price strong { font-family: Georgia, serif; font-size: 32px; }
