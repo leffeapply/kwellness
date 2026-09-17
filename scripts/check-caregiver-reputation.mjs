@@ -256,14 +256,19 @@ assert.ok(app.includes("total / REVIEW_COMPETENCIES.length"), "overall rating mu
 assert.ok(app.includes("6개 전문 역량과 후기 내용을 모두 입력해 주세요."), "customer reviews must require all six competencies");
 assert.ok(!app.includes('name="rating"'), "the independent five-star overall-rating input must be removed");
 assert.ok(app.includes("6개 점수의 평균이 소수점 한 자리 종합평점으로 저장됩니다."), "the automatic overall-rating rule must be explained in the review form");
-assert.ok(styles.includes("grid-template-rows: 118px auto"), "mobile caregiver cards must use a compact fixed photo row");
+assert.ok(app.includes('class="caregiver-public-card-top"'), "caregiver cards must use a compact portrait-and-summary header");
+assert.ok(styles.includes("aspect-ratio: 1") && styles.includes("object-fit: contain"), "caregiver card photos must use a non-cropping square frame");
+assert.ok(styles.includes("min-height: 190px") && styles.includes("min-height: 174px"), "caregiver card headers must reserve equal space across desktop and mobile layouts");
+assert.ok(styles.includes("align-items: stretch") && styles.includes(".caregiver-public-radar-slot"), "caregiver cards must keep equal heights regardless of review availability");
+assert.ok(app.includes("전문 역량 후기 준비 중"), "caregiver cards without reviews need an equal-height competency placeholder");
 assert.ok(styles.includes("height: 126px") && styles.includes("max-height: 126px"), "mobile caregiver competency charts must fit inside the compact card");
 assert.ok(styles.includes(".public-caregiver-profile-card .caregiver-public-bio") && styles.includes("-webkit-line-clamp: 2"), "mobile caregiver biographies must be clamped to keep the full card visible");
+assert.ok(!app.includes("insured-staffing-panel") && !app.includes("WHY INSURED STAFFING MATTERS"), "the duplicated insured-staffing marketing panel must be removed from the homepage");
 assert.ok(app.includes("function caregiverServiceBadgesMarkup"), "public caregiver service badges are missing");
 assert.ok(app.includes('label: "산후조리"') && app.includes('label: "베이비시팅"') && app.includes('label: "마사지 테라피스트"'), "all three public caregiver service labels are required");
-assert.ok(app.includes("caregiverServiceBadgesMarkup(profile, true)"), "service badges must be overlaid on the compact caregiver card");
+assert.ok(app.includes('class="caregiver-public-card-summary"') && app.includes("caregiverServiceBadgesMarkup(profile)"), "service badges must appear beside the square caregiver portrait");
 assert.ok(app.includes("caregiver-public-detail-services") && app.includes("caregiverServiceBadgesMarkup(profile)"), "service badges must also appear in the caregiver profile and review detail");
-assert.ok(styles.includes(".caregiver-service-badges.on-photo"), "compact photo-overlay styling for service badges is missing");
+assert.ok(!styles.includes(".caregiver-service-badges.on-photo"), "service badges must not cover caregiver portraits");
 assert.ok(cloud.includes('supabase.rpc("public_caregiver_service_capabilities"'), "public caregiver service capabilities must be loaded from the sanitized RPC");
 [
   "create or replace function public.public_caregiver_service_capabilities()",
