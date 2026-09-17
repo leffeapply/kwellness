@@ -912,7 +912,7 @@ export async function recordServiceBalancePaymentCloud({ requestId, amount, paym
 
 export async function recordServiceRefundCloud({ requestId, amount, paymentMethod, refundReference, refundReason, refundedOn }) {
   await authenticatedUserId();
-  return throwIfError(await supabase.rpc("record_service_refund", {
+  const response = throwIfError(await supabase.rpc("record_service_refund", {
     p_request_id: requestId,
     p_amount: Number(amount),
     p_payment_method: String(paymentMethod || "").trim(),
@@ -920,6 +920,21 @@ export async function recordServiceRefundCloud({ requestId, amount, paymentMetho
     p_refund_reason: String(refundReason || "").trim(),
     p_refunded_on: refundedOn,
   }), "서비스 환불 기록");
+  const saved = Array.isArray(response) ? response[0] : response;
+  if (!saved?.id || saved.status !== "COMPLETED") {
+    throw new Error("서비스 환불 기록이 데이터베이스에 저장되었는지 확인하지 못했습니다.");
+  }
+  return {
+    ...saved,
+    requestId: saved.client_service_request_id,
+    clientId: saved.client_id,
+    amount: Number(saved.amount || 0),
+    paymentMethod: saved.payment_method,
+    refundReference: saved.refund_reference,
+    refundReason: saved.refund_reason,
+    refundedAt: saved.refunded_at,
+    recordedBy: saved.recorded_by,
+  };
 }
 
 export async function recordRetrospectiveCareReportCloud({ assignmentId, serviceDate, startedTime, endedTime, summary }) {

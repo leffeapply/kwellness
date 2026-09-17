@@ -26,6 +26,8 @@ const checks = [
   ["balance payment hash resolves pgcrypto from extensions", settlementMigration.includes("extensions.digest") && settlementMigration.includes("record_service_balance_payment")],
   ["owner discount is enforced and audited server-side", settlementMigration.includes("Only an owner can approve a service discount") && settlementMigration.includes("APPLY_OWNER_SERVICE_DISCOUNT")],
   ["discount settlement is used by the client", cloud.includes('supabase.rpc("settle_service_balance_payment"') && app.includes("오너 할인 적용")],
+  ["refund RPC response is normalized and verified", settlementMigration.includes("alter function public.record_service_refund") && cloud.includes('supabase.rpc("record_service_refund"') && cloud.includes("Array.isArray(response) ? response[0] : response") && cloud.includes('saved.status !== "COMPLETED"')],
+  ["saved refunds reconcile into the visible ledger immediately", app.includes("state.refundTransactions.some((item) => item.id === savedRefund.id)") && app.includes("refreshedRequest.refundTransactions")],
   ["reports show caregiver assignment history", app.includes("objectiveReportCaregiverHistoryMarkup") && app.includes("서비스 중 관리사 변경") && cloud.includes("contractId: assignment.contract_id")],
 ];
 

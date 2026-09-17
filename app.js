@@ -6464,9 +6464,17 @@ import {
       submitButton.textContent = "저장 중…";
       try {
         if (usingCloudData()) {
-          await recordServiceRefundCloud({ requestId, amount, paymentMethod: values.paymentMethod, refundReference, refundReason, refundedOn: values.refundedOn });
+          const savedRefund = await recordServiceRefundCloud({ requestId, amount, paymentMethod: values.paymentMethod, refundReference, refundReason, refundedOn: values.refundedOn });
           closeModal();
           await refreshCloudState();
+          if (!state.refundTransactions.some((item) => item.id === savedRefund.id)) {
+            state.refundTransactions = [...state.refundTransactions, savedRefund];
+          }
+          const refreshedRequest = state.serviceRequests.find((item) => item.id === requestId);
+          if (refreshedRequest && !refreshedRequest.refundTransactions.some((item) => item.id === savedRefund.id)) {
+            refreshedRequest.refundTransactions = [...refreshedRequest.refundTransactions, savedRefund];
+          }
+          render();
         } else {
           const transaction = { id: `refund-${Date.now()}`, requestId, clientId: currentRequest.clientId, amount, status: "COMPLETED", paymentMethod: values.paymentMethod, refundReference, refundReason, refundedAt: `${values.refundedOn}T12:00:00`, recordedBy: authUser()?.id };
           currentRequest.refundTransactions = [...(currentRequest.refundTransactions || []), transaction];
