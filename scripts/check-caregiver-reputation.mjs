@@ -179,6 +179,9 @@ assert.ok(app.includes("data-add-review-photos"), "customer review photo follow-
 assert.ok(app.includes("data-verify-historical-review"), "administrator external-review evidence control is missing");
 assert.ok(app.includes("reviewPhotoGalleryMarkup(review)"), "public caregiver reviews must render their attached photos");
 assert.ok(app.includes("syncSharedHomepageFields"), "caregiver HR edits must be mirrored into the homepage profile form");
+assert.ok(app.includes("<h4>공개 후기</h4>"), "public caregiver review heading must use concise customer-facing copy");
+assert.ok(!app.includes("관리자 선정 공개 후기"), "administrator-facing review wording must not appear publicly");
+assert.ok(!app.includes("관리자가 공개 대상으로 선정한 후기만 표시합니다"), "public review selection policy prose must remain hidden from customers");
 
 const average = (ratings) => ratings.length
   ? Number((ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length).toFixed(1))
