@@ -29,6 +29,13 @@ const appRules = [
   "MASSAGE_CHANGE_NOTICE_HOURS = 24",
   "전문 자격이 부여된 테라피스트의 산후/산전 마사지 서비스",
   "LMT(주 정부 면허) 보유 테라피스트",
+  "function openPublicServiceDetail",
+  "data-public-service-detail=\"POSTPARTUM_COMMUTE\"",
+  "data-public-service-detail=\"POSTPARTUM_LIVE_IN\"",
+  "data-public-service-detail=\"BABYSITTING\"",
+  "data-public-service-detail=\"MASSAGE\"",
+  "예약·변경·이용 규칙",
+  "유방 직접 관리나 유선 막힘·유선염 치료는 제공하지 않습니다.",
 ];
 appRules.forEach((rule) => assert.ok(app.includes(rule), `app.js is missing: ${rule}`));
 
@@ -43,6 +50,9 @@ assert.ok(css.includes(".service-request-columns.three-service-columns { grid-te
 assert.ok(css.includes(".request-service-column .client-request-row { grid-template-columns: minmax(210px, 1.2fr)"), "service approval request details must use a wide row layout");
 assert.ok(css.includes(".public-service-card { position: relative; display: flex;"), "public service cards must use a vertical flex layout");
 assert.ok(css.includes("margin-top: auto; margin-bottom: 25px;"), "service prices and application buttons must share a bottom alignment");
+assert.ok(css.includes(".public-service-card-actions"), "service cards must provide aligned detail and application actions");
+assert.ok(css.includes(".public-service-detail-modal"), "service detail modal styling is missing");
+assert.ok(css.includes(".public-service-detail-grid"), "service detail content grid styling is missing");
 
 [
   "available_massage_slots",
