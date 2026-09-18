@@ -1798,6 +1798,11 @@ button:disabled {
 }
 .feeding-measure-panel[hidden] { display: none; }
 .feeding-measure-panel .field:last-child { margin-bottom: 0; }
+.unit-measurement-control { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 9px; align-items: stretch; }
+.unit-measurement-control input,
+.unit-measurement-control select { min-width: 0; }
+.unit-measurement-control select { font-weight: 800; text-align: center; }
+.unit-conversion-preview { display: block; min-height: 38px; margin-top: 9px; padding: 10px 12px; border: 1px solid #cfe2da; border-radius: 10px; color: var(--green); background: #f1f8f4; font-size: 13px; font-weight: 800; line-height: 1.35; }
 
 .session-hint {
   margin: 12px 0 0;

@@ -2,6 +2,12 @@ import { backendStatus, supabase } from "./supabase-client.js";
 import proMomsLogoUrl from "./assets/promoms-logo.png";
 import {
   buildObjectiveReportModel,
+  celsiusFrom,
+  fahrenheitFromCelsius,
+  formatDualTemperature,
+  formatDualVolume,
+  formatDualWeight,
+  kilogramsFrom,
   OBJECTIVE_REPORT_TIME_ZONE,
   objectiveDateKey,
   objectiveDateLabel,
@@ -10,6 +16,9 @@ import {
   objectiveEventTimeZone,
   objectiveEventValue,
   objectiveTimeLabel,
+  ouncesFromMl,
+  poundsFromKilograms,
+  volumeToMl,
 } from "./objective-report.js";
 import {
   approveCaregiverCloud,
@@ -2715,7 +2724,7 @@ import {
     }
     if (action.type === "feeding" && ["pumped", "formula"].includes(action.preset)) {
       const milliliters = matching.reduce((sum, event) => sum + (Number(event.data?.amount) || 0), 0);
-      return milliliters ? `${matching.length}회 · ${milliliters}ml` : `${matching.length}회`;
+      return milliliters ? `${matching.length}회 · ${formatDualVolume(milliliters)}` : `${matching.length}회`;
     }
     return `${matching.length}회`;
   }
@@ -2816,7 +2825,9 @@ import {
     switch (event.type) {
       case "feeding": {
         const methods = { breast: "직접 모유수유", pumped: "유축 모유", formula: "분유" };
-        const amount = data.amount ? ` · ${data.amount}ml` : data.duration ? ` · ${data.duration}분` : "";
+        const amount = Number.isFinite(Number(data.amount)) && data.amount !== "" && data.amount !== null
+          ? ` · ${formatDualVolume(Number(data.amount), data.inputUnit)}`
+          : data.duration ? ` · ${data.duration}분` : "";
         return `${methods[data.method] || "수유"}${amount}`;
       }
       case "diaper": {
@@ -2827,11 +2838,11 @@ import {
       case "sleep":
         return `${data.duration || 0}분 수면`;
       case "temperature":
-        return `${Number(data.value).toFixed(1)}℃`;
+        return formatDualTemperature(Number(data.value), data.inputUnit);
       case "bath":
-        return `${data.bathType || "목욕"}${data.waterTemperature ? ` · 물 온도 ${Number(data.waterTemperature).toFixed(1)}℃` : ""}${data.note ? ` · ${data.note}` : ""}`;
+        return `${data.bathType || "목욕"}${data.waterTemperature ? ` · 물 온도 ${formatDualTemperature(Number(data.waterTemperature), data.inputUnit)}` : ""}${data.note ? ` · ${data.note}` : ""}`;
       case "weight":
-        return `${Number(data.value).toFixed(2)}kg · 성장 기록`;
+        return `${formatDualWeight(Number(data.value), data.inputUnit)} · 성장 기록`;
       case "mother":
         return `${data.care || "산모 케어"}${data.note ? ` · ${data.note}` : ""}`;
       case "note":
@@ -2938,13 +2949,15 @@ import {
     const diapers = visibleEvents.filter((event) => event.type === "diaper");
     const sleeps = visibleEvents.filter((event) => event.type === "sleep");
     const temperatures = visibleEvents.filter((event) => event.type === "temperature");
+    const latestTemperature = temperatures.length ? [...temperatures].sort((a, b) => new Date(b.at) - new Date(a.at))[0] : null;
     return {
       feedCount: feeding.length,
       feedAmount: feeding.reduce((sum, event) => sum + (Number(event.data.amount) || 0), 0),
       sleepMinutes: sleeps.reduce((sum, event) => sum + (Number(event.data.duration) || 0), 0),
       urineCount: diapers.filter((event) => event.data.urine && event.data.urine !== "none").length,
       stoolCount: diapers.filter((event) => event.data.stool && event.data.stool !== "none").length,
-      latestTemp: temperatures.length ? temperatures.sort((a, b) => new Date(b.at) - new Date(a.at))[0].data.value : null,
+      latestTemp: latestTemperature?.data?.value ?? null,
+      latestTempUnit: latestTemperature?.data?.inputUnit || "c",
     };
   }
 
@@ -3099,10 +3112,10 @@ import {
         </article>
 
         <div class="grid stats" style="margin-top:18px">
-          ${summaryCard("🍼", "수유", `${stats.feedCount}회`, `총 ${stats.feedAmount} ml`)}
+          ${summaryCard("🍼", "수유", `${stats.feedCount}회`, `총 ${formatDualVolume(stats.feedAmount)}`)}
           ${summaryCard("☾", "수면", durationLabel(stats.sleepMinutes), "기록된 수면 시간")}
           ${summaryCard("🚼", "기저귀", `${stats.urineCount}회`, `대변 ${stats.stoolCount}회`)}
-          ${summaryCard("🌡️", "체온", stats.latestTemp === null ? "기록 전" : `${Number(stats.latestTemp).toFixed(1)}℃`, "최근 측정 기록")}
+          ${summaryCard("🌡️", "체온", stats.latestTemp === null ? "기록 전" : formatDualTemperature(Number(stats.latestTemp), stats.latestTempUnit), "최근 측정 기록")}
         </div>
 
         ${clientServiceReviewMarkup(client, "POSTPARTUM", assignment)}
@@ -3402,7 +3415,7 @@ import {
       return { ...bucket, breast, formula, total: breast + formula };
     });
     const max = Math.max(100, ...daily.map((day) => day.total));
-    return `<div class="chart-legend"><span><i class="legend-swatch breast"></i>유축·기존 모유량</span><span><i class="legend-swatch formula"></i>분유</span><small>직접 모유수유는 ml가 아닌 수유 시간으로 요약합니다.</small></div><div class="trend-chart-scroll"><div class="daily-bar-chart" style="--chart-days:${buckets.length};min-width:${Math.max(700, buckets.length * 42)}px">${daily.map((day) => `<div class="daily-bar-column" aria-label="${day.fullLabel} 유축·기존 모유량 ${day.breast}ml, 분유 ${day.formula}ml"><span class="chart-value">${day.total || ""}</span><div class="stacked-bar-shell"><div class="stacked-bar ${day.total ? "" : "no-data"}" style="height:${day.total ? Math.max(4, (day.total / max) * 100) : 2}%">${day.total ? `<i class="bar-segment formula" style="flex:${day.formula}"></i><i class="bar-segment breast" style="flex:${day.breast}"></i>` : ""}</div></div><small>${day.shortLabel}</small></div>`).join("")}</div></div>`;
+    return `<div class="chart-legend"><span><i class="legend-swatch breast"></i>유축·기존 모유량</span><span><i class="legend-swatch formula"></i>분유</span><small>수유량은 ml/oz로 함께 표시하며, 직접 모유수유는 수유 시간으로 요약합니다.</small></div><div class="trend-chart-scroll"><div class="daily-bar-chart" style="--chart-days:${buckets.length};min-width:${Math.max(700, buckets.length * 42)}px">${daily.map((day) => `<div class="daily-bar-column" aria-label="${day.fullLabel} 유축·기존 모유량 ${formatDualVolume(day.breast)}, 분유 ${formatDualVolume(day.formula)}"><span class="chart-value">${day.total ? escapeHtml(formatDualVolume(day.total)) : ""}</span><div class="stacked-bar-shell"><div class="stacked-bar ${day.total ? "" : "no-data"}" style="height:${day.total ? Math.max(4, (day.total / max) * 100) : 2}%">${day.total ? `<i class="bar-segment formula" style="flex:${day.formula}"></i><i class="bar-segment breast" style="flex:${day.breast}"></i>` : ""}</div></div><small>${day.shortLabel}</small></div>`).join("")}</div></div>`;
   }
 
   function sleepTrendMarkup(buckets) {
@@ -3419,7 +3432,7 @@ import {
     const temperatures = periodEvents.filter((event) => event.type === "temperature").map((event) => Number(event.data.value)).filter(Number.isFinite);
     const sleeps = periodEvents.filter((event) => event.type === "sleep").reduce((sum, event) => sum + (Number(event.data.duration) || 0), 0);
     const weights = periodEvents.filter((event) => event.type === "weight").sort((a, b) => new Date(a.at) - new Date(b.at));
-    return `<div class="chart-kpi-grid"><div><span>직접 모유수유</span><strong>${breastfeedingMinutes ? durationLabel(breastfeedingMinutes) : "기록 전"}</strong></div><div><span>유축·기존 모유량</span><strong>${breast.toLocaleString()} ml</strong></div><div><span>분유</span><strong>${formula.toLocaleString()} ml</strong></div><div><span>평균 체온</span><strong>${temperatures.length ? `${(temperatures.reduce((sum, value) => sum + value, 0) / temperatures.length).toFixed(1)}℃` : "기록 전"}</strong></div><div><span>총 수면</span><strong>${durationLabel(sleeps)}</strong></div><div><span>최근 체중</span><strong>${weights.length ? `${Number(weights.at(-1).data.value).toFixed(2)} kg` : "기록 전"}</strong></div></div>`;
+    return `<div class="chart-kpi-grid"><div><span>직접 모유수유</span><strong>${breastfeedingMinutes ? durationLabel(breastfeedingMinutes) : "기록 전"}</strong></div><div><span>유축·기존 모유량</span><strong>${formatDualVolume(breast)}</strong></div><div><span>분유</span><strong>${formatDualVolume(formula)}</strong></div><div><span>평균 체온</span><strong>${temperatures.length ? formatDualTemperature(temperatures.reduce((sum, value) => sum + value, 0) / temperatures.length) : "기록 전"}</strong></div><div><span>총 수면</span><strong>${durationLabel(sleeps)}</strong></div><div><span>최근 체중</span><strong>${weights.length ? formatDualWeight(Number(weights.at(-1).data.value), weights.at(-1).data.inputUnit) : "기록 전"}</strong></div></div>`;
   }
 
   function careChartsMarkup(clientId, assignmentId = null) {
@@ -3438,10 +3451,10 @@ import {
     const temperatureEvents = periodEvents.filter((event) => event.type === "temperature");
     const latestWeight = periodEvents.filter((event) => event.type === "weight").at(-1);
     return `<div class="care-chart-suite"><section class="card chart-suite-header"><div><p class="eyebrow">CARE DATA OVERVIEW</p><h3>${escapeHtml(client.motherName)} · ${escapeHtml(chartBabyName)}</h3><p>같은 기간 기준으로 수유, 체온, 수면, 체중과 산모 케어 기록을 비교합니다.</p></div><div class="chart-range-tabs" role="group" aria-label="차트 조회 기간"><button type="button" class="${range === "week" ? "active" : ""}" data-chart-range="week">최근 1주일</button><button type="button" class="${range === "month" ? "active" : ""}" data-chart-range="month">최근 1개월</button></div></section>${careChartSummaryMarkup(periodEvents)}<div class="care-chart-grid">
-      <article class="card chart-card wide"><div class="section-header"><div><h3>수유 기록</h3><p>일별 유축·기존 모유량과 분유 섭취량 · ml</p></div><span class="status-chip">${periodEvents.filter((event) => event.type === "feeding").length}회</span></div>${feedingTrendMarkup(buckets)}</article>
-      <article class="card chart-card wide"><div class="section-header"><div><h3>체온 추이</h3><p>일별 평균 관찰 기록 · ℃ · 상태 판정 없음</p></div><span class="status-chip">${temperatureEvents.length ? `${Number(temperatureEvents.at(-1).data.value).toFixed(1)}℃` : "기록 전"}</span></div>${chartLineSvg(buckets, temperaturesByDay, { min: 35.5, max: 38, unit: "℃", decimals: 1, ariaLabel: `${chartBabyName} 체온 추이`, empty: "체온 기록이 아직 없습니다." })}</article>
+      <article class="card chart-card wide"><div class="section-header"><div><h3>수유 기록</h3><p>일별 유축·기존 모유량과 분유 섭취량 · ml/oz 병기</p></div><span class="status-chip">${periodEvents.filter((event) => event.type === "feeding").length}회</span></div>${feedingTrendMarkup(buckets)}</article>
+      <article class="card chart-card wide"><div class="section-header"><div><h3>체온 추이</h3><p>일별 평균 관찰 기록 · ℃/℉ 병기 · 상태 판정 없음</p></div><span class="status-chip">${temperatureEvents.length ? formatDualTemperature(Number(temperatureEvents.at(-1).data.value), temperatureEvents.at(-1).data.inputUnit) : "기록 전"}</span></div>${chartLineSvg(buckets, temperaturesByDay, { min: 35.5, max: 38, unit: "℃", decimals: 1, ariaLabel: `${chartBabyName} 체온 추이`, empty: "체온 기록이 아직 없습니다." })}</article>
       <article class="card chart-card wide"><div class="section-header"><div><h3>하루 수면 시간</h3><p>날짜별 기록된 총 수면 시간</p></div><span class="status-chip">${durationLabel(periodEvents.filter((event) => event.type === "sleep").reduce((sum, event) => sum + (Number(event.data.duration) || 0), 0))}</span></div>${sleepTrendMarkup(buckets)}</article>
-      <article class="card chart-card wide"><div class="section-header"><div><h3>몸무게</h3><p>성장 추이 · kg</p></div><span class="status-chip">${latestWeight ? `${Number(latestWeight.data.value).toFixed(2)} kg` : "기록 전"}</span></div>${chartLineSvg(buckets, weightsByDay, { unit: "kg", decimals: 2, ariaLabel: `${chartBabyName} 몸무게 추이`, empty: "체중 기록이 아직 없습니다." })}</article>
+      <article class="card chart-card wide"><div class="section-header"><div><h3>몸무게</h3><p>성장 추이 · kg/lb 병기</p></div><span class="status-chip">${latestWeight ? formatDualWeight(Number(latestWeight.data.value), latestWeight.data.inputUnit) : "기록 전"}</span></div>${chartLineSvg(buckets, weightsByDay, { unit: "kg", decimals: 2, ariaLabel: `${chartBabyName} 몸무게 추이`, empty: "체중 기록이 아직 없습니다." })}</article>
       <article class="card chart-card wide mother-care-chart"><div class="section-header"><div><h3>산모 케어</h3><p>${escapeHtml(client.motherName)} · ${escapeHtml(client.maternalStatus)} · 선택 기간 최근 기록</p></div><span class="status-chip">${motherCare.length}건</span></div><div class="mother-chart-list">${motherCare.length ? motherCare.slice(0, 6).map((event) => `<div><span>${new Date(event.at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}<br/>${timeLabel(event.at)}</span><strong>${escapeHtml(event.data.care || "산모 케어")}</strong><small>${escapeHtml(event.data.note || "기록 완료")}</small></div>`).join("") : `<div class="chart-empty">산모 케어 기록이 아직 없습니다.</div>`}</div></article>
     </div><p class="care-data-note">차트는 케어 관찰 기록을 이해하기 쉽게 정리한 것으로 의료 진단이나 성장 판정을 대신하지 않습니다.</p></div>`;
   }
@@ -3715,7 +3728,7 @@ import {
     ];
     const serviceKpis = model.serviceType === "BABYSITTING"
       ? [["식사·간식 기록", `${totals.mealCount}건`, "관리사가 입력한 횟수"], ["놀이·생활 기록", `${totals.activityCount}건`, "놀이·산책·안전 확인 등"]]
-      : [["직접 모유수유 시간", reportDurationValue(totals.breastfeedingMinutes), `${totals.breastfeedingDurationCount}건을 더한 시간`], ["입력된 유축·분유량", reportNumber(totals.feedingMl, " ml"), `수유량 입력 ${totals.feedingMeasuredCount}건 · 수치 미입력 ${totals.feedingUnmeasuredCount}건`], ["입력된 수면시간", reportDurationValue(totals.sleepMinutes), `${totals.sleepCount}건을 더한 시간`]];
+      : [["직접 모유수유 시간", reportDurationValue(totals.breastfeedingMinutes), `${totals.breastfeedingDurationCount}건을 더한 시간`], ["입력된 유축·분유량", totals.feedingMl === null ? "기록 없음" : formatDualVolume(totals.feedingMl), `수유량 입력 ${totals.feedingMeasuredCount}건 · 수치 미입력 ${totals.feedingUnmeasuredCount}건`], ["입력된 수면시간", reportDurationValue(totals.sleepMinutes), `${totals.sleepCount}건을 더한 시간`]];
     return `<div class="objective-report-kpis">${[...common, ...serviceKpis].map(([label, value, note]) => `<div class="objective-report-kpi"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(note)}</small></div>`).join("")}</div>`;
   }
 
@@ -3740,15 +3753,15 @@ import {
       reportDurationValue(day.careMinutes),
       `${day.feedingCount}건`,
       day.breastfeedingMinutes === null ? "기록 없음" : `${day.breastfeedingDurationCount}건 · ${day.breastfeedingMinutes}분`,
-      day.feedingMl === null ? "기록 없음" : `${day.feedingMl} ml`,
+      day.feedingMl === null ? "기록 없음" : formatDualVolume(day.feedingMl),
       `${day.feedingUnmeasuredCount}건`,
       `${day.diaperCount}건 (${day.urineCount}/${day.stoolCount})`,
       day.sleepMinutes === null ? "기록 없음" : `${day.sleepCount}건 · ${day.sleepMinutes}분`,
     ]);
     const measurementRows = model.daily.map((day) => [
       day.dateLabel,
-      day.temperatureCount ? `${day.temperatureMin.toFixed(1)}/${day.temperatureAverage.toFixed(1)}/${day.temperatureMax.toFixed(1)}℃ (${day.temperatureCount}회 측정)` : "기록 없음",
-      day.lastWeight === null ? "기록 없음" : `${day.lastWeight.toFixed(2)} kg`,
+      day.temperatureCount ? `${formatDualTemperature(day.temperatureMin)} / ${formatDualTemperature(day.temperatureAverage)} / ${formatDualTemperature(day.temperatureMax)} (${day.temperatureCount}회 측정)` : "기록 없음",
+      day.lastWeight === null ? "기록 없음" : formatDualWeight(day.lastWeight),
       `${day.bathCount}건`,
       `${day.motherCareCount}건`,
       `${day.eventCount}건`,
@@ -3787,10 +3800,10 @@ import {
         ]
       : [
           { title: "날짜별 직접 모유수유 시간", subtitle: "관리사가 입력한 직접 모유수유 시간을 날짜별로 더한 값 · 분", accessor: (day) => day.breastfeedingMinutes, formatter: (value) => `${Math.round(value)}분`, color: "#5790a8", empty: "직접 모유수유 시간 기록이 없습니다.", type: "bar" },
-          { title: "날짜별 입력 수유량", subtitle: "수유량이 숫자로 입력된 기록만 더한 값 · ml", accessor: (day) => day.feedingMl, formatter: (value) => `${Math.round(value)} ml`, color: "#2b6c63", empty: "수유량이 입력된 기록이 없습니다.", type: "bar" },
+          { title: "날짜별 입력 수유량", subtitle: "수유량이 숫자로 입력된 기록만 더한 값 · ml/oz 병기", accessor: (day) => day.feedingMl, formatter: (value) => formatDualVolume(value), color: "#2b6c63", empty: "수유량이 입력된 기록이 없습니다.", type: "bar" },
           { title: "날짜별 수면시간", subtitle: "관리사가 입력한 수면시간을 날짜별로 더한 값 · 분", accessor: (day) => day.sleepMinutes, formatter: (value) => `${Math.round(value)}분`, color: "#6d9188", empty: "수면시간 기록이 없습니다.", type: "bar" },
-          { title: "날짜별 평균 체온", subtitle: "해당 날짜에 측정한 체온의 평균 · ℃", accessor: (day) => day.temperatureAverage, formatter: (value) => `${value.toFixed(1)}℃`, axisFormat: (value) => value.toFixed(1), minimumPadding: 0.1, color: "#d88f73", empty: "체온 측정 기록이 없습니다.", type: "line" },
-          { title: "날짜별 마지막 체중", subtitle: "해당 날짜에 마지막으로 측정한 체중 · kg", accessor: (day) => day.lastWeight, formatter: (value) => `${value.toFixed(2)}kg`, axisFormat: (value) => value.toFixed(2), minimumPadding: 0.02, color: "#9a765d", empty: "체중 측정 기록이 없습니다.", type: "line" },
+          { title: "날짜별 평균 체온", subtitle: "해당 날짜에 측정한 체온의 평균 · ℃/℉ 병기", accessor: (day) => day.temperatureAverage, formatter: (value) => formatDualTemperature(value), axisFormat: (value) => value.toFixed(1), minimumPadding: 0.1, color: "#d88f73", empty: "체온 측정 기록이 없습니다.", type: "line" },
+          { title: "날짜별 마지막 체중", subtitle: "해당 날짜에 마지막으로 측정한 체중 · kg/lb 병기", accessor: (day) => day.lastWeight, formatter: (value) => formatDualWeight(value), axisFormat: (value) => value.toFixed(2), minimumPadding: 0.02, color: "#9a765d", empty: "체중 측정 기록이 없습니다.", type: "line" },
         ];
     return `<div class="objective-report-charts">${charts.map((chart) => `<article class="objective-report-chart"><h3>${escapeHtml(chart.title)}</h3><p class="objective-report-legend">${escapeHtml(chart.subtitle)} · 표시 없음은 기록 없음</p>${chart.type === "line" ? objectiveLineChartSvg(model.daily, chart.accessor, { ariaLabel: chart.title, valueFormat: chart.formatter, axisFormat: chart.axisFormat, minimumPadding: chart.minimumPadding, color: chart.color, empty: chart.empty }) : objectiveBarChartSvg(model.daily, chart.accessor, { ariaLabel: chart.title, valueFormat: chart.formatter, color: chart.color, empty: chart.empty })}</article>`).join("")}</div>`;
   }
@@ -7399,7 +7412,7 @@ import {
               <div class="field"><span class="field-label">수유한 쪽</span><div class="option-grid">${radioOptions("side", [["left", "왼쪽"], ["right", "오른쪽"], ["both", "양쪽"]], "both")}</div></div>
             </div>
             <div class="feeding-measure-panel" data-feeding-panel="volume" ${method === "breast" ? "hidden" : ""}>
-              <div class="field"><label for="feeding-amount">수유량 (ml)</label><input id="feeding-amount" name="amount" type="number" min="5" max="500" step="5" value="80" inputmode="numeric" ${method === "breast" ? "disabled" : "required"}/><small>유축 모유와 분유는 실제 먹은 양을 ml로 입력합니다.</small></div>
+              <div class="field unit-measurement-field" data-unit-measurement="volume"><label for="feeding-amount">수유량</label><div class="unit-measurement-control"><input id="feeding-amount" name="inputValue" data-unit-value type="number" min="5" max="500" step="1" value="80" inputmode="decimal" ${method === "breast" ? "disabled" : "required"}/><select name="inputUnit" data-unit-select aria-label="수유량 단위" ${method === "breast" ? "disabled" : ""}><option value="ml" selected>ml</option><option value="oz">oz</option></select></div><output class="unit-conversion-preview" data-unit-conversion aria-live="polite">자동 변환: 2.71 oz</output><small>ml 또는 oz로 입력하면 다른 단위를 자동으로 계산해 함께 저장합니다.</small></div>
             </div>
             <div class="field"><label for="feeding-note">수유 메모 (선택)</label><textarea id="feeding-note" name="note" placeholder="수유 중 관찰한 사실이나 보호자에게 전달할 내용을 적어주세요."></textarea></div>
           </div>`;
@@ -7412,11 +7425,11 @@ import {
       case "sleep":
         return `<div class="field"><label for="duration">수면 시간 (분)</label><input id="duration" name="duration" type="number" min="1" max="720" value="45" inputmode="numeric" required /><small>종료 시점에 총 수면 시간을 입력합니다.</small></div>`;
       case "temperature":
-        return `<div class="field"><label for="temperature">체온 (℃)</label><input id="temperature" name="value" type="number" min="34" max="43" step="0.1" value="36.8" inputmode="decimal" required /><small>앱은 기록을 돕는 도구이며 의료적 판단을 대신하지 않습니다.</small></div>`;
+        return `<div class="field unit-measurement-field" data-unit-measurement="temperature"><label for="temperature">체온</label><div class="unit-measurement-control"><input id="temperature" name="inputValue" data-unit-value type="number" min="34" max="43" step="0.1" value="36.8" inputmode="decimal" required/><select name="inputUnit" data-unit-select aria-label="체온 단위"><option value="c" selected>℃</option><option value="f">℉</option></select></div><output class="unit-conversion-preview" data-unit-conversion aria-live="polite">자동 변환: 98.2℉</output><small>섭씨 또는 화씨로 입력하면 다른 단위를 자동으로 계산해 함께 저장합니다. 앱은 의료적 판단을 대신하지 않습니다.</small></div>`;
       case "bath":
-        return `<div class="field"><label for="bath-type">목욕 구분</label><select id="bath-type" name="bathType"><option>전신 목욕</option><option>부분 세정</option><option>배꼽 관리</option></select></div><div class="field"><label for="bath-water-temperature">물 온도 (℃)</label><input id="bath-water-temperature" name="waterTemperature" type="number" min="30" max="45" step="0.1" value="38.0" inputmode="decimal" /></div><div class="field"><label for="bath-note">피부·배꼽 관찰 메모</label><textarea id="bath-note" name="note" placeholder="발진, 건조함, 배꼽 주변 등 관찰한 사실을 기록하세요."></textarea></div>`;
+        return `<div class="field"><label for="bath-type">목욕 구분</label><select id="bath-type" name="bathType"><option>전신 목욕</option><option>부분 세정</option><option>배꼽 관리</option></select></div><div class="field unit-measurement-field" data-unit-measurement="water-temperature"><label for="bath-water-temperature">물 온도</label><div class="unit-measurement-control"><input id="bath-water-temperature" name="inputValue" data-unit-value type="number" min="30" max="45" step="0.1" value="38.0" inputmode="decimal"/><select name="inputUnit" data-unit-select aria-label="물 온도 단위"><option value="c" selected>℃</option><option value="f">℉</option></select></div><output class="unit-conversion-preview" data-unit-conversion aria-live="polite">자동 변환: 100.4℉</output><small>섭씨 또는 화씨로 입력하면 다른 단위를 자동으로 계산해 함께 저장합니다.</small></div><div class="field"><label for="bath-note">피부·배꼽 관찰 메모</label><textarea id="bath-note" name="note" placeholder="발진, 건조함, 배꼽 주변 등 관찰한 사실을 기록하세요."></textarea></div>`;
       case "weight":
-        return `<div class="field"><label for="baby-weight">아기 체중 (kg)</label><input id="baby-weight" name="value" type="number" min="1" max="20" step="0.01" value="3.80" inputmode="decimal" required /><small>동일한 저울과 비슷한 조건에서 측정하면 추이를 비교하기 쉽습니다.</small></div>`;
+        return `<div class="field unit-measurement-field" data-unit-measurement="weight"><label for="baby-weight">아기 체중</label><div class="unit-measurement-control"><input id="baby-weight" name="inputValue" data-unit-value type="number" min="1" max="20" step="0.01" value="3.80" inputmode="decimal" required/><select name="inputUnit" data-unit-select aria-label="체중 단위"><option value="kg" selected>kg</option><option value="lb">lb</option></select></div><output class="unit-conversion-preview" data-unit-conversion aria-live="polite">자동 변환: 8.38 lb</output><small>kg 또는 lb로 입력하면 다른 단위를 자동으로 계산해 함께 저장합니다. 동일한 저울과 비슷한 조건에서 측정해 주세요.</small></div>`;
       case "mother":
         return `
           <div class="field"><label for="care">케어 항목</label><select id="care" name="care"><option>Light stretching</option><option>Breast care</option><option>Meal support</option><option>Rest support</option><option>Other</option></select></div>
@@ -7441,7 +7454,8 @@ import {
       const directPanel = entry.querySelector('[data-feeding-panel="breast"]');
       const volumePanel = entry.querySelector('[data-feeding-panel="volume"]');
       const durationInput = form.elements.duration;
-      const amountInput = form.elements.amount;
+      const amountInput = form.elements.inputValue;
+      const amountUnit = form.elements.inputUnit;
       const sideInputs = [...form.querySelectorAll('input[name="side"]')];
       const direct = method === "breast";
       directPanel.hidden = !direct;
@@ -7454,10 +7468,89 @@ import {
         amountInput.disabled = direct;
         amountInput.required = !direct;
       }
+      if (amountUnit) amountUnit.disabled = direct;
       sideInputs.forEach((input) => { input.disabled = !direct; });
     };
     form.querySelectorAll('input[name="method"]').forEach((input) => input.addEventListener("change", updateMeasurementFields));
     updateMeasurementFields();
+  }
+
+  function baseMeasurementValue(kind, value, unit) {
+    if (kind === "volume") return volumeToMl(value, unit);
+    if (kind === "temperature" || kind === "water-temperature") return celsiusFrom(value, unit);
+    if (kind === "weight") return kilogramsFrom(value, unit);
+    return null;
+  }
+
+  function displayMeasurementValue(kind, baseValue, unit) {
+    if (!Number.isFinite(baseValue)) return null;
+    if (kind === "volume") return unit === "oz" ? ouncesFromMl(baseValue) : baseValue;
+    if (kind === "temperature" || kind === "water-temperature") return unit === "f" ? fahrenheitFromCelsius(baseValue) : baseValue;
+    if (kind === "weight") return unit === "lb" ? poundsFromKilograms(baseValue) : baseValue;
+    return null;
+  }
+
+  function measurementInputSettings(kind, unit) {
+    if (kind === "volume") return unit === "oz"
+      ? { min: 0.17, max: 16.91, step: 0.01, digits: 2 }
+      : { min: 5, max: 500, step: 0.1, digits: 1 };
+    if (kind === "water-temperature") return unit === "f"
+      ? { min: 86, max: 113, step: 0.1, digits: 1 }
+      : { min: 30, max: 45, step: 0.1, digits: 1 };
+    if (kind === "temperature") return unit === "f"
+      ? { min: 93.2, max: 109.4, step: 0.1, digits: 1 }
+      : { min: 34, max: 43, step: 0.1, digits: 1 };
+    return unit === "lb"
+      ? { min: 2.2, max: 44.09, step: 0.01, digits: 2 }
+      : { min: 1, max: 20, step: 0.01, digits: 2 };
+  }
+
+  function dualMeasurementLabel(kind, baseValue, preferredUnit) {
+    if (kind === "volume") return formatDualVolume(baseValue, preferredUnit);
+    if (kind === "temperature" || kind === "water-temperature") return formatDualTemperature(baseValue, preferredUnit);
+    return formatDualWeight(baseValue, preferredUnit);
+  }
+
+  function bindUnitConversionFields(form) {
+    form?.querySelectorAll("[data-unit-measurement]").forEach((field) => {
+      const kind = field.dataset.unitMeasurement;
+      const input = field.querySelector("[data-unit-value]");
+      const select = field.querySelector("[data-unit-select]");
+      const output = field.querySelector("[data-unit-conversion]");
+      if (!input || !select || !output) return;
+      const configure = () => {
+        const settings = measurementInputSettings(kind, select.value);
+        input.min = String(settings.min);
+        input.max = String(settings.max);
+        input.step = String(settings.step);
+      };
+      const refresh = () => {
+        const baseValue = baseMeasurementValue(kind, input.value, select.value);
+        if (baseValue === null) {
+          output.textContent = "값을 입력하면 다른 단위를 자동 계산합니다.";
+          return;
+        }
+        const label = dualMeasurementLabel(kind, baseValue, select.value);
+        const alternate = /\((.+)\)$/.exec(label)?.[1] || label;
+        output.textContent = `자동 변환: ${alternate}`;
+      };
+      select.dataset.previousUnit = select.value;
+      select.addEventListener("change", () => {
+        const previousUnit = select.dataset.previousUnit || select.value;
+        const baseValue = baseMeasurementValue(kind, input.value, previousUnit);
+        configure();
+        if (baseValue !== null) {
+          const settings = measurementInputSettings(kind, select.value);
+          const converted = displayMeasurementValue(kind, baseValue, select.value);
+          input.value = Number(converted).toFixed(settings.digits);
+        }
+        select.dataset.previousUnit = select.value;
+        refresh();
+      });
+      input.addEventListener("input", refresh);
+      configure();
+      refresh();
+    });
   }
 
   function populateCareEventForm(form, values = {}) {
@@ -7475,6 +7568,14 @@ import {
       }
       controls[0].value = String(value);
     });
+    const type = form?.dataset.logFormType;
+    const input = form?.elements.inputValue;
+    const unit = form?.elements.inputUnit;
+    if (!input || !unit || Number.isFinite(Number(values.inputValue))) return;
+    if (type === "feeding" && Number.isFinite(Number(values.amount))) input.value = String(displayMeasurementValue("volume", Number(values.amount), unit.value));
+    if (type === "temperature" && Number.isFinite(Number(values.value))) input.value = String(displayMeasurementValue("temperature", Number(values.value), unit.value));
+    if (type === "bath" && Number.isFinite(Number(values.waterTemperature))) input.value = String(displayMeasurementValue("water-temperature", Number(values.waterTemperature), unit.value));
+    if (type === "weight" && Number.isFinite(Number(values.value))) input.value = String(displayMeasurementValue("weight", Number(values.value), unit.value));
   }
 
   function careEventLocalTime(event) {
@@ -7636,6 +7737,7 @@ import {
     const logForm = modalRoot.querySelector("[data-log-form]");
     if (editing) populateCareEventForm(logForm, existingEvent.data);
     bindFeedingEntryForm(logForm);
+    bindUnitConversionFields(logForm);
     modalRoot.querySelector("[data-use-device-now]")?.addEventListener("click", () => {
       setCareRecordTimeToNow(modalRoot.querySelector("#event-recorded-at"), sessionDate);
     });
@@ -7756,7 +7858,7 @@ import {
       data.submittedAt = new Date().toISOString();
     }
 
-    ["amount", "duration", "value", "waterTemperature"].forEach((key) => {
+    ["amount", "duration", "value", "inputValue", "waterTemperature"].forEach((key) => {
       if (key in data) data[key] = data[key] === "" ? null : Number(data[key]);
     });
 
@@ -7767,10 +7869,27 @@ import {
       } else if (["pumped", "formula"].includes(data.method)) {
         delete data.duration;
         delete data.side;
+        if (!["ml", "oz"].includes(data.inputUnit) || !Number.isFinite(data.inputValue)) return showToast("수유량과 ml/oz 단위를 확인해 주세요.", "error");
+        data.amount = volumeToMl(data.inputValue, data.inputUnit);
         if (!Number.isFinite(data.amount) || data.amount < 5 || data.amount > 500) return showToast("실제 수유량을 5~500ml 사이로 입력해 주세요.", "error");
       } else {
         return showToast("수유 방법을 선택해 주세요.", "error");
       }
+    }
+    if (type === "temperature") {
+      if (!["c", "f"].includes(data.inputUnit) || !Number.isFinite(data.inputValue)) return showToast("체온과 ℃/℉ 단위를 확인해 주세요.", "error");
+      data.value = celsiusFrom(data.inputValue, data.inputUnit);
+      if (!Number.isFinite(data.value) || data.value < 34 || data.value > 43) return showToast("체온은 34~43℃ 또는 이에 해당하는 화씨 범위로 입력해 주세요.", "error");
+    }
+    if (type === "weight") {
+      if (!["kg", "lb"].includes(data.inputUnit) || !Number.isFinite(data.inputValue)) return showToast("체중과 kg/lb 단위를 확인해 주세요.", "error");
+      data.value = kilogramsFrom(data.inputValue, data.inputUnit);
+      if (!Number.isFinite(data.value) || data.value < 1 || data.value > 20) return showToast("체중은 1~20kg 또는 이에 해당하는 lb 범위로 입력해 주세요.", "error");
+    }
+    if (type === "bath" && data.inputValue !== null && data.inputValue !== undefined) {
+      if (!["c", "f"].includes(data.inputUnit) || !Number.isFinite(data.inputValue)) return showToast("물 온도와 ℃/℉ 단위를 확인해 주세요.", "error");
+      data.waterTemperature = celsiusFrom(data.inputValue, data.inputUnit);
+      if (!Number.isFinite(data.waterTemperature) || data.waterTemperature < 30 || data.waterTemperature > 45) return showToast("물 온도는 30~45℃ 또는 이에 해당하는 화씨 범위로 입력해 주세요.", "error");
     }
     if (type === "meal") data.mealType = "식사";
     if ("note" in data) data.note = String(data.note || "").trim();

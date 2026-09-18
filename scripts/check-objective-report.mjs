@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
 import {
   buildObjectiveReportModel,
+  celsiusFrom,
+  fahrenheitFromCelsius,
+  formatDualTemperature,
+  formatDualVolume,
+  formatDualWeight,
+  kilogramsFrom,
   objectiveDistributionLabel,
   objectiveEventDateKey,
   objectiveEventTimeZone,
   objectiveEventValue,
   objectiveTimeLabel,
+  ouncesFromMl,
+  poundsFromKilograms,
+  volumeToMl,
 } from "../objective-report.js";
 
 const postpartumAssignment = {
@@ -76,8 +85,19 @@ assert.match(postpartum.facts.join(" "), /직접 모유수유 1건의 합계 15�
 assert.match(postpartum.facts.join(" "), /서비스일 6일 중 2일/);
 assert.match(postpartum.facts.join(" "), /예정 서비스일은 3일이며, 해당 날짜는 관리사 기록 0건/);
 assert.doesNotMatch(postpartum.facts.join(" "), /정상|위험|호전|악화|건강/);
-assert.equal(objectiveEventValue(postpartumEvents[2]), "36.8℃");
+assert.equal(objectiveEventValue(postpartumEvents[2]), "36.8℃ (98.2℉)");
 assert.equal(objectiveEventValue(postpartumEvents[1]), "직접 모유수유 · 15분");
+assert.equal(formatDualVolume(80), "80 ml (2.71 oz)");
+assert.equal(formatDualVolume(80, "oz"), "2.71 oz (80 ml)");
+assert.equal(formatDualTemperature(36.8), "36.8℃ (98.2℉)");
+assert.equal(formatDualWeight(4.1), "4.1 kg (9.04 lb)");
+assert.equal(objectiveEventValue({ type: "bath", data: { bathType: "전신 목욕", waterTemperature: 38 } }), "전신 목욕 · 물 온도 38℃ (100.4℉)");
+assert.equal(volumeToMl(2.71, "oz"), 80.14);
+assert.equal(celsiusFrom(98.6, "f"), 37);
+assert.ok(Math.abs(kilogramsFrom(9.04, "lb") - 4.1) < 0.01);
+assert.equal(ouncesFromMl(80), 2.7051);
+assert.equal(fahrenheitFromCelsius(36.8), 98.24);
+assert.equal(poundsFromKilograms(4.1), 9.039);
 
 const babysittingAssignment = { id: "babysitting", serviceType: "BABYSITTING" };
 const babysittingEvents = [

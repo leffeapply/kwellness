@@ -74,6 +74,74 @@ function round(value, digits = 1) {
   return Math.round(value * factor) / factor;
 }
 
+const MILLILITERS_PER_US_FLUID_OUNCE = 29.5735295625;
+const POUNDS_PER_KILOGRAM = 2.2046226218;
+
+function formattedMeasurement(value, digits) {
+  const fixed = Number(value).toFixed(digits);
+  return fixed.includes(".") ? fixed.replace(/0+$/, "").replace(/\.$/, "") : fixed;
+}
+
+export function volumeToMl(value, unit = "ml") {
+  const number = numericValue(value);
+  if (number === null) return null;
+  return round(unit === "oz" ? number * MILLILITERS_PER_US_FLUID_OUNCE : number, 2);
+}
+
+export function ouncesFromMl(valueInMl) {
+  const ml = numericValue(valueInMl);
+  return ml === null ? null : round(ml / MILLILITERS_PER_US_FLUID_OUNCE, 4);
+}
+
+export function celsiusFrom(value, unit = "c") {
+  const number = numericValue(value);
+  if (number === null) return null;
+  return round(unit === "f" ? (number - 32) * 5 / 9 : number, 2);
+}
+
+export function fahrenheitFromCelsius(valueInCelsius) {
+  const celsius = numericValue(valueInCelsius);
+  return celsius === null ? null : round(celsius * 9 / 5 + 32, 2);
+}
+
+export function kilogramsFrom(value, unit = "kg") {
+  const number = numericValue(value);
+  if (number === null) return null;
+  return round(unit === "lb" ? number / POUNDS_PER_KILOGRAM : number, 3);
+}
+
+export function poundsFromKilograms(valueInKilograms) {
+  const kilograms = numericValue(valueInKilograms);
+  return kilograms === null ? null : round(kilograms * POUNDS_PER_KILOGRAM, 4);
+}
+
+export function formatDualVolume(valueInMl, preferredUnit = "ml") {
+  const ml = volumeToMl(valueInMl, "ml");
+  if (ml === null) return "측정값 미입력";
+  const oz = ouncesFromMl(ml);
+  const mlLabel = `${formattedMeasurement(ml, 1)} ml`;
+  const ozLabel = `${formattedMeasurement(oz, 2)} oz`;
+  return preferredUnit === "oz" ? `${ozLabel} (${mlLabel})` : `${mlLabel} (${ozLabel})`;
+}
+
+export function formatDualTemperature(valueInCelsius, preferredUnit = "c") {
+  const celsius = celsiusFrom(valueInCelsius, "c");
+  if (celsius === null) return "측정값 미입력";
+  const fahrenheit = fahrenheitFromCelsius(celsius);
+  const celsiusLabel = `${formattedMeasurement(celsius, 1)}℃`;
+  const fahrenheitLabel = `${formattedMeasurement(fahrenheit, 1)}℉`;
+  return preferredUnit === "f" ? `${fahrenheitLabel} (${celsiusLabel})` : `${celsiusLabel} (${fahrenheitLabel})`;
+}
+
+export function formatDualWeight(valueInKilograms, preferredUnit = "kg") {
+  const kilograms = kilogramsFrom(valueInKilograms, "kg");
+  if (kilograms === null) return "측정값 미입력";
+  const pounds = poundsFromKilograms(kilograms);
+  const kilogramLabel = `${formattedMeasurement(kilograms, 2)} kg`;
+  const poundLabel = `${formattedMeasurement(pounds, 2)} lb`;
+  return preferredUnit === "lb" ? `${poundLabel} (${kilogramLabel})` : `${kilogramLabel} (${poundLabel})`;
+}
+
 function average(values, digits = 1) {
   if (!values.length) return null;
   return round(values.reduce((sum, value) => sum + value, 0) / values.length, digits);
@@ -366,15 +434,15 @@ function buildPostpartumFacts(totals) {
   if (totals.feedingCount) {
     const measurements = [];
     if (totals.breastfeedingDurationCount) measurements.push(`직접 모유수유 ${totals.breastfeedingDurationCount}건의 합계 ${totals.breastfeedingMinutes ?? 0}분`);
-    if (totals.feedingMeasuredCount) measurements.push(`수유량이 입력된 ${totals.feedingMeasuredCount}건의 합계 ${totals.feedingMl ?? 0}ml`);
+    if (totals.feedingMeasuredCount) measurements.push(`수유량이 입력된 ${totals.feedingMeasuredCount}건의 합계 ${formatDualVolume(totals.feedingMl ?? 0)}`);
     facts.push(`수유 기록은 ${totals.feedingCount}건이며, ${measurements.join(" · ") || "시간 또는 양이 입력된 기록이 없습니다"}.${totals.feedingUnmeasuredCount ? ` 시간이나 양이 없는 ${totals.feedingUnmeasuredCount}건은 합계에 넣지 않았습니다.` : ""}`);
   } else facts.push("선택한 서비스 배치에 수유 기록이 없습니다.");
   if (totals.sleepCount) facts.push(`수면 기록 ${totals.sleepCount}건을 더하면 총 ${totals.sleepMinutes}분이며, 기록 1건당 평균은 ${totals.sleepAverage}분입니다.`);
   else facts.push("선택한 서비스 배치에 수면시간 기록이 없습니다.");
-  if (totals.temperatureCount) facts.push(`체온은 ${totals.temperatureCount}회 측정했으며, 가장 낮은 값은 ${totals.temperatureMin.toFixed(1)}℃, 가장 높은 값은 ${totals.temperatureMax.toFixed(1)}℃, 측정값 평균은 ${totals.temperatureAverage.toFixed(1)}℃입니다.`);
+  if (totals.temperatureCount) facts.push(`체온은 ${totals.temperatureCount}회 측정했으며, 가장 낮은 값은 ${formatDualTemperature(totals.temperatureMin)}, 가장 높은 값은 ${formatDualTemperature(totals.temperatureMax)}, 측정값 평균은 ${formatDualTemperature(totals.temperatureAverage)}입니다.`);
   else facts.push("선택한 서비스 배치에 체온 측정 기록이 없습니다.");
-  if (totals.weightCount >= 2) facts.push(`체중은 ${totals.weightCount}회 측정했으며, 첫 측정값은 ${totals.firstWeight.toFixed(2)}kg, 마지막 측정값은 ${totals.lastWeight.toFixed(2)}kg입니다. 두 값의 차이는 ${totals.weightDelta > 0 ? "+" : ""}${totals.weightDelta.toFixed(2)}kg입니다.`);
-  else if (totals.weightCount === 1) facts.push(`체중은 ${totals.lastWeight.toFixed(2)}kg으로 1회 측정되어 변화량을 계산하지 않았습니다.`);
+  if (totals.weightCount >= 2) facts.push(`체중은 ${totals.weightCount}회 측정했으며, 첫 측정값은 ${formatDualWeight(totals.firstWeight)}, 마지막 측정값은 ${formatDualWeight(totals.lastWeight)}입니다. 두 값의 차이는 ${totals.weightDelta > 0 ? "+" : totals.weightDelta < 0 ? "−" : ""}${formatDualWeight(Math.abs(totals.weightDelta))}입니다.`);
+  else if (totals.weightCount === 1) facts.push(`체중은 ${formatDualWeight(totals.lastWeight)}으로 1회 측정되어 변화량을 계산하지 않았습니다.`);
   else facts.push("선택한 서비스 배치에 체중 기록이 없습니다.");
   facts.push(`기저귀 확인 ${totals.diaperCount}건 중 소변 표시 ${totals.urineCount}건, 대변 표시 ${totals.stoolCount}건이 입력되었습니다.`);
   facts.push(`목욕 ${totals.bathCount}건, 산모 케어 ${totals.motherCareCount}건, 일반 메모 ${totals.noteCount}건이 기록되었습니다.`);
@@ -483,7 +551,7 @@ export function objectiveEventValue(event) {
       const method = { breast: "직접 모유수유", pumped: "유축 모유", formula: "분유" }[data.method] || text(data.method, "수유 방식 미입력");
       const amount = measuredFeedingAmount(event);
       const duration = numericValue(data.duration);
-      return amount !== null ? `${method} · ${amount} ml` : duration !== null ? `${method} · ${duration}분` : `${method} · 양 미입력`;
+      return amount !== null ? `${method} · ${formatDualVolume(amount, data.inputUnit)}` : duration !== null ? `${method} · ${duration}분` : `${method} · 양 미입력`;
     }
     case "diaper":
       return `소변 ${text(data.urine)} · 대변 ${text(data.stool)}${data.color ? ` · 색상 ${text(data.color)}` : ""}`;
@@ -493,15 +561,15 @@ export function objectiveEventValue(event) {
     }
     case "temperature": {
       const value = numericValue(data.value);
-      return value === null ? "측정값 미입력" : `${value.toFixed(1)}℃`;
+      return value === null ? "측정값 미입력" : formatDualTemperature(value, data.inputUnit);
     }
     case "bath": {
       const water = numericValue(data.waterTemperature);
-      return `${text(data.bathType, "목욕")}${water === null ? "" : ` · 물 온도 ${water.toFixed(1)}℃`}${data.note ? ` · 입력 메모: ${text(data.note)}` : ""}`;
+      return `${text(data.bathType, "목욕")}${water === null ? "" : ` · 물 온도 ${formatDualTemperature(water, data.inputUnit)}`}${data.note ? ` · 입력 메모: ${text(data.note)}` : ""}`;
     }
     case "weight": {
       const value = numericValue(data.value);
-      return value === null ? "측정값 미입력" : `${value.toFixed(2)}kg`;
+      return value === null ? "측정값 미입력" : formatDualWeight(value, data.inputUnit);
     }
     case "mother":
       return `${text(data.care, "산모 케어")}${data.note ? ` · 입력 메모: ${text(data.note)}` : ""}`;
