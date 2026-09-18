@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   buildObjectiveReportModel,
   celsiusFrom,
@@ -233,5 +234,11 @@ const koreaBoundaryReport = buildObjectiveReportModel({
 
 assert.equal(koreaBoundaryReport.totals.eventCount, 1);
 assert.equal(koreaBoundaryReport.daily.find((day) => day.dateKey === "2026-09-15")?.temperatureCount, 1);
+
+const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+assert.doesNotMatch(appSource, /<h2>서비스일별 기록<\/h2>/, "daily record table must not appear in the report");
+assert.doesNotMatch(appSource, /측정·지원 기록/, "measurement/support table must not appear in the report");
+assert.doesNotMatch(appSource, /<h2>시간별 상세 기록<\/h2>/, "hourly detail table must not appear in the report");
+assert.doesNotMatch(appSource, /data-objective-report-granularity/, "removed report density controls must not return");
 
 console.log("Objective report checks passed.");
