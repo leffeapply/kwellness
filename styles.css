@@ -4435,6 +4435,8 @@ body:has(#modal-root:not(:empty)) {
 .public-section-heading { max-width: 720px; }
 .public-section-heading.centered { margin: 0 auto 45px; text-align: center; }
 .public-section-heading h2, .public-contact h2, .location-card h2 { margin: 10px 0 18px; font-size: clamp(35px, 4vw, 56px); letter-spacing: -1.8px; }
+.public-section-heading:has(.services-heading-title) { max-width: 1040px; }
+.public-section-heading .services-heading-title { font-size: clamp(17px, 4.3vw, 56px); letter-spacing: -.06em; white-space: nowrap; }
 .public-section-heading > p:not(.eyebrow), .location-card > p:not(.eyebrow) { color: #627774; font-size: 14px; line-height: 1.8; }
 .public-about { display: grid; grid-template-columns: .82fr 1.18fr; gap: 90px; align-items: end; }
 .about-story > p { margin: 0; color: #536e6a; font-size: 17px; line-height: 2; }
@@ -4844,6 +4846,16 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   .about-metrics { grid-template-columns: 1fr; }
   .about-metrics div { min-height: 85px; }
   .public-service-card { padding: 27px 21px; }
+  .public-service-card.featured h3 {
+    font-size: clamp(22px, 7vw, 30px);
+    letter-spacing: -.055em;
+    white-space: nowrap;
+  }
+  .massage-license strong {
+    font-size: clamp(12px, 3.5vw, 15px);
+    letter-spacing: -.035em;
+    white-space: nowrap;
+  }
   .public-caregiver-grid { grid-template-columns: 1fr; }
   .public-testimonial { grid-column: auto; grid-template-columns: auto 1fr; }
   .public-testimonial strong { grid-column: 2; }

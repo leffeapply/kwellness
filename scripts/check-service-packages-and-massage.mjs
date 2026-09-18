@@ -27,8 +27,8 @@ const appRules = [
   "massage-day-summary",
   "therapist-massage-calendar-card",
   "MASSAGE_CHANGE_NOTICE_HOURS = 24",
-  "전문 자격이 부여된 마사지 테라피스트의 산후/산전 마사지 서비스",
-  "LMT(주 정부 라이센스) 보유 테라피스트",
+  "전문 자격이 부여된 테라피스트의 산후/산전 마사지 서비스",
+  "LMT(주 정부 면허) 보유 테라피스트",
 ];
 appRules.forEach((rule) => assert.ok(app.includes(rule), `app.js is missing: ${rule}`));
 
