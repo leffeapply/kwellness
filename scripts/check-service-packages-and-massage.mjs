@@ -6,6 +6,7 @@ const cloud = readFileSync(new URL("../cloud-data.js", import.meta.url), "utf8")
 const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const enumMigration = readFileSync(new URL("../supabase/migrations/043_add_massage_service_type.sql", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../supabase/migrations/044_service_packages_and_massage_booking.sql", import.meta.url), "utf8");
+const permissionMigration = readFileSync(new URL("../supabase/migrations/046_independent_staff_service_permissions.sql", import.meta.url), "utf8");
 
 const appRules = [
   "const POSTPARTUM_WEEKLY_RATE = 1800",
@@ -15,7 +16,9 @@ const appRules = [
   "GENERAL: Object.freeze({ 60: 150, 90: 210 })",
   "data-postpartum-mode=\"LIVE_IN\"",
   "data-massage-book",
-  "name=\"massageTherapist\"",
+  'serviceOption("postpartumCaregiver"',
+  'serviceOption("babysittingCaregiver"',
+  'serviceOption("massageTherapist"',
   "therapistAvailabilityPage",
   "therapistMassageCalendar",
   "data-massage-slot",
@@ -70,6 +73,15 @@ assert.ok(css.includes("margin-top: auto; margin-bottom: 25px;"), "service price
 ].forEach((rule) => assert.ok(migration.includes(rule), `migration is missing: ${rule}`));
 
 assert.ok(enumMigration.includes("alter type public.care_service_type add value if not exists 'MASSAGE'"), "MASSAGE enum migration is missing");
+[
+  "can_provide_postpartum",
+  "can_provide_babysitting",
+  "admin_configure_member_service_access",
+  "my_caregiver_service_capabilities",
+  "enforce_assignment_service_capability",
+].forEach((rule) => assert.ok(permissionMigration.includes(rule), `independent permission migration is missing: ${rule}`));
+assert.ok(app.includes("마사지 테라피스트\", \"다른 관리사 권한 없이 단독으로 부여"), "massage-only staff access must be supported");
+assert.ok(!app.includes("마사지 테라피스트 자격은 관리사 권한과 함께 부여"), "massage access must not require postpartum or babysitting permission");
 assert.ok(!app.includes("매주 같은 요일·시간"), "massage packages must not force a recurring weekday and time");
 assert.ok(!app.includes("<span>변경·취소</span><strong>24시간"), "massage card must show therapist licensing instead of the change notice");
 

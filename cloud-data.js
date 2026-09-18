@@ -312,6 +312,7 @@ async function loadCloudStateOnce(session) {
     caregivers,
     clientManagement,
     caregiverHr,
+    myCaregiverCapabilities,
     caregiverPublicProfiles,
     massageAvailability,
     massageBookings,
@@ -342,6 +343,7 @@ async function loadCloudStateOnce(session) {
     table("caregivers"),
     table("client_management_profiles"),
     table("caregiver_hr_profiles"),
+    throwIfError(await supabase.rpc("my_caregiver_service_capabilities"), "내 서비스 자격 조회"),
     table("caregiver_public_profiles"),
     table("massage_therapist_availability"),
     table("massage_booking_sessions"),
@@ -434,6 +436,13 @@ async function loadCloudStateOnce(session) {
     const caregiverApproved = hasCaregiverRole && Boolean(caregiver);
     const accountUnavailable = ["SUSPENDED", "REJECTED"].includes(profile.account_status);
     const publicProfile = caregiver ? publicProfileByCaregiver.get(caregiver.id) : null;
+    const ownCapabilities = profile.id === session.user.id
+      ? (Array.isArray(myCaregiverCapabilities) ? myCaregiverCapabilities[0] : myCaregiverCapabilities)
+      : null;
+    const hasHrProfile = Boolean(hr || ownCapabilities?.has_hr_profile);
+    const canProvidePostpartum = Boolean(hr?.can_provide_postpartum ?? ownCapabilities?.can_provide_postpartum ?? hasCaregiverRole);
+    const canProvideBabysitting = Boolean(hr?.can_provide_babysitting ?? ownCapabilities?.can_provide_babysitting ?? hasCaregiverRole);
+    const isMassageTherapist = Boolean(hr?.is_massage_therapist ?? ownCapabilities?.is_massage_therapist);
     return {
       id: profile.id,
       login: profile.email || "",
@@ -451,9 +460,11 @@ async function loadCloudStateOnce(session) {
       certification: hr?.career_summary || caregiverApplication?.certification_summary || "",
       hireDate: hr?.hire_date || null,
       careerYears: Number(hr?.career_years || 0),
-      employmentStatus: hr?.employment_status || (caregiverApproved ? "INACTIVE" : "APPLICANT"),
-      hasHrProfile: Boolean(hr),
-      isMassageTherapist: Boolean(hr?.is_massage_therapist),
+      employmentStatus: hr?.employment_status || ownCapabilities?.employment_status || (caregiverApproved ? "INACTIVE" : "APPLICANT"),
+      hasHrProfile,
+      canProvidePostpartum,
+      canProvideBabysitting,
+      isMassageTherapist,
       specialties: hr?.specialties || "",
       residentialArea: hr?.residential_area || "",
       serviceArea: hr?.service_area_notes || "",
@@ -1228,6 +1239,16 @@ export async function setMemberAccessRolesCloud(userId, roles) {
     p_user_id: userId,
     p_roles: roles,
   }), "회원 접근 권한 구성");
+}
+
+export async function configureMemberServiceAccessCloud(userId, roles, capabilities) {
+  return throwIfError(await supabase.rpc("admin_configure_member_service_access", {
+    p_user_id: userId,
+    p_roles: roles,
+    p_postpartum: Boolean(capabilities?.postpartum),
+    p_babysitting: Boolean(capabilities?.babysitting),
+    p_massage: Boolean(capabilities?.massage),
+  }), "회원 서비스 권한 구성");
 }
 
 export async function setMassageTherapistCapabilityCloud(userId, enabled) {

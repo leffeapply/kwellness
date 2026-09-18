@@ -48,7 +48,7 @@ import {
   scheduleServiceRequestCloud,
   saveCareShiftChecklistCloud,
   setCareSessionStatusCloud,
-  setMemberAccessRolesCloud,
+  configureMemberServiceAccessCloud,
   setMemberStatusCloud,
   setCaregiverReviewPublicationCloud,
   setCaregiverReviewValidityCloud,
@@ -71,7 +71,6 @@ import {
   updateMyProfileCloud,
   updatePasswordCloud,
   uploadCaregiverPublicPhotoCloud,
-  setMassageTherapistCapabilityCloud,
   submitMassageBookingChangeCloud,
 } from "./cloud-data.js";
 
@@ -400,9 +399,9 @@ import {
       users: [
         { id: "user-admin", login: "admin-preview@localhost.invalid", email: "admin-preview@localhost.invalid", password: null, role: "admin", status: "approved", fullName: "운영 관리자", initials: "운", mustChangePassword: false, createdAt: dateOffset(-120) },
         { id: "user-retail", login: "retail-preview@localhost.invalid", email: "retail-preview@localhost.invalid", password: null, role: "retail", status: "approved", fullName: "리테일 담당자", initials: "리", mustChangePassword: false, createdAt: dateOffset(-90) },
-        { id: "user-caregiver-mina", caregiverId: "caregiver-mina", login: "caregiver-one@localhost.invalid", email: "caregiver-one@localhost.invalid", password: null, role: "caregiver", status: "approved", fullName: "Mina Kim", initials: "MK", phone: "470-555-0142", certification: "Newborn Care Specialist · CPR", hireDate: dateOffset(-58), careerYears: 6, employmentStatus: "ACTIVE", specialties: "신생아 수면, 모유수유 지원", residentialArea: "Duluth, GA", serviceArea: "Duluth · Johns Creek · Suwanee", hrNotes: "야간 근무는 사전 협의 필요", createdAt: dateOffset(-60) },
-        { id: "user-caregiver-jane", caregiverId: "caregiver-jane", login: "caregiver-two@localhost.invalid", email: "caregiver-two@localhost.invalid", password: null, role: "caregiver", status: "approved", fullName: "Jane Lee", initials: "JL", phone: "470-555-0188", certification: "Postpartum Doula · Infant CPR", hireDate: dateOffset(-42), careerYears: 4, employmentStatus: "ACTIVE", isMassageTherapist: true, specialties: "산모 회복, 식사 지원", residentialArea: "Sandy Springs, GA", serviceArea: "Atlanta · Sandy Springs · Marietta", hrNotes: "주 4일 근무 선호", createdAt: dateOffset(-45) },
-        { id: "user-caregiver-soo", caregiverId: "caregiver-soo", login: "caregiver-three@localhost.invalid", email: "caregiver-three@localhost.invalid", password: null, role: "caregiver", status: "approved", fullName: "Soo Choi", initials: "SC", phone: "470-555-0194", certification: "Infant Care · CPR", hireDate: dateOffset(-28), careerYears: 3, employmentStatus: "ACTIVE", specialties: "영아 놀이, 생활 루틴, 안전 돌봄", residentialArea: "Kennesaw, GA", serviceArea: "Kennesaw · Marietta · Acworth", hrNotes: "오후 베이비시팅 일정 선호", createdAt: dateOffset(-30) },
+        { id: "user-caregiver-mina", caregiverId: "caregiver-mina", login: "caregiver-one@localhost.invalid", email: "caregiver-one@localhost.invalid", password: null, role: "caregiver", status: "approved", fullName: "Mina Kim", initials: "MK", phone: "470-555-0142", certification: "Newborn Care Specialist · CPR", hireDate: dateOffset(-58), careerYears: 6, employmentStatus: "ACTIVE", canProvidePostpartum: true, canProvideBabysitting: true, specialties: "신생아 수면, 모유수유 지원", residentialArea: "Duluth, GA", serviceArea: "Duluth · Johns Creek · Suwanee", hrNotes: "야간 근무는 사전 협의 필요", createdAt: dateOffset(-60) },
+        { id: "user-caregiver-jane", caregiverId: "caregiver-jane", login: "caregiver-two@localhost.invalid", email: "caregiver-two@localhost.invalid", password: null, role: "caregiver", status: "approved", fullName: "Jane Lee", initials: "JL", phone: "470-555-0188", certification: "Postpartum Doula · Infant CPR", hireDate: dateOffset(-42), careerYears: 4, employmentStatus: "ACTIVE", canProvidePostpartum: true, canProvideBabysitting: true, isMassageTherapist: true, specialties: "산모 회복, 식사 지원", residentialArea: "Sandy Springs, GA", serviceArea: "Atlanta · Sandy Springs · Marietta", hrNotes: "주 4일 근무 선호", createdAt: dateOffset(-45) },
+        { id: "user-caregiver-soo", caregiverId: "caregiver-soo", login: "caregiver-three@localhost.invalid", email: "caregiver-three@localhost.invalid", password: null, role: "caregiver", status: "approved", fullName: "Soo Choi", initials: "SC", phone: "470-555-0194", certification: "Infant Care · CPR", hireDate: dateOffset(-28), careerYears: 3, employmentStatus: "ACTIVE", canProvidePostpartum: true, canProvideBabysitting: true, specialties: "영아 놀이, 생활 루틴, 안전 돌봄", residentialArea: "Kennesaw, GA", serviceArea: "Kennesaw · Marietta · Acworth", hrNotes: "오후 베이비시팅 일정 선호", createdAt: dateOffset(-30) },
         { id: "user-client-sarah", login: "client-one@localhost.invalid", email: "client-one@localhost.invalid", password: null, role: "client", status: "approved", fullName: "Sarah Kim", initials: "SK", phone: "470-555-0109", createdAt: dateOffset(-30) },
         { id: "user-client-sophia", login: "client-two@localhost.invalid", email: "client-two@localhost.invalid", password: null, role: "client", status: "approved", fullName: "Sophia Park", initials: "SP", phone: "470-555-0166", createdAt: dateOffset(-18) },
       ],
@@ -714,7 +713,9 @@ import {
       Object.assign(state, live);
       state.auth.currentUserId = live.currentUser.id;
       const availableWorkspaces = availableWorkspaceRoles(live.currentUser);
-      state.role = availableWorkspaces.includes(preferredWorkspace) ? preferredWorkspace : live.currentUser.role;
+      state.role = availableWorkspaces.includes(preferredWorkspace)
+        ? preferredWorkspace
+        : availableWorkspaces.includes(live.currentUser.role) ? live.currentUser.role : availableWorkspaces[0];
       if (passwordRecoveryRequested) state.auth.screen = "reset-password";
       else if (state.auth.screen === "reset-password") state.auth.screen = "portal";
       else if (!["public", "login", "signup", "forgot-password", "reset-password", "portal"].includes(state.auth.screen)) state.auth.screen = "portal";
@@ -773,6 +774,10 @@ import {
     if (message.includes("client active service records")) return "진행 중인 고객 신청·계약이 있어 고객 권한을 제거할 수 없습니다. 고객 권한을 유지하거나 관련 서비스를 먼저 종료해 주세요.";
     if (message.includes("caregiver active schedule")) return "진행 중이거나 예정된 배정이 있어 관리사 권한을 제거할 수 없습니다. 관리사 권한을 유지하거나 배정을 먼저 완료·재배정해 주세요.";
     if (message.includes("caregiver open care session")) return "진행 중인 케어 세션을 종료한 뒤 관리사 권한을 제거해 주세요.";
+    if (message.includes("postpartum assignments")) return "진행 중이거나 예정된 산후조리 배정을 먼저 완료하거나 다른 관리사에게 재배정해 주세요.";
+    if (message.includes("babysitting assignments")) return "진행 중이거나 예정된 베이비시팅 배정을 먼저 완료하거나 다른 관리사에게 재배정해 주세요.";
+    if (message.includes("massage bookings")) return "진행 중이거나 예정된 마사지 예약을 먼저 완료하거나 다른 테라피스트에게 재배정해 주세요.";
+    if (message.includes("not authorized for the assigned service type")) return "선택한 직원에게 해당 서비스의 배정 권한이 없습니다. 회원 권한 구성에서 서비스 권한을 확인해 주세요.";
     if (message.includes("only an owner")) return "소유자만 관리자 권한을 추가하거나 제거할 수 있습니다.";
     if (message.includes("duplicate") || message.includes("already exists")) return "이미 처리 중이거나 저장된 항목입니다.";
     if (message.includes("recorded delivered-care history")) return "실제 케어 제공 기록이 확인된 서비스에만 후기를 작성할 수 있습니다.";
@@ -835,7 +840,7 @@ import {
     const roles = new Set(user.databaseRoles || []);
     const workspaces = [];
     if (["OWNER", "ADMIN", "CARE_MANAGER"].some((role) => roles.has(role))) workspaces.push("admin");
-    if (roles.has("CAREGIVER")) workspaces.push("caregiver");
+    if (roles.has("CAREGIVER") && (user.canProvidePostpartum || user.canProvideBabysitting)) workspaces.push("caregiver");
     if (user.isMassageTherapist) workspaces.push("therapist");
     if (roles.has("CLIENT")) workspaces.push("client");
     if (roles.has("RETAIL_STAFF")) workspaces.push("retail");
@@ -1532,11 +1537,22 @@ import {
     return untilEnd >= 0 ? `종료 D-${untilEnd}` : "종료";
   }
 
-  function isCaregiverAssignable(user) {
+  function isProfessionalStaffActive(user) {
     const hasCaregiverAccess = usingCloudData() ? user?.databaseRoles?.includes("CAREGIVER") : user?.role === "caregiver";
     const caregiverStatus = user?.caregiverStatus || user?.status;
     if (!hasCaregiverAccess || caregiverStatus !== "approved" || user.employmentStatus !== "ACTIVE") return false;
     return !usingCloudData() || user.hasHrProfile === true;
+  }
+
+  function caregiverHasServiceCapability(user, serviceType) {
+    if (serviceType === "POSTPARTUM") return user?.canProvidePostpartum !== false;
+    if (serviceType === "BABYSITTING") return user?.canProvideBabysitting !== false;
+    if (serviceType === "MASSAGE") return Boolean(user?.isMassageTherapist);
+    return Boolean(user?.canProvidePostpartum !== false || user?.canProvideBabysitting !== false);
+  }
+
+  function isCaregiverAssignable(user, serviceType = null) {
+    return isProfessionalStaffActive(user) && caregiverHasServiceCapability(user, serviceType);
   }
 
   function isCaregiverPendingApproval(user) {
@@ -1631,6 +1647,11 @@ import {
         items = items.filter((item) => ["overview", "schedule", "reports"].includes(item.id));
       }
       if (role === "retail") items = items.map((item) => ({ ...item, label: "리테일 준비 중" }));
+    }
+    if (role === "caregiver") {
+      const user = authUser();
+      if (user && user.canProvidePostpartum === false) items = items.filter((item) => item.id !== "postpartum");
+      if (user && user.canProvideBabysitting === false) items = items.filter((item) => item.id !== "babysitting");
     }
     if (role === "client") {
       return [{ id: "sitehome", label: "홈페이지", icon: "⌂" }, ...items];
@@ -2027,7 +2048,12 @@ import {
     const validReviews = state.reviews.filter((review) => review.caregiverUserId === user.id && review.source === "CLIENT" && review.validityStatus !== "INVALID" && !review.archived && !state.assignments.find((item) => item.id === review.assignmentId)?.administrativelyRemovedAt);
     const average = publicProfile?.averageRating != null ? Number(publicProfile.averageRating).toFixed(1) : validReviews.length ? (validReviews.reduce((sum, review) => sum + Number(review.rating), 0) / validReviews.length).toFixed(1) : null;
     const reviewCount = publicProfile?.averageRating != null ? Number(publicProfile.reviewCount || 0) : validReviews.length;
-    return `<div class="management-row caregiver-management-row"><div class="management-identity"><div class="mini-avatar">${escapeHtml(user.initials)}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email)} · ${escapeHtml(user.phone || "전화 미등록")}</span></div></div><div class="management-cell"><span>경력·입사년월</span><strong>${Number(user.careerYears || 0)}년 경력</strong><small>${user.hireDate ? `${formatDate(user.hireDate, { year: "numeric", month: "long" })} 입사` : "입사일 미등록"}</small></div><div class="management-cell"><span>홈페이지·평점</span><strong>${average ? `★ ${average} · 후기 ${reviewCount}건` : "후기 없음"}</strong><small>${publicProfile?.isPublished !== false && publicProfile ? "홈페이지 공개 중" : "홈페이지 비공개"} · ${escapeHtml(publicProfile?.headline || user.specialties || "공개 소개 미등록")}</small></div><div class="management-cell memo-cell"><span>현재 배정·인사메모</span><strong>${client ? `${escapeHtml(client.motherName)} · ${escapeHtml(assignedBabyName || "아이")}` : "현재 배정 없음"}</strong><small>${escapeHtml(hrSetupRequired ? "인사정보를 저장하고 근무상태를 재직으로 설정해야 배정할 수 있습니다." : user.hrNotes || "인사 메모 없음")}</small></div><div class="management-actions"><span class="status-chip ${user.status === "pending" || user.employmentStatus === "INACTIVE" || hrSetupRequired || suspended || archived ? "coral" : ""}">${accountStatusLabel}</span><button class="secondary-button mini-button" data-manage-caregiver="${user.id}">${hrSetupRequired ? "인사정보 설정" : "프로필·후기 관리"}</button>${accountAction}</div></div>`;
+    const serviceBadges = [
+      user.canProvidePostpartum !== false ? "산후조리" : null,
+      user.canProvideBabysitting !== false ? "베이비시팅" : null,
+      user.isMassageTherapist ? "마사지" : null,
+    ].filter(Boolean).map((label) => `<span class="member-role-badge">${label}</span>`).join("");
+    return `<div class="management-row caregiver-management-row"><div class="management-identity"><div class="mini-avatar">${escapeHtml(user.initials)}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email)} · ${escapeHtml(user.phone || "전화 미등록")}</span><div class="member-role-badges">${serviceBadges}</div></div></div><div class="management-cell"><span>경력·입사년월</span><strong>${Number(user.careerYears || 0)}년 경력</strong><small>${user.hireDate ? `${formatDate(user.hireDate, { year: "numeric", month: "long" })} 입사` : "입사일 미등록"}</small></div><div class="management-cell"><span>홈페이지·평점</span><strong>${average ? `★ ${average} · 후기 ${reviewCount}건` : "후기 없음"}</strong><small>${publicProfile?.isPublished !== false && publicProfile ? "홈페이지 공개 중" : "홈페이지 비공개"} · ${escapeHtml(publicProfile?.headline || user.specialties || "공개 소개 미등록")}</small></div><div class="management-cell memo-cell"><span>현재 배정·인사메모</span><strong>${client ? `${escapeHtml(client.motherName)} · ${escapeHtml(assignedBabyName || "아이")}` : "현재 배정 없음"}</strong><small>${escapeHtml(hrSetupRequired ? "인사정보를 저장하고 근무상태를 재직으로 설정해야 배정할 수 있습니다." : user.hrNotes || "인사 메모 없음")}</small></div><div class="management-actions"><span class="status-chip ${user.status === "pending" || user.employmentStatus === "INACTIVE" || hrSetupRequired || suspended || archived ? "coral" : ""}">${accountStatusLabel}</span><button class="secondary-button mini-button" data-manage-caregiver="${user.id}">${hrSetupRequired ? "인사정보 설정" : "프로필·후기 관리"}</button>${accountAction}</div></div>`;
   }
 
   const DATABASE_ROLE_BY_APP_ROLE = {
@@ -2134,14 +2160,20 @@ import {
     const targetIsAdministrator = currentRoles.some((role) => ["OWNER", "ADMIN"].includes(role));
     const protectedAdministrator = targetIsAdministrator && !canGrantAdministrativeRole() && !isSelf;
     const roleBadges = currentRoles
+      .filter((role) => role !== "CAREGIVER")
       .map((role) => `<span class="member-role-badge ${["OWNER", "ADMIN"].includes(role) ? "administrative" : ""}">${escapeHtml(DATABASE_ROLE_LABELS[role] || role)}</span>`)
       .join("");
+    const serviceBadges = currentRoles.includes("CAREGIVER") ? [
+      user.canProvidePostpartum !== false ? "산후조리" : null,
+      user.canProvideBabysitting !== false ? "베이비시팅" : null,
+      user.isMassageTherapist ? "마사지" : null,
+    ].filter(Boolean).map((label) => `<span class="member-role-badge">${label}</span>`).join("") : "";
     const accountAction = isSelf || currentRoles.includes("OWNER")
       ? `<span class="status-chip">${isSelf ? "현재 계정" : "보호된 소유자"}</span>`
       : archived
         ? `<span class="status-chip coral">보관됨</span>`
         : `<button class="text-button danger-text mini-button" data-archive-member="${user.id}" data-member-name="${escapeHtml(user.fullName)}">계정 보관</button>`;
-    return `<div class="management-row member-account-row ${archived ? "is-archived" : ""}"><div class="management-identity"><div class="mini-avatar">${escapeHtml(user.initials || initialsFor(user.fullName))}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email || "이메일 미등록")}</span></div></div><div class="management-cell"><span>접근 권한</span><div class="member-role-badges">${roleBadges}</div><button class="secondary-button mini-button member-access-button" type="button" data-configure-member-roles="${user.id}" ${archived || protectedAdministrator ? "disabled" : ""}>권한 구성</button><small>${protectedAdministrator ? "소유자만 다른 관리자 권한을 변경할 수 있습니다." : "한 계정에 여러 작업공간을 함께 부여할 수 있습니다."}</small></div><div class="management-cell"><span>가입일</span><strong>${user.createdAt ? formatDate(user.createdAt) : "미등록"}</strong><small>${escapeHtml(user.phone || "전화 미등록")}</small></div><div class="management-cell"><span>계정 상태</span><strong>${archived ? "보관됨" : pending ? "승인 대기" : user.accountStatus === "SUSPENDED" ? "접근 정지" : "정상"}</strong><small>${archived ? "로그인 및 데이터 접근 차단" : `${currentRoles.length}개 권한 연결됨`}</small></div><div class="management-actions">${accountAction}</div></div>`;
+    return `<div class="management-row member-account-row ${archived ? "is-archived" : ""}"><div class="management-identity"><div class="mini-avatar">${escapeHtml(user.initials || initialsFor(user.fullName))}</div><div><strong>${escapeHtml(user.fullName)}</strong><span>${escapeHtml(user.email || "이메일 미등록")}</span></div></div><div class="management-cell"><span>접근 권한</span><div class="member-role-badges">${roleBadges}${serviceBadges}</div><button class="secondary-button mini-button member-access-button" type="button" data-configure-member-roles="${user.id}" ${archived || protectedAdministrator ? "disabled" : ""}>권한 구성</button><small>${protectedAdministrator ? "소유자만 다른 관리자 권한을 변경할 수 있습니다." : "서비스 권한을 각각 독립적으로 부여할 수 있습니다."}</small></div><div class="management-cell"><span>가입일</span><strong>${user.createdAt ? formatDate(user.createdAt) : "미등록"}</strong><small>${escapeHtml(user.phone || "전화 미등록")}</small></div><div class="management-cell"><span>계정 상태</span><strong>${archived ? "보관됨" : pending ? "승인 대기" : user.accountStatus === "SUSPENDED" ? "접근 정지" : "정상"}</strong><small>${archived ? "로그인 및 데이터 접근 차단" : `${currentRoles.length}개 권한 연결됨`}</small></div><div class="management-actions">${accountAction}</div></div>`;
   }
 
   function openMemberRoleAccessModal(userId) {
@@ -2151,33 +2183,43 @@ import {
     const adminLocked = !canGrantAdministrativeRole();
     const fixedRoles = ["OWNER", "CARE_MANAGER", "RETAIL_STAFF"].filter((role) => currentRoles.has(role));
     const roleOption = (role, label, detail, disabled = false) => `<label class="member-access-option ${disabled ? "locked" : ""}"><input type="checkbox" name="accessRole" value="${role}" ${currentRoles.has(role) ? "checked" : ""} ${disabled ? "disabled" : ""}/><span><strong>${label}</strong><small>${detail}</small></span></label>`;
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal member-access-modal" role="dialog" aria-modal="true" aria-labelledby="member-access-title"><header class="modal-header"><div><p class="eyebrow">MEMBER ACCESS</p><h3 id="member-access-title">회원 권한 구성</h3><p>${escapeHtml(member.fullName)} · ${escapeHtml(member.email || "이메일 미등록")}</p></div><button class="close-button" type="button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-member-access-form><div class="status-banner"><strong>복수 역할 계정</strong><span>선택한 작업공간을 같은 로그인 계정에서 전환해 사용할 수 있습니다. 기존 역할의 운영 기록은 다른 역할을 추가해도 유지됩니다.</span></div><fieldset class="member-access-options"><legend>허용할 작업공간</legend>${roleOption("CLIENT", "고객", "본인의 서비스 신청·일정·케어 기록을 확인합니다.")}${roleOption("CAREGIVER", "관리사", "배정된 고객 일정과 케어 기록 화면을 사용합니다.")}${roleOption("ADMIN", "관리자", adminLocked ? "현재 관리자 권한은 유지되며 소유자만 변경할 수 있습니다." : "회원·일정·결제·운영 정보를 관리합니다.", adminLocked)}${fixedRoles.length ? `<div class="fixed-access-note"><strong>보호된 기존 권한</strong><div class="member-role-badges">${fixedRoles.map((role) => `<span class="member-role-badge administrative">${escapeHtml(DATABASE_ROLE_LABELS[role])}</span>`).join("")}</div><small>소유자 및 기존 특수 권한은 이 화면에서 제거되지 않습니다.</small></div>` : ""}</fieldset><fieldset class="member-access-options"><legend>전문 서비스 자격</legend><label class="member-access-option"><input type="checkbox" name="massageTherapist" ${member.isMassageTherapist ? "checked" : ""}/><span><strong>마사지 테라피스트</strong><small>마사지 예약 후보에 표시되며, 일반 케어 일정과의 충돌을 자동 검사합니다.</small></span></label></fieldset><div class="privacy-boundary-note"><strong>마사지 중복 배정 예외</strong><span>해당 고객을 직접 케어 중인 테라피스트는 그 고객의 케어 시간 안에도 마사지가 배정될 수 있습니다. 다른 고객의 일정 또는 다른 마사지와 겹치면 배정되지 않습니다.</span></div><div class="privacy-boundary-note"><strong>고객 작업공간 자동 준비</strong><span>고객 권한을 추가하면 고객 레코드와 계정 연결을 즉시 생성하고 계정을 활성화합니다. 회원은 고객 화면에서 아기·주소 정보를 직접 작성한 뒤 바로 서비스를 신청할 수 있습니다.</span></div><div class="privacy-boundary-note"><strong>관리자 예외 승인</strong><span>관리자 또는 소유자가 관리사 권한을 추가하면 회원의 사전 약관 동의가 없어도 즉시 활성화됩니다. 회원 본인의 동의로 기록하지 않으며 승인자와 예외 적용 여부를 감사 로그에 남깁니다.</span></div><div class="privacy-boundary-note"><strong>활성 기록 보호</strong><span>진행 중인 고객 계약이나 관리사 배정이 있으면 해당 권한은 제거할 수 없지만, 다른 권한을 추가하는 것은 가능합니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">권한 저장</button></div></form></section></div>`;
+    const postpartumCapability = member.canProvidePostpartum ?? currentRoles.has("CAREGIVER");
+    const babysittingCapability = member.canProvideBabysitting ?? currentRoles.has("CAREGIVER");
+    const serviceOption = (name, label, detail, checked) => `<label class="member-access-option"><input type="checkbox" name="${name}" ${checked ? "checked" : ""}/><span><strong>${label}</strong><small>${detail}</small></span></label>`;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal member-access-modal" role="dialog" aria-modal="true" aria-labelledby="member-access-title"><header class="modal-header"><div><p class="eyebrow">MEMBER ACCESS</p><h3 id="member-access-title">회원 권한 구성</h3><p>${escapeHtml(member.fullName)} · ${escapeHtml(member.email || "이메일 미등록")}</p></div><button class="close-button" type="button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-member-access-form><div class="status-banner"><strong>독립 서비스 권한</strong><span>고객·관리자 작업공간과 직원별 제공 가능 서비스를 각각 선택합니다. 산후조리, 베이비시팅, 마사지는 서로 독립적으로 부여할 수 있습니다.</span></div><fieldset class="member-access-options"><legend>일반 작업공간</legend>${roleOption("CLIENT", "고객", "본인의 서비스 신청·일정·케어 기록을 확인합니다.")}${roleOption("ADMIN", "관리자", adminLocked ? "현재 관리자 권한은 유지되며 소유자만 변경할 수 있습니다." : "회원·일정·결제·운영 정보를 관리합니다.", adminLocked)}${fixedRoles.length ? `<div class="fixed-access-note"><strong>보호된 기존 권한</strong><div class="member-role-badges">${fixedRoles.map((role) => `<span class="member-role-badge administrative">${escapeHtml(DATABASE_ROLE_LABELS[role])}</span>`).join("")}</div><small>소유자 및 기존 특수 권한은 이 화면에서 제거되지 않습니다.</small></div>` : ""}</fieldset><fieldset class="member-access-options"><legend>제공 가능 서비스</legend>${serviceOption("postpartumCaregiver", "산후조리 관리사", "산후조리 신청의 배정 후보와 산후조리 케어기빙 화면을 사용합니다.", postpartumCapability)}${serviceOption("babysittingCaregiver", "베이비시팅 관리사", "베이비시팅 신청의 배정 후보와 베이비시팅 기록 화면을 사용합니다.", babysittingCapability)}${serviceOption("massageTherapist", "마사지 테라피스트", "다른 관리사 권한 없이 단독으로 부여할 수 있으며 마사지 전용 일정 화면을 사용합니다.", member.isMassageTherapist)}</fieldset><div class="privacy-boundary-note"><strong>마사지 중복 배정 예외</strong><span>해당 고객을 직접 케어 중인 테라피스트는 그 고객의 케어 시간 안에도 마사지가 배정될 수 있습니다. 다른 고객의 일정 또는 다른 마사지와 겹치면 배정되지 않습니다.</span></div><div class="privacy-boundary-note"><strong>고객 작업공간 자동 준비</strong><span>고객 권한을 추가하면 고객 레코드와 계정 연결을 즉시 생성하고 계정을 활성화합니다. 회원은 고객 화면에서 아기·주소 정보를 직접 작성한 뒤 바로 서비스를 신청할 수 있습니다.</span></div><div class="privacy-boundary-note"><strong>관리자 예외 승인</strong><span>관리자 또는 소유자가 직원 서비스 권한을 추가하면 회원의 사전 약관 동의가 없어도 즉시 활성화됩니다. 승인자와 서비스별 권한은 감사 로그에 남깁니다.</span></div><div class="privacy-boundary-note"><strong>활성 기록 보호</strong><span>진행 중이거나 예정된 해당 서비스 배정이 있으면 그 서비스 권한은 제거할 수 없습니다. 다른 서비스 권한을 추가하는 것은 가능합니다.</span></div><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>취소</button><button type="submit" class="primary-button">권한 저장</button></div></form></section></div>`;
     bindModalFrame();
     modalRoot.querySelector("[data-member-access-form]")?.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
       const selectedRoles = [...form.querySelectorAll('input[name="accessRole"]:checked')].map((input) => input.value);
       fixedRoles.forEach((role) => { if (!selectedRoles.includes(role)) selectedRoles.push(role); });
+      const capabilities = {
+        postpartum: form.elements.postpartumCaregiver.checked,
+        babysitting: form.elements.babysittingCaregiver.checked,
+        massage: form.elements.massageTherapist.checked,
+      };
+      const hasProfessionalService = Object.values(capabilities).some(Boolean);
+      if (hasProfessionalService && !selectedRoles.includes("CAREGIVER")) selectedRoles.push("CAREGIVER");
       if (!selectedRoles.length) return showToast("최소 한 개의 접근 권한을 선택해 주세요.", "error");
       const addingCaregiver = selectedRoles.includes("CAREGIVER") && !currentRoles.has("CAREGIVER");
       const addingClient = selectedRoles.includes("CLIENT") && !currentRoles.has("CLIENT");
-      const massageTherapist = form.elements.massageTherapist.checked;
-      if (massageTherapist && !selectedRoles.includes("CAREGIVER")) return showToast("마사지 테라피스트 자격은 관리사 권한과 함께 부여해 주세요.", "error");
       const submitButton = form.querySelector('button[type="submit"]');
       submitButton.disabled = true;
       submitButton.textContent = "저장 중…";
       try {
         if (usingCloudData()) {
-          await setMemberAccessRolesCloud(member.id, selectedRoles);
-          await setMassageTherapistCapabilityCloud(member.id, massageTherapist);
+          await configureMemberServiceAccessCloud(member.id, selectedRoles, capabilities);
           closeModal();
           await refreshCloudState();
         } else {
           member.databaseRoles = selectedRoles;
-          member.isMassageTherapist = massageTherapist;
+          member.canProvidePostpartum = capabilities.postpartum;
+          member.canProvideBabysitting = capabilities.babysitting;
+          member.isMassageTherapist = capabilities.massage;
           member.role = selectedRoles.some((role) => ["OWNER", "ADMIN", "CARE_MANAGER"].includes(role))
             ? "admin"
-            : selectedRoles.includes("CAREGIVER") ? "caregiver"
+            : capabilities.postpartum || capabilities.babysitting ? "caregiver"
+              : capabilities.massage ? "therapist"
               : selectedRoles.includes("CLIENT") ? "client" : "retail";
           if (addingCaregiver) {
             member.status = "approved";
@@ -2664,7 +2706,16 @@ import {
     const activeAssignments = state.assignments.filter((assignment) => assignment.caregiverUserId === user.id && isAssignmentCurrent(assignment));
     const upcomingAssignments = state.assignments.filter((assignment) => assignment.caregiverUserId === user.id && assignment.status !== "CANCELLED" && new Date(assignment.startAt) > new Date());
     const retrospectiveAssignments = retrospectiveAssignmentsFor(user.id);
-    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY CAREGIVING", "나의 서비스 일정", "산후조리·베이비시팅 케어와 자격에 따라 배정된 마사지 예약을 분리해 확인합니다.")}<div class="grid stats">${statCard("Current", activeAssignments.length, "현재 진행 중인 전체 배정", "◷")}${statCard("Postpartum", activeAssignments.filter((item) => assignmentServiceType(item) === "POSTPARTUM").length, "산후조리 진행 중", "♡")}${statCard("Babysitting", activeAssignments.filter((item) => assignmentServiceType(item) === "BABYSITTING").length, "베이비시팅 진행 중", "☆")}${statCard("Massage", activeAssignments.filter((item) => assignmentServiceType(item) === "MASSAGE").length, user.isMassageTherapist ? "테라피스트 자격 활성" : "테라피스트 자격 없음", "✦")}</div><div class="service-overview-grid" style="margin-top:18px">${caregiverServiceOverviewCard(user, "POSTPARTUM")}${caregiverServiceOverviewCard(user, "BABYSITTING")}${caregiverMassageOverviewCard(user)}</div><article class="card card-pad retrospective-entry-card" style="margin-top:18px"><div><p class="eyebrow">RETROSPECTIVE CARE RECORD</p><h3>지난 근무 리포트 보완</h3><p>웹 기록을 놓친 실제 돌봄 근무를 소급 입력할 수 있습니다. 서비스 날짜와 실제 근무시간은 그대로 기록되고, 입력자와 뒤늦게 입력한 시각은 감사 이력에 별도로 남습니다.</p></div><button type="button" class="primary-button" data-open-retrospective-report ${retrospectiveAssignments.length ? "" : "disabled"}>지난 근무 리포트 입력</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>서비스별 기록·업무 범위</strong><p>산후조리에는 산모·신생아 케어 차트, 베이비시팅에는 식사·생활 이벤트를 기록합니다. 산전·산후 마사지는 관리자에게 테라피스트 자격을 부여받은 관리사에게만 별도 일정으로 배정되며, 일반 돌봄 기록과 분리됩니다.</p></article></section>`;
+    const enabledCareServices = [
+      user.canProvidePostpartum !== false ? "POSTPARTUM" : null,
+      user.canProvideBabysitting !== false ? "BABYSITTING" : null,
+    ].filter(Boolean);
+    const serviceStats = enabledCareServices.map((serviceType) => {
+      const meta = serviceMetaFor(serviceType);
+      return statCard(meta.shortLabel, activeAssignments.filter((item) => assignmentServiceType(item) === serviceType).length, `${meta.shortLabel} 진행 중`, meta.icon);
+    }).join("");
+    const serviceCards = enabledCareServices.map((serviceType) => caregiverServiceOverviewCard(user, serviceType)).join("");
+    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY CAREGIVING", "나의 서비스 일정", "관리자가 부여한 산후조리·베이비시팅 권한과 실제 배정 일정을 확인합니다.")}<div class="grid stats">${statCard("Current", activeAssignments.filter((item) => assignmentServiceType(item) !== "MASSAGE").length, "현재 진행 중인 케어 배정", "◷")}${serviceStats}</div><div class="service-overview-grid" style="margin-top:18px">${serviceCards}</div><article class="card card-pad retrospective-entry-card" style="margin-top:18px"><div><p class="eyebrow">RETROSPECTIVE CARE RECORD</p><h3>지난 근무 리포트 보완</h3><p>웹 기록을 놓친 실제 돌봄 근무를 소급 입력할 수 있습니다. 서비스 날짜와 실제 근무시간은 그대로 기록되고, 입력자와 뒤늦게 입력한 시각은 감사 이력에 별도로 남습니다.</p></div><button type="button" class="primary-button" data-open-retrospective-report ${retrospectiveAssignments.length ? "" : "disabled"}>지난 근무 리포트 입력</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>서비스별 기록·업무 범위</strong><p>부여받은 서비스만 메뉴와 배정 후보에 표시됩니다. 산후조리에는 산모·신생아 케어 차트, 베이비시팅에는 식사·생활 이벤트를 기록하며 마사지는 별도 테라피스트 작업공간에서 관리합니다.</p></article></section>`;
   }
 
   function retrospectiveAssignmentsFor(userId) {
@@ -4447,8 +4498,9 @@ import {
         await refreshCloudState(authData.session);
         const user = authUser();
         if (!user) throw new Error("회원 정보를 불러오지 못했습니다.");
-        state.auth.screen = user.role === "client" ? "public" : "portal";
-        state.role = user.role;
+        const availableWorkspaces = availableWorkspaceRoles(user);
+        state.role = availableWorkspaces.includes(user.role) ? user.role : availableWorkspaces[0];
+        state.auth.screen = availableWorkspaces.length === 1 && state.role === "client" ? "public" : "portal";
         saveState();
         render();
         window.scrollTo({ top: 0, left: 0, behavior: "auto" });
@@ -6158,15 +6210,15 @@ import {
     });
   }
 
-  function approvedAvailableCaregivers(startAt, endAt, excludedAssignmentId = null, requestedDays = [], requestedDailyStart = null, requestedDailyEnd = null) {
+  function approvedAvailableCaregivers(startAt, endAt, excludedAssignmentId = null, requestedDays = [], requestedDailyStart = null, requestedDailyEnd = null, serviceType = null) {
     return state.users.filter((user) =>
-      isCaregiverAssignable(user)
+      isCaregiverAssignable(user, serviceType)
       && caregiverIsAvailable(user.id, startAt, endAt, excludedAssignmentId, requestedDays, requestedDailyStart, requestedDailyEnd),
     );
   }
 
   function massageTherapistIsAvailable(user, clientId, startAt, endAt, excludedAssignmentId = null, requestedDays = [], requestedDailyStart = null, requestedDailyEnd = null) {
-    if (!isCaregiverAssignable(user) || !user.isMassageTherapist) return false;
+    if (!isProfessionalStaffActive(user) || !user.isMassageTherapist) return false;
     const requestedDaySet = new Set(requestedDays.length ? requestedDays : [KOREAN_WEEKDAYS[startOfLocalDay(startAt).getDay()]]);
     const requestStartMinutes = timeMinutes(requestedDailyStart || "00:00");
     const requestEndMinutes = timeMinutes(requestedDailyEnd || "23:59");
@@ -6251,10 +6303,10 @@ import {
     const previewWindow = serviceWindow(source, dateValue, dailyStart, dailyEnd, selectedWeeks);
     const lifecycleIssue = serviceType === "MASSAGE" ? null : serviceLifecycleIssue(source.clientId, serviceType, previewWindow.startAt, previewWindow.endAt, assignment?.id || null, selectedRequest?.id || null, source.babyId, source.babyName);
     const caregivers = assignment
-      ? state.users.filter((user) => user.id === assignment.caregiverUserId || (serviceType === "MASSAGE" ? massageTherapistIsAvailable(user, source.clientId, previewWindow.startAt, previewWindow.endAt, assignment.id, source.daysOfWeek || [], dailyStart, dailyEnd) : isCaregiverAssignable(user)))
+      ? state.users.filter((user) => user.id === assignment.caregiverUserId || (serviceType === "MASSAGE" ? massageTherapistIsAvailable(user, source.clientId, previewWindow.startAt, previewWindow.endAt, assignment.id, source.daysOfWeek || [], dailyStart, dailyEnd) : isCaregiverAssignable(user, serviceType)))
       : serviceType === "MASSAGE"
         ? approvedAvailableMassageTherapists(source.clientId, previewWindow.startAt, previewWindow.endAt, null, source.daysOfWeek || [], dailyStart, dailyEnd)
-        : approvedAvailableCaregivers(previewWindow.startAt, previewWindow.endAt, null, source.daysOfWeek || [], dailyStart, dailyEnd);
+        : approvedAvailableCaregivers(previewWindow.startAt, previewWindow.endAt, null, source.daysOfWeek || [], dailyStart, dailyEnd, serviceType);
     const selectedCaregiverId = assignment?.caregiverUserId || caregivers[0]?.id || "";
     const sourceBabyName = babyNameFor(source, client) || "아이 미등록";
     const requestLocked = Boolean(!assignment && usingCloudData());
@@ -6262,7 +6314,7 @@ import {
     const reassignmentAllowed = canReassignCloudAssignment(assignment);
     const reassignmentWindow = reassignmentAllowed ? reassignmentAvailabilityWindow(assignment) : null;
     const reassignmentCandidates = reassignmentAllowed && reassignmentWindow
-      ? (serviceType === "MASSAGE" ? approvedAvailableMassageTherapists(source.clientId, reassignmentWindow.startAt, reassignmentWindow.endAt, assignment.id, source.daysOfWeek || [], dailyStart, dailyEnd) : approvedAvailableCaregivers(reassignmentWindow.startAt, reassignmentWindow.endAt, assignment.id, source.daysOfWeek || [], dailyStart, dailyEnd)).filter((user) => user.id !== assignment.caregiverUserId)
+      ? (serviceType === "MASSAGE" ? approvedAvailableMassageTherapists(source.clientId, reassignmentWindow.startAt, reassignmentWindow.endAt, assignment.id, source.daysOfWeek || [], dailyStart, dailyEnd) : approvedAvailableCaregivers(reassignmentWindow.startAt, reassignmentWindow.endAt, assignment.id, source.daysOfWeek || [], dailyStart, dailyEnd, serviceType)).filter((user) => user.id !== assignment.caregiverUserId)
       : [];
     const reassignmentMarkup = reassignmentBlockedByActiveSession
       ? '<section class="profile-form-section assignment-reassignment-panel"><div class="status-banner warning"><strong>진행 중인 근무를 먼저 종료해 주세요.</strong><span>현장 기록이 열려 있는 동안에는 담당 관리사를 바꿀 수 없습니다.</span></div></section>'
@@ -6305,7 +6357,7 @@ import {
       const replacementUserId = String(assignmentForm.elements.replacementCaregiverUserId?.value || "");
       const reason = String(assignmentForm.elements.reassignmentReason?.value || "").trim();
       const replacement = state.users.find((user) => user.id === replacementUserId);
-      if (!replacement || replacement.id === currentAssignment.caregiverUserId || !replacement.caregiverId || !isCaregiverAssignable(replacement)) return showToast("현재 배정 가능한 다른 관리사를 선택해 주세요.", "error");
+      if (!replacement || replacement.id === currentAssignment.caregiverUserId || !replacement.caregiverId || !isCaregiverAssignable(replacement, serviceType)) return showToast(`현재 ${serviceMetaFor(serviceType).label} 배정이 가능한 다른 관리사를 선택해 주세요.`, "error");
       if (reason.length < 3 || reason.length > 500) return showToast("감사 기록을 위해 재배정 사유를 3~500자로 입력해 주세요.", "error");
       const remainingWindow = reassignmentAvailabilityWindow(currentAssignment);
       if (!remainingWindow) return showToast("재배정할 남은 서비스 요일이 없습니다. 기간 연장이 필요한지 확인해 주세요.", "info");
@@ -6342,6 +6394,10 @@ import {
     if (lifecycleIssue) return showToast(lifecycleIssue.message);
     const requestedDays = request?.daysOfWeek || state.assignments.find((item) => item.id === assignmentId)?.daysOfWeek || [];
     const selectedCaregiver = state.users.find((user) => user.id === values.caregiverUserId);
+    const selectedCaregiverEligible = values.serviceType === "MASSAGE"
+      ? isProfessionalStaffActive(selectedCaregiver) && selectedCaregiver?.isMassageTherapist
+      : isCaregiverAssignable(selectedCaregiver, values.serviceType);
+    if (!selectedCaregiverEligible) return showToast(`선택한 직원에게 ${serviceMetaFor(values.serviceType).label} 서비스 권한이 없습니다.`, "error");
     const selectedCaregiverAvailable = values.serviceType === "MASSAGE"
       ? massageTherapistIsAvailable(selectedCaregiver, values.clientId, startAt, endAt, assignmentId, requestedDays, values.dailyStart, values.dailyEnd)
       : caregiverIsAvailable(values.caregiverUserId, startAt, endAt, assignmentId, requestedDays, values.dailyStart, values.dailyEnd);
