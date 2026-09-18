@@ -7,6 +7,7 @@ const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const enumMigration = readFileSync(new URL("../supabase/migrations/043_add_massage_service_type.sql", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../supabase/migrations/044_service_packages_and_massage_booking.sql", import.meta.url), "utf8");
 const permissionMigration = readFileSync(new URL("../supabase/migrations/046_independent_staff_service_permissions.sql", import.meta.url), "utf8");
+const massageProfileMigration = readFileSync(new URL("../supabase/migrations/047_massage_only_profile_without_reviews.sql", import.meta.url), "utf8");
 
 const appRules = [
   "const POSTPARTUM_WEEKLY_RATE = 1800",
@@ -82,6 +83,13 @@ assert.ok(enumMigration.includes("alter type public.care_service_type add value 
 ].forEach((rule) => assert.ok(permissionMigration.includes(rule), `independent permission migration is missing: ${rule}`));
 assert.ok(app.includes("마사지 테라피스트\", \"다른 관리사 권한 없이 단독으로 부여"), "massage-only staff access must be supported");
 assert.ok(!app.includes("마사지 테라피스트 자격은 관리사 권한과 함께 부여"), "massage access must not require postpartum or babysitting permission");
+assert.ok(app.includes("function isMassageOnlyProfessional"), "massage-only public profile detection is missing");
+assert.ok(app.includes("massageProfessionalHighlightsMarkup(profile"), "massage-only career and specialty panel is missing");
+assert.ok(app.includes("마사지 전용 테라피스트는 평점·후기 대신 이력과 전문 분야"), "massage-only review UI guard is missing");
+assert.ok(cloud.includes("hideReputationForMassageOnlyProfile"), "public massage-only ratings must be sanitized");
+assert.ok(massageProfileMigration.includes("caregiver_accepts_reputation_reviews"), "massage-only database review guard is missing");
+assert.ok(massageProfileMigration.includes("enforce_caregiver_review_eligibility_trigger"), "customer review trigger is missing");
+assert.ok(massageProfileMigration.includes("enforce_historical_review_eligibility_trigger"), "historical review trigger is missing");
 assert.ok(!app.includes("매주 같은 요일·시간"), "massage packages must not force a recurring weekday and time");
 assert.ok(!app.includes("<span>변경·취소</span><strong>24시간"), "massage card must show therapist licensing instead of the change notice");
 

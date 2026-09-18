@@ -202,6 +202,20 @@ function normalizePublicCaregiver(row) {
   };
 }
 
+function hideReputationForMassageOnlyProfile(profile) {
+  const capabilities = [...new Set((profile?.serviceCapabilities || []).filter((serviceType) => ["POSTPARTUM", "BABYSITTING", "MASSAGE"].includes(serviceType)))];
+  if (capabilities.length !== 1 || capabilities[0] !== "MASSAGE") return profile;
+  return {
+    ...profile,
+    averageRating: null,
+    reviewCount: 0,
+    ratingDistribution: {},
+    competencyAverages: null,
+    competencyReviewCount: 0,
+    reviews: [],
+  };
+}
+
 export async function loadPublicCaregiverDirectoryCloud() {
   if (!cloudEnabled) return [];
   const [directoryResponse, capabilityResponse] = await Promise.all([
@@ -211,10 +225,10 @@ export async function loadPublicCaregiverDirectoryCloud() {
   const rows = throwIfError(directoryResponse, "관리사 공개 프로필 조회");
   const capabilityRows = capabilityResponse.error ? [] : (Array.isArray(capabilityResponse.data) ? capabilityResponse.data : []);
   const capabilitiesByCaregiver = new Map(capabilityRows.map((row) => [row.caregiver_id, row.service_capabilities]));
-  return (Array.isArray(rows) ? rows : []).map((row) => normalizePublicCaregiver({
+  return (Array.isArray(rows) ? rows : []).map((row) => hideReputationForMassageOnlyProfile(normalizePublicCaregiver({
     ...row,
     service_capabilities: capabilitiesByCaregiver.get(row.caregiver_id) || row.service_capabilities,
-  }));
+  })));
 }
 
 export async function currentCloudSession() {
