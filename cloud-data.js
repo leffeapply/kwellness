@@ -1,4 +1,9 @@
 import { backendStatus, supabase } from "./supabase-client.js";
+import {
+  careEventTypeAllowedForService,
+  isRecordableCareServiceType,
+  normalizeCareServiceType,
+} from "./care-service-scope.js";
 
 export const cloudEnabled = Boolean(backendStatus.configured && supabase);
 
@@ -593,7 +598,7 @@ async function loadCloudStateOnce(session) {
       contractId: assignment.contract_id,
       serviceRequestId: request?.id || null,
       administrativelyRemovedAt: request?.administratively_removed_at || null,
-      serviceType: assignment.service_type,
+      serviceType: normalizeCareServiceType(assignment.service_type),
       clientId: contract?.client_id || brief?.client_id || null,
       babyId: contract?.baby_id || brief?.baby_id || null,
       babyName: assignmentBaby?.first_name || brief?.baby_name || request?.baby_name || "",
@@ -785,20 +790,22 @@ async function loadCloudStateOnce(session) {
     const careSession = careSessionById.get(event.care_session_id);
     const assignment = assignmentBySession.get(event.care_session_id);
     const creator = profileById.get(event.created_by);
+    const eventType = EVENT_TO_APP[event.event_type] || null;
+    if (!careSession || !assignment || !eventType || !careEventTypeAllowedForService(assignment.serviceType, eventType)) return null;
     return {
       id: event.id,
       careSessionId: event.care_session_id,
       assignmentId: assignment?.id,
       clientId: assignment?.clientId,
       babyId: assignment?.babyId,
-      type: EVENT_TO_APP[event.event_type] || "note",
+      type: eventType,
       at: event.event_time,
       serviceTimeZone: careSession?.service_time_zone || "America/New_York",
       author: creator?.full_name || "ProMoms",
       createdBy: event.created_by,
       data: event.payload || {},
     };
-  });
+  }).filter(Boolean);
 
   const currentUser = appUsers.find((item) => item.id === session.user.id);
   if (!currentUser) throw new Error("회원 프로필을 불러오지 못했습니다. 잠시 후 다시 로그인해 주세요.");
@@ -807,13 +814,19 @@ async function loadCloudStateOnce(session) {
   }
   const currentUserIsCaregiver = currentUser.databaseRoles?.includes("CAREGIVER");
   const todayAssignments = appAssignments
-    .filter((item) => item.status === "ACTIVE" && assignmentContractCoversDate(item, todayKey) && (currentUserIsCaregiver ? item.caregiverUserId === currentUser.id : true))
+    .filter((item) => item.status === "ACTIVE"
+      && isRecordableCareServiceType(item.serviceType)
+      && assignmentContractCoversDate(item, todayKey)
+      && (currentUserIsCaregiver ? item.caregiverUserId === currentUser.id : true))
     .sort((a, b) => String(a.dailyStart).localeCompare(String(b.dailyStart)));
   const recoveredCareSession = currentUserIsCaregiver
     ? [...careSessions]
       .filter((item) => item.status === "IN_PROGRESS")
       .sort((a, b) => sessionTimestamp(b) - sessionTimestamp(a))
-      .find((item) => appAssignments.find((assignment) => assignment.id === item.assignment_id)?.caregiverUserId === currentUser.id) || null
+      .find((item) => {
+        const assignment = appAssignments.find((candidate) => candidate.id === item.assignment_id);
+        return assignment?.caregiverUserId === currentUser.id && isRecordableCareServiceType(assignment.serviceType);
+      }) || null
     : null;
   const recoveredAssignment = recoveredCareSession ? appAssignments.find((item) => item.id === recoveredCareSession.assignment_id) || null : null;
   const currentAssignment = recoveredAssignment

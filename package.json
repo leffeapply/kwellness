@@ -11,6 +11,7 @@
     "test:reviews": "node scripts/check-caregiver-reputation.mjs",
     "test:care-records": "node scripts/check-finance-care-records.mjs",
     "test:services": "node scripts/check-service-packages-and-massage.mjs",
+    "test:service-boundaries": "node scripts/check-care-service-boundaries.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

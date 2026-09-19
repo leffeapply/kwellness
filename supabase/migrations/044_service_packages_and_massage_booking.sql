@@ -90,6 +90,10 @@ alter table public.client_service_requests
     or (service_type::text = 'MASSAGE' and requested_weeks in (1, 4))
   );
 alter table public.client_service_requests
+  drop constraint if exists client_service_requests_service_subject_check,
+  drop constraint if exists client_service_requests_postpartum_mode_check,
+  drop constraint if exists client_service_requests_massage_product_check;
+alter table public.client_service_requests
   add constraint client_service_requests_service_subject_check check (
     (service_type::text = 'MASSAGE' and baby_id is null and birth_or_due_date is null)
     or (service_type::text <> 'MASSAGE' and baby_id is not null and birth_or_due_date is not null)
@@ -128,6 +132,10 @@ alter table public.care_assignments
   drop constraint if exists care_assignments_contract_weeks_check;
 alter table public.care_assignments
   drop constraint if exists care_assignments_minimum_two_weeks;
+alter table public.care_assignments
+  drop constraint if exists care_assignments_service_duration_check,
+  drop constraint if exists care_assignments_postpartum_mode_check,
+  drop constraint if exists care_assignments_massage_product_check;
 alter table public.care_assignments
   add constraint care_assignments_service_duration_check check (
     (service_type::text = 'POSTPARTUM' and coalesce(postpartum_mode, 'COMMUTE') = 'COMMUTE' and contract_weeks in (2, 3, 4))
@@ -1368,6 +1376,8 @@ alter table public.massage_therapist_availability enable row level security;
 alter table public.massage_booking_sessions enable row level security;
 alter table public.massage_booking_changes enable row level security;
 
+drop policy if exists "massage availability: admin or own therapist read"
+on public.massage_therapist_availability;
 create policy "massage availability: admin or own therapist read"
 on public.massage_therapist_availability for select to authenticated
 using (
@@ -1379,6 +1389,8 @@ using (
   )
 );
 
+drop policy if exists "massage bookings: role scoped read"
+on public.massage_booking_sessions;
 create policy "massage bookings: role scoped read"
 on public.massage_booking_sessions for select to authenticated
 using (
@@ -1391,6 +1403,8 @@ using (
   )
 );
 
+drop policy if exists "massage changes: role scoped read"
+on public.massage_booking_changes;
 create policy "massage changes: role scoped read"
 on public.massage_booking_changes for select to authenticated
 using (

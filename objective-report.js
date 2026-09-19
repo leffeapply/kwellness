@@ -1,3 +1,10 @@
+import {
+  CARE_EVENT_TYPES_BY_SERVICE,
+  careEventMatchesAssignment,
+  isRecordableCareServiceType,
+  normalizeCareServiceType,
+} from "./care-service-scope.js";
+
 export const OBJECTIVE_REPORT_TIME_ZONE = "America/New_York";
 
 const DATE_LABEL_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
@@ -490,13 +497,11 @@ function sessionFallsWithinBatch(session, assignment, batchFromDate, batchToDate
 }
 
 export function buildObjectiveReportModel({ assignment, events = [], sessions = [] }) {
-  const serviceType = assignment?.serviceType === "BABYSITTING" ? "BABYSITTING" : "POSTPARTUM";
-  const allowedTypes = serviceType === "BABYSITTING"
-    ? new Set(["meal", "sitter_note"])
-    : new Set(["feeding", "diaper", "sleep", "temperature", "bath", "weight", "mother", "note"]);
+  const serviceType = normalizeCareServiceType(assignment?.serviceType);
+  const allowedTypes = new Set(CARE_EVENT_TYPES_BY_SERVICE[serviceType] || []);
   const boundaryFromDate = assignmentBoundaryDate(assignment, "start");
   const boundaryToDate = assignmentBoundaryDate(assignment, "end");
-  const assignmentEvents = events.filter((event) => event.assignmentId === assignment?.id
+  const assignmentEvents = events.filter((event) => careEventMatchesAssignment(event, assignment, sessions)
     && allowedTypes.has(event.type)
     && eventFallsWithinBatch(event, assignment, boundaryFromDate, boundaryToDate));
   const assignmentSessions = sessions.filter((session) => session.assignmentId === assignment?.id
@@ -539,7 +544,11 @@ export function buildObjectiveReportModel({ assignment, events = [], sessions = 
       invalidMetricCount: invalidMetricCount(periodEvents),
       freeTextExcludedFromMetrics: periodEvents.filter((event) => ["note", "sitter_note"].includes(event.type) || event.data?.note || event.data?.text).length,
     },
-    facts: serviceType === "BABYSITTING" ? buildBabysittingFacts(totals) : buildPostpartumFacts(totals),
+    facts: serviceType === "BABYSITTING"
+      ? buildBabysittingFacts(totals)
+      : isRecordableCareServiceType(serviceType)
+        ? buildPostpartumFacts(totals)
+        : ["서비스 유형을 확인할 수 없어 기록을 집계하지 않았습니다."],
   };
 }
 

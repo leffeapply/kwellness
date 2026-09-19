@@ -1,6 +1,12 @@
 import { backendStatus, supabase } from "./supabase-client.js";
 import proMomsLogoUrl from "./assets/promoms-logo.png";
 import {
+  careEventMatchesAssignment,
+  careEventTypeAllowedForService,
+  isRecordableCareServiceType,
+  normalizeCareServiceType,
+} from "./care-service-scope.js";
+import {
   buildObjectiveReportModel,
   celsiusFrom,
   fahrenheitFromCelsius,
@@ -582,12 +588,22 @@ import {
             retail: { ...seed.retail, ...(saved.retail || {}) },
           };
         }
-        const upgradedEvents = saved.events.map((event) => ({
-          assignmentId: event.assignmentId || "assignment-emma",
-          clientId: event.clientId || "client-sarah",
-          babyId: event.babyId || "baby-emma",
-          ...event,
-        }));
+        const upgradedEvents = saved.events.map((event) => {
+          if (event.assignmentId) return event;
+          const candidates = seed.assignments.filter((assignment) => {
+            if (!isRecordableCareServiceType(assignmentServiceType(assignment))) return false;
+            if (event.clientId && assignment.clientId !== event.clientId) return false;
+            return careEventTypeAllowedForService(assignmentServiceType(assignment), event.type);
+          });
+          if (candidates.length !== 1) return null;
+          const assignment = candidates[0];
+          return {
+            ...event,
+            assignmentId: assignment.id,
+            clientId: event.clientId || assignment.clientId,
+            babyId: event.babyId || assignment.babyId,
+          };
+        }).filter(Boolean);
         const upgradedRetail = saved.retail
           ? {
               ...seed.retail,
@@ -970,7 +986,7 @@ import {
   }
 
   function assignmentServiceType(assignment) {
-    return ["POSTPARTUM", "BABYSITTING", "MASSAGE"].includes(assignment?.serviceType) ? assignment.serviceType : "POSTPARTUM";
+    return normalizeCareServiceType(assignment?.serviceType);
   }
 
   function serviceMetaFor(value) {
@@ -1037,7 +1053,9 @@ import {
   }
 
   function serviceWindow(source, startDate, dailyStart, dailyEnd, weeks) {
-    if (assignmentServiceType(source) !== "MASSAGE") return assignmentWindow(startDate, dailyStart, dailyEnd, weeks);
+    const serviceType = assignmentServiceType(source);
+    if (isRecordableCareServiceType(serviceType)) return assignmentWindow(startDate, dailyStart, dailyEnd, weeks);
+    if (serviceType !== "MASSAGE") return { startAt: new Date(Number.NaN), endAt: new Date(Number.NaN) };
     const sessions = (state.massageBookings || []).filter((booking) => booking.requestId === source?.id && booking.status !== "CANCELLED");
     if (sessions.length) {
       return {
@@ -1126,12 +1144,16 @@ import {
   }
 
   function currentAssignmentFor(userId, serviceType = null) {
+    const requestedServiceType = normalizeCareServiceType(serviceType);
+    const matchesRequestedCareService = (assignment) => requestedServiceType
+      ? assignmentServiceType(assignment) === requestedServiceType
+      : isRecordableCareServiceType(assignmentServiceType(assignment));
     const recoveredAssignment = state.session.active
-      ? state.assignments.find((assignment) => assignment.id === state.session.assignmentId && assignment.caregiverUserId === userId && assignment.status !== "CANCELLED" && (serviceType ? assignmentServiceType(assignment) === serviceType : assignmentServiceType(assignment) !== "MASSAGE"))
+      ? state.assignments.find((assignment) => assignment.id === state.session.assignmentId && assignment.caregiverUserId === userId && assignment.status !== "CANCELLED" && matchesRequestedCareService(assignment))
       : null;
     if (recoveredAssignment) return recoveredAssignment;
     const todaysAssignments = state.assignments
-      .filter((assignment) => assignment.caregiverUserId === userId && assignmentAcceptsCareEntriesToday(assignment) && (serviceType ? assignmentServiceType(assignment) === serviceType : assignmentServiceType(assignment) !== "MASSAGE"))
+      .filter((assignment) => assignment.caregiverUserId === userId && assignmentAcceptsCareEntriesToday(assignment) && matchesRequestedCareService(assignment))
       .sort((a, b) => String(a.dailyStart).localeCompare(String(b.dailyStart)));
     return todaysAssignments.find((assignment) => state.session.active && state.session.assignmentId === assignment.id)
       || todaysAssignments.find((assignment) => assignment.todayCareSessionStatus !== "COMPLETED" && !(state.session.assignmentId === assignment.id && state.session.endedAt))
@@ -1149,8 +1171,12 @@ import {
 
   function nextAssignmentFor(userId, serviceType = null) {
     const now = new Date();
+    const requestedServiceType = normalizeCareServiceType(serviceType);
     return state.assignments
-      .filter((assignment) => assignment.caregiverUserId === userId && new Date(assignment.startAt) > now && assignment.status !== "CANCELLED" && (serviceType ? assignmentServiceType(assignment) === serviceType : assignmentServiceType(assignment) !== "MASSAGE"))
+      .filter((assignment) => assignment.caregiverUserId === userId
+        && new Date(assignment.startAt) > now
+        && assignment.status !== "CANCELLED"
+        && (requestedServiceType ? assignmentServiceType(assignment) === requestedServiceType : isRecordableCareServiceType(assignmentServiceType(assignment))))
       .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0] || null;
   }
 
@@ -1593,34 +1619,25 @@ import {
     return null;
   }
 
-  function visibleCareEvents(assignmentOverride = null) {
+  function visibleCareEvents(assignment) {
+    if (!assignment?.id || !isRecordableCareServiceType(assignmentServiceType(assignment))) return [];
     const allowed = accessibleClientIds();
-    const contextId = activeClientId();
-    const assignment = assignmentOverride || activeAssignmentContext() || (contextId ? assignmentForClient(contextId) : null);
     const sessionMatchesAssignment = state.session.assignmentId === assignment?.id;
     const sessionId = sessionMatchesAssignment ? state.session.id : null;
     const sessionDateKey = sessionMatchesAssignment && state.session.serviceDate
       ? state.session.serviceDate
       : localDateKey(new Date());
-    const allowedEventTypes = assignmentServiceType(assignment) === "BABYSITTING" ? ["meal", "sitter_note"] : ["feeding", "diaper", "sleep", "temperature", "bath", "weight", "mother", "note"];
     return state.events.filter((event) => allowed.includes(event.clientId)
-      && (!contextId || event.clientId === contextId)
-      && (!assignment || event.assignmentId === assignment.id)
+      && careEventMatchesAssignment(event, assignment, state.careSessions || [])
       && (sessionId ? event.careSessionId === sessionId : objectiveEventDateKey(event) === sessionDateKey)
-      && allowedEventTypes.includes(event.type));
+    );
   }
 
   function assignmentCareEvents(assignment) {
-    if (!assignment?.id) return [];
+    if (!assignment?.id || !isRecordableCareServiceType(assignmentServiceType(assignment))) return [];
     const allowed = accessibleClientIds();
-    const contextId = activeClientId();
-    const allowedEventTypes = assignmentServiceType(assignment) === "BABYSITTING"
-      ? ["meal", "sitter_note"]
-      : ["feeding", "diaper", "sleep", "temperature", "bath", "weight", "mother", "note"];
     return state.events.filter((event) => allowed.includes(event.clientId)
-      && (!contextId || event.clientId === contextId)
-      && event.assignmentId === assignment.id
-      && allowedEventTypes.includes(event.type));
+      && careEventMatchesAssignment(event, assignment, state.careSessions || []));
   }
 
   function activeSessionIsStale(assignment = null) {
@@ -1916,11 +1933,11 @@ import {
 
   function adminSchedule() {
     const caregivers = state.users.filter(isCaregiverAssignable);
-    const approvedUnscheduled = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && assignmentServiceType(request) !== "MASSAGE" && clientById(request.clientId));
+    const approvedUnscheduled = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && isRecordableCareServiceType(assignmentServiceType(request)) && clientById(request.clientId));
     const approvedQueue = approvedUnscheduled.filter(requestHasCapturedDepositEvidence);
     const depositEvidenceQueue = approvedUnscheduled.filter((request) => !requestHasCapturedDepositEvidence(request));
     const filter = ["POSTPARTUM", "BABYSITTING"].includes(state.adminScheduleFilter) ? state.adminScheduleFilter : "ALL";
-    const assignments = state.assignments.filter((item) => item.status !== "CANCELLED" && assignmentServiceType(item) !== "MASSAGE" && (filter === "ALL" || assignmentServiceType(item) === filter));
+    const assignments = state.assignments.filter((item) => item.status !== "CANCELLED" && isRecordableCareServiceType(assignmentServiceType(item)) && (filter === "ALL" || assignmentServiceType(item) === filter));
     return `
       <section class="page">
         ${demoBanner()}
@@ -2329,7 +2346,7 @@ import {
 
   function adminRequests() {
     const pending = state.serviceRequests.filter((request) => request.status === "PENDING");
-    const approvedQueue = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && assignmentServiceType(request) !== "MASSAGE");
+    const approvedQueue = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && isRecordableCareServiceType(assignmentServiceType(request)));
     const refundDueRequests = state.serviceRequests.filter((request) => request.status === "CANCELLED" && request.depositStatus === "REFUND_DUE");
     const pendingPostpartum = pending.filter((request) => assignmentServiceType(request) === "POSTPARTUM");
     const pendingBabysitting = pending.filter((request) => assignmentServiceType(request) === "BABYSITTING");
@@ -2734,7 +2751,7 @@ import {
       return statCard(meta.shortLabel, activeAssignments.filter((item) => assignmentServiceType(item) === serviceType).length, `${meta.shortLabel} 진행 중`, meta.icon);
     }).join("");
     const serviceCards = enabledCareServices.map((serviceType) => caregiverServiceOverviewCard(user, serviceType)).join("");
-    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY CAREGIVING", "나의 서비스 일정", "관리자가 부여한 산후조리·베이비시팅 권한과 실제 배정 일정을 확인합니다.")}<div class="grid stats">${statCard("Current", activeAssignments.filter((item) => assignmentServiceType(item) !== "MASSAGE").length, "현재 진행 중인 케어 배정", "◷")}${serviceStats}</div><div class="service-overview-grid" style="margin-top:18px">${serviceCards}</div><article class="card card-pad retrospective-entry-card" style="margin-top:18px"><div><p class="eyebrow">RETROSPECTIVE CARE RECORD</p><h3>지난 근무 리포트 보완</h3><p>웹 기록을 놓친 실제 돌봄 근무를 소급 입력할 수 있습니다. 서비스 날짜와 실제 근무시간은 그대로 기록되고, 입력자와 뒤늦게 입력한 시각은 감사 이력에 별도로 남습니다.</p></div><button type="button" class="primary-button" data-open-retrospective-report ${retrospectiveAssignments.length ? "" : "disabled"}>지난 근무 리포트 입력</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>서비스별 기록·업무 범위</strong><p>부여받은 서비스만 메뉴와 배정 후보에 표시됩니다. 산후조리에는 산모·신생아 케어 차트, 베이비시팅에는 식사·생활 이벤트를 기록하며 마사지는 별도 테라피스트 작업공간에서 관리합니다.</p></article></section>`;
+    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY CAREGIVING", "나의 서비스 일정", "관리자가 부여한 산후조리·베이비시팅 권한과 실제 배정 일정을 확인합니다.")}<div class="grid stats">${statCard("Current", activeAssignments.filter((item) => isRecordableCareServiceType(assignmentServiceType(item))).length, "현재 진행 중인 케어 배정", "◷")}${serviceStats}</div><div class="service-overview-grid" style="margin-top:18px">${serviceCards}</div><article class="card card-pad retrospective-entry-card" style="margin-top:18px"><div><p class="eyebrow">RETROSPECTIVE CARE RECORD</p><h3>지난 근무 리포트 보완</h3><p>웹 기록을 놓친 실제 돌봄 근무를 소급 입력할 수 있습니다. 서비스 날짜와 실제 근무시간은 그대로 기록되고, 입력자와 뒤늦게 입력한 시각은 감사 이력에 별도로 남습니다.</p></div><button type="button" class="primary-button" data-open-retrospective-report ${retrospectiveAssignments.length ? "" : "disabled"}>지난 근무 리포트 입력</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>서비스별 기록·업무 범위</strong><p>부여받은 서비스만 메뉴와 배정 후보에 표시됩니다. 산후조리에는 산모·신생아 케어 차트, 베이비시팅에는 식사·생활 이벤트를 기록하며 마사지는 별도 테라피스트 작업공간에서 관리합니다.</p></article></section>`;
   }
 
   function retrospectiveAssignmentsFor(userId) {
@@ -2743,7 +2760,7 @@ import {
     return state.assignments
       .filter((assignment) => assignment.caregiverUserId === userId
         && assignment.status !== "CANCELLED"
-        && assignmentServiceType(assignment) !== "MASSAGE"
+        && isRecordableCareServiceType(assignmentServiceType(assignment))
         && new Date(assignment.startAt) <= todayEnd)
       .sort((first, second) => new Date(second.endAt) - new Date(first.endAt));
   }
@@ -2968,10 +2985,11 @@ import {
   function canEditCareEvent(event) {
     const user = authUser();
     if (!user || !event?.id) return false;
+    const assignment = state.assignments.find((item) => item.id === event.assignmentId);
+    if (!assignment || !careEventMatchesAssignment(event, assignment, state.careSessions || [])) return false;
     if (state.role === "admin" && canReviewServiceRequests()) return true;
     if (state.role !== "caregiver") return false;
-    const assignment = state.assignments.find((item) => item.id === event.assignmentId);
-    return Boolean(assignment && assignment.caregiverUserId === user.id);
+    return assignment.caregiverUserId === user.id;
   }
 
   function caregiverTimeline(serviceType = "POSTPARTUM", workspaceNav = "") {
@@ -3165,7 +3183,7 @@ import {
     if (!client) return `<section class="page">${demoBanner()}<div class="empty-state"><strong>고객 정보를 찾을 수 없습니다.</strong></div></section>`;
     const currentService = clientCurrentService(client.id);
     const activeCount = state.assignments.filter((assignment) => assignment.clientId === client.id && isAssignmentCurrent(assignment)).length;
-    const pendingCount = state.serviceRequests.filter((request) => request.clientId === client.id && (request.status === "PENDING" || (request.status === "APPROVED" && !request.approvedAssignmentId && assignmentServiceType(request) !== "MASSAGE"))).length;
+    const pendingCount = state.serviceRequests.filter((request) => request.clientId === client.id && (request.status === "PENDING" || (request.status === "APPROVED" && !request.approvedAssignmentId && isRecordableCareServiceType(assignmentServiceType(request))))).length;
     const postpartumAssignments = currentAndUpcomingAssignmentsForClient(client.id, "POSTPARTUM");
     const babysittingAssignments = currentAndUpcomingAssignmentsForClient(client.id, "BABYSITTING");
     const massageAssignments = currentAndUpcomingAssignmentsForClient(client.id, "MASSAGE");
@@ -3466,7 +3484,11 @@ import {
   }
 
   function clientEvents(clientId, assignmentId = null) {
-    return state.events.filter((event) => event.clientId === clientId && (!assignmentId || event.assignmentId === assignmentId)).sort((a, b) => new Date(a.at) - new Date(b.at));
+    const assignment = assignmentId ? state.assignments.find((item) => item.id === assignmentId && item.clientId === clientId) : null;
+    if (!assignment) return [];
+    return state.events
+      .filter((event) => event.clientId === clientId && careEventMatchesAssignment(event, assignment, state.careSessions || []))
+      .sort((a, b) => new Date(a.at) - new Date(b.at));
   }
 
   function careChartBuckets(events, days) {
@@ -3631,7 +3653,9 @@ import {
   }
 
   function babysittingReportMarkup(client, assignment = null) {
-    const events = state.events.filter((event) => event.clientId === client.id && (!assignment || event.assignmentId === assignment.id) && ["meal", "sitter_note"].includes(event.type)).sort((a, b) => new Date(b.at) - new Date(a.at));
+    const events = assignmentServiceType(assignment) === "BABYSITTING"
+      ? assignmentCareEvents(assignment).filter((event) => event.clientId === client.id).sort((a, b) => new Date(b.at) - new Date(a.at))
+      : [];
     const mealCount = events.filter((event) => event.type === "meal").length;
     const noteCount = events.filter((event) => event.type === "sitter_note").length;
     return `<div class="babysitting-report">${serviceBadgeMarkup("BABYSITTING")}<div class="grid stats sitter-report-stats">${statCard("식사 기록", mealCount, "식사·간식 기록", "🍽️")}${statCard("놀이·생활 기록", noteCount, "놀이·산책·생활", "☆")}${statCard("최근 기록", events.slice(0, 7).length, "최근 7일 요약", "◷")}${statCard("안전 확인", events.filter((event) => event.data?.category === "안전 확인").length, "안전 확인 기록", "✓")}</div><article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>베이비시팅 식사·생활 리포트</h3><p>보호자에게 필요한 식사와 놀이·산책 등 생활 기록을 보여줍니다.</p></div><span class="status-chip">관리사 기록 ${events.length}건</span></div>${events.length ? `<div class="timeline">${events.slice(0, 12).map((event) => { const meta = EVENT_META[event.type]; return `<div class="timeline-item"><div class="timeline-time">${new Date(event.at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}<br/>${timeLabel(event.at)}</div><div class="timeline-icon">${meta.icon}</div><div class="timeline-copy"><strong>${meta.label}</strong><span>${escapeHtml(eventDescription(event))}</span></div><div class="timeline-meta"><span class="timeline-author">${escapeHtml(event.author)}</span>${canEditCareEvent(event) ? `<button type="button" class="timeline-edit-button" data-edit-care-event="${event.id}">수정</button>` : ""}</div></div>`; }).join("")}</div>` : `<div class="empty-state"><strong>베이비시팅 기록이 아직 없습니다.</strong></div>`}</article></div>`;
@@ -3681,6 +3705,7 @@ import {
     if (!user) return [];
     return state.assignments
       .filter((assignment) => {
+        if (!isRecordableCareServiceType(assignmentServiceType(assignment))) return false;
         if (!clientById(assignment.clientId)) return false;
         if (!assignmentCanProduceObjectiveReport(assignment, role)) return false;
         if (serviceType && assignmentServiceType(assignment) !== serviceType) return false;
@@ -4015,9 +4040,9 @@ import {
 
   function careSessionReportPreviewMarkup(client, assignment, session) {
     const serviceType = assignmentServiceType(assignment);
-    const allowedTypes = serviceType === "BABYSITTING" ? ["meal", "sitter_note"] : ["feeding", "diaper", "sleep", "temperature", "bath", "weight", "mother", "note"];
     const events = state.events
-      .filter((event) => event.careSessionId === session.id && allowedTypes.includes(event.type))
+      .filter((event) => event.careSessionId === session.id
+        && careEventMatchesAssignment(event, assignment, state.careSessions || []))
       .sort((first, second) => new Date(first.at) - new Date(second.at));
     const serviceDate = session.serviceDate ? formatDate(`${session.serviceDate}T12:00:00`) : "날짜 미등록";
     const babyName = babyNameFor(assignment, client) || "아이";
@@ -5052,6 +5077,10 @@ import {
       button.addEventListener("click", async () => {
         const assignment = state.assignments.find((item) => item.id === button.dataset.assignmentId);
         if (!assignment) return showToast("시작할 배정 정보를 찾을 수 없습니다.", "error");
+        const workspaceServiceType = selectedServiceTypeForRole("caregiver");
+        if (!isRecordableCareServiceType(assignmentServiceType(assignment)) || assignmentServiceType(assignment) !== workspaceServiceType) {
+          return showToast("현재 서비스 화면과 배정 유형이 일치하지 않습니다. 해당 서비스 메뉴에서 다시 시작해 주세요.", "error");
+        }
         if (usingCloudData()) {
           button.disabled = true;
           try {
@@ -6408,7 +6437,7 @@ import {
       while (cursor <= overlapEnd) {
         const weekday = KOREAN_WEEKDAYS[cursor.getDay()];
         if (requestedDaySet.has(weekday) && existingDays.has(weekday)) {
-          const sameClientCareException = assignment.clientId === clientId && assignmentServiceType(assignment) !== "MASSAGE";
+          const sameClientCareException = assignment.clientId === clientId && isRecordableCareServiceType(assignmentServiceType(assignment));
           if (!sameClientCareException) return true;
         }
         cursor.setDate(cursor.getDate() + 1);
@@ -6460,7 +6489,7 @@ import {
     if (assignmentId && !assignment) return showToast("일정 정보를 찾을 수 없습니다.");
     const requestedRequest = requestId ? state.serviceRequests.find((request) => request.id === requestId && request.status === "APPROVED" && !request.approvedAssignmentId) : null;
     if (!assignment && requestedRequest && !requestHasCapturedDepositEvidence(requestedRequest)) return openApprovedDepositEvidenceModal(requestedRequest.id);
-    const approvedQueue = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && assignmentServiceType(request) !== "MASSAGE" && clientById(request.clientId) && requestHasCapturedDepositEvidence(request));
+    const approvedQueue = state.serviceRequests.filter((request) => request.status === "APPROVED" && !request.approvedAssignmentId && isRecordableCareServiceType(assignmentServiceType(request)) && clientById(request.clientId) && requestHasCapturedDepositEvidence(request));
     if (!assignment && !approvedQueue.length) return showToast("승인과 예약금 수납 증빙이 완료된 신청이 없습니다.");
     const linkedRequest = assignment?.serviceRequestId ? state.serviceRequests.find((request) => request.id === assignment.serviceRequestId) : null;
     const selectedRequest = assignment ? linkedRequest : approvedQueue.find((request) => request.id === requestId) || approvedQueue[0];
@@ -7930,8 +7959,7 @@ import {
       showToast("이전 근무일의 미종료 세션에는 새 기록을 추가할 수 없습니다. 먼저 케어를 종료해 주세요.", "error");
       return;
     }
-    const allowedTypes = assignmentServiceType(assignment) === "BABYSITTING" ? ["meal", "sitter_note"] : ["feeding", "diaper", "sleep", "temperature", "bath", "weight", "mother", "note"];
-    if (!allowedTypes.includes(type)) return showToast("현재 배정 서비스에서 사용할 수 없는 기록 항목입니다.");
+    if (!careEventTypeAllowedForService(assignmentServiceType(assignment), type)) return showToast("현재 배정 서비스에서 사용할 수 없는 기록 항목입니다.", "error");
     const client = clientById(assignment.clientId);
     if (!client) return showToast("배정된 고객 정보를 확인할 수 없어 기록 화면을 열지 않았습니다.", "error");
     const meta = EVENT_META[type] || EVENT_META.note;
