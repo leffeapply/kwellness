@@ -4089,8 +4089,8 @@ import {
         : '<span class="status-chip gold">완료된 케어 세션에서만 발행 가능</span>';
     const objectiveModel = buildObjectiveReportModel({ assignment, events: state.events, sessions: state.careSessions || [] });
     return `<section class="page report-page">${demoBanner()}${pageHeading("CARE REPORTS", "서비스 배치 기록과 방문별 보관본", "고객을 검색해 배치별 기록을 확인·PDF로 저장하고, 완료된 근무 1건은 수정되지 않는 보관본으로 발행합니다.")}
-      ${objectiveTodaySummaryMarkup(assignment, client, objectiveModel)}
       ${objectiveReportBuilderMarkup("admin", assignmentServiceType(assignment), assignment, reportAssignments, objectiveModel, { totalCount: allReportAssignments.length })}
+      ${objectiveTodaySummaryMarkup(assignment, client, objectiveModel)}
       <span id="batch-report" class="report-scroll-anchor" aria-hidden="true"></span>${objectiveReportMarkup(assignment, client, objectiveModel)}
       <section class="card card-pad visit-report-panel report-screen-only" style="margin-top:22px"><div class="section-header"><div><p class="eyebrow">WORKDAY CARE REPORT</p><h3>근무일별 보관본 확인·발행</h3><p>기간별 리포트와 별도로, 완료된 근무일 1건의 기록을 고객에게 전달합니다. 발행 후 내용은 바뀌지 않습니다.</p></div>${serviceBadgeMarkup(assignmentServiceType(assignment))}</div><div class="report-toolbar">${reportSessionOptions}<div class="report-actions">${reportAction}</div></div>
       <header class="print-report-header"><div class="brand-mark">${brandLogoMarkup()}</div><div><strong>ProMoms CARE REPORT</strong><span>${reportSession?.serviceDate ? formatDate(`${reportSession.serviceDate}T12:00:00`) : "완료된 근무일 선택 필요"} · ${escapeHtml(client.motherName)} / ${escapeHtml(reportBabyName)}</span></div></header>

@@ -245,6 +245,26 @@ assert.match(appSource, /function assignmentCareEvents\(assignment\)/, "assignme
 assert.match(appSource, /function assignmentTimelineMarkup\(assignment\)/, "babysitting history must be grouped for readability");
 assert.match(appSource, /배치 전체 시팅 기록/, "babysitting history heading must describe the full batch");
 assert.match(appSource, /function objectiveTodaySummaryMarkup\(assignment, client, model\)/, "today summary report must exist");
+
+const objectiveReportPageSource = appSource.slice(
+  appSource.indexOf("function objectiveReportPage("),
+  appSource.indexOf("function careSessionReportPreviewMarkup("),
+);
+assert.ok(
+  objectiveReportPageSource.indexOf("objectiveTodaySummaryMarkup(assignment, client, model)")
+    < objectiveReportPageSource.indexOf("objectiveReportBuilderMarkup(role"),
+  "client and caregiver reports must show the dashboard before batch controls",
+);
+
+const adminReportsSource = appSource.slice(
+  appSource.indexOf("function adminReports("),
+  appSource.indexOf("function publicProductMarkup("),
+);
+assert.ok(
+  adminReportsSource.indexOf('objectiveReportBuilderMarkup("admin"')
+    < adminReportsSource.indexOf("objectiveTodaySummaryMarkup(assignment, client, objectiveModel)"),
+  "admin reports must show customer and batch controls before the dashboard",
+);
 assert.match(appSource, /오늘의 요약 리포트/, "today summary report heading must be visible");
 assert.match(stylesSource, /\.today-summary-metrics/, "today summary must have responsive metric styling");
 assert.match(stylesSource, /\.batch-timeline-day/, "batch timeline must have readable day-group styling");
