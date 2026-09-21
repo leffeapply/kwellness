@@ -158,7 +158,6 @@ import {
       { id: "analytics", label: "통합 분석", icon: "↗" },
     ],
     caregiver: [
-      { id: "caregiving", label: "케어기빙 현황", icon: "⌂" },
       { id: "postpartum", label: "나의 산후조리 케어기빙", icon: "♡" },
       { id: "babysitting", label: "나의 베이비시팅 케어기빙", icon: "☆" },
       { id: "reports", label: "케어 리포트", icon: "▤" },
@@ -334,7 +333,7 @@ import {
       },
       adminSelectedReportSessionId: null,
       serviceCatalog: { MASSAGE: { ...PREMIUM_ADD_ONS.MASSAGE } },
-      views: { admin: "overview", caregiver: "caregiving", therapist: "availability", client: "services", retail: "pos" },
+      views: { admin: "overview", caregiver: "postpartum", therapist: "availability", client: "services", retail: "pos" },
       auth: { currentUserId: null, screen: "public", termsVersion: CURRENT_CONSENT_VERSION },
       users: [],
       clients: [],
@@ -396,7 +395,7 @@ import {
       },
       adminSelectedReportSessionId: null,
       serviceCatalog: { MASSAGE: { ...PREMIUM_ADD_ONS.MASSAGE } },
-      views: { admin: "overview", caregiver: "caregiving", therapist: "availability", client: "services", retail: "pos" },
+      views: { admin: "overview", caregiver: "postpartum", therapist: "availability", client: "services", retail: "pos" },
       auth: { currentUserId: null, screen: "public", termsVersion: CURRENT_CONSENT_VERSION },
       users: [
         { id: "user-admin", login: "admin-preview@localhost.invalid", email: "admin-preview@localhost.invalid", password: null, role: "admin", status: "approved", fullName: "운영 관리자", initials: "운", mustChangePassword: false, createdAt: dateOffset(-120) },
@@ -1194,7 +1193,7 @@ import {
   }
 
   function selectedServiceTypeForRole(role = state.role) {
-    const view = state.views[role];
+    const view = role === state.role ? currentView() : state.views[role];
     if (view === "postpartum") return "POSTPARTUM";
     if (view === "babysitting") return "BABYSITTING";
     return null;
@@ -1639,7 +1638,7 @@ import {
     if (usingCloudData()) {
       const liveViews = {
         admin: new Set(["overview", "schedule", "massage", "requests", "finance", "history", "people", "reports"]),
-        caregiver: new Set(["caregiving", "postpartum", "babysitting", "reports", "profile"]),
+        caregiver: new Set(["postpartum", "babysitting", "reports", "profile"]),
         therapist: new Set(["availability", "calendar"]),
         client: new Set(["services", "postpartum", "babysitting", "reports"]),
         retail: new Set(["pos"]),
@@ -1681,11 +1680,11 @@ import {
   }
 
   function pageTitle() {
-    const view = state.views[state.role];
+    const view = currentView();
     const serviceType = selectedServiceTypeForRole();
     const roleTitles = {
       admin: ["Operations", "오늘의 운영 흐름을 한눈에 확인하세요."],
-      caregiver: [view === "caregiving" ? "My Caregiving" : view === "reports" ? "Care Reports" : serviceType === "BABYSITTING" ? "Babysitting Caregiving" : "Postpartum Caregiving", view === "caregiving" ? "두 서비스의 현재·다음 배정을 한눈에 확인하세요." : view === "reports" ? "내가 입력한 케어 기록을 기간별로 확인하세요." : serviceType === "BABYSITTING" ? "식사와 생활 이벤트를 간결하게 기록하세요." : "산모와 신생아의 케어 기록에 집중하세요."],
+      caregiver: [view === "reports" ? "Care Reports" : view === "profile" ? "My Profile" : serviceType === "BABYSITTING" ? "Babysitting Caregiving" : "Postpartum Caregiving", view === "reports" ? "내가 입력한 케어 기록을 기간별로 확인하세요." : view === "profile" ? "내 정보와 예정된 배정을 확인하세요." : serviceType === "BABYSITTING" ? "식사와 생활 이벤트를 간결하게 기록하세요." : "산모와 신생아의 케어 기록에 집중하세요."],
       therapist: [view === "availability" ? "My Availability" : "Massage Calendar", view === "availability" ? "이번 주와 다음 주의 마사지 가능시간을 간편하게 등록하세요." : "확정된 마사지 방문 일정만 분리해 확인하세요."],
       client: [view === "services" ? "My Services" : view === "reports" ? "Care Reports" : serviceType === "BABYSITTING" ? "My Babysitting" : "My Postpartum Care", view === "services" ? "이용 중인 서비스와 신청·배정 상태를 한눈에 확인하세요." : view === "reports" ? "나와 아이의 케어 기록을 기간별로 확인하세요." : "선택한 서비스의 일정과 돌봄 기록만 안전하게 표시됩니다."],
       retail: ["Retail Workspace", "판매·재고·고객 관계를 하나의 흐름으로 관리하세요."],
@@ -2685,48 +2684,6 @@ import {
     return `<div class="service-workspace-nav ${serviceMetaFor(serviceType).tone}"><div>${serviceBadgeMarkup(serviceType)}<strong>${role === "client" ? "나의 서비스 상세" : "나의 케어기빙 상세"}</strong></div><div role="tablist" aria-label="${serviceMetaFor(serviceType).label} 상세 메뉴">${tabs.map(([id, label]) => `<button type="button" role="tab" aria-selected="${activeTab === id}" class="${activeTab === id ? "active" : ""}" data-service-tab="${id}" data-service-type="${serviceType}">${label}</button>`).join("")}</div></div>`;
   }
 
-  function caregiverServiceOverviewCard(user, serviceType) {
-    const current = currentAssignmentFor(user.id, serviceType);
-    const next = nextAssignmentFor(user.id, serviceType);
-    const meta = serviceMetaFor(serviceType);
-    const primary = current || next;
-    if (!primary) return `<article class="card service-overview-card empty ${meta.tone}"><div class="service-overview-icon">${meta.icon}</div><div>${serviceBadgeMarkup(serviceType)}<h3>현재 담당 중인 ${meta.label} 케어기빙이 없습니다.</h3><p>관리자가 승인된 고객 신청을 배정하면 이 영역에 표시됩니다.</p></div><button class="secondary-button" data-enter-caregiver-service="${serviceType}">작업공간 확인</button></article>`;
-    if (!caregiverCanViewClientBrief(primary)) return `<article class="card service-overview-card empty ${meta.tone}"><div class="service-overview-icon">${meta.icon}</div><div>${serviceBadgeMarkup(serviceType)}<h3>다음 배정이 예정되어 있습니다.</h3><p>${formatDate(primary.startAt)} 시작 · ${caregiverClientBriefAccessText(primary)}</p></div><button class="secondary-button" type="button" disabled>고객 정보 공개 대기</button></article>`;
-    const client = clientById(primary.clientId);
-    if (!client) return `<article class="card service-overview-card empty ${meta.tone}"><div class="service-overview-icon">!</div><div>${serviceBadgeMarkup(serviceType)}<h3>배정 고객 정보를 확인할 수 없습니다.</h3><p>개인정보 보호 또는 데이터 연결 상태를 관리자가 확인해야 합니다.</p></div></article>`;
-    const babyName = babyNameFor(primary, client) || "아이";
-    return `<article class="card service-overview-card ${meta.tone}"><div class="service-overview-top"><div>${serviceBadgeMarkup(serviceType)}<h3>${current ? "현재 담당 중" : "다음 배정 예정"}</h3></div><span class="status-chip ${current ? "" : "gold"}">${assignmentCountdown(primary)}</span></div><strong class="service-overview-family">${escapeHtml(client.motherName)} · ${escapeHtml(babyName)}</strong><p>${formatDate(assignmentStartDateKey(primary))}–${formatDate(assignmentEndDateKey(primary))} · 고객 요청 참고시간 ${primary.dailyStart}–${primary.dailyEnd}</p><div class="service-overview-actions"><button class="primary-button" data-enter-caregiver-service="${serviceType}">${meta.label} 작업공간</button><button class="secondary-button" data-caregiver-assignment-detail="${primary.id}">고객 정보</button></div></article>`;
-  }
-
-  function caregiverMassageOverviewCard(user) {
-    if (!user.isMassageTherapist) return "";
-    const current = currentAssignmentFor(user.id, "MASSAGE");
-    const next = nextAssignmentFor(user.id, "MASSAGE");
-    const booking = current || next;
-    if (!booking) return `<article class="card service-overview-card empty massage"><div class="service-overview-icon">✦</div><div>${serviceBadgeMarkup("MASSAGE")}<h3>예정된 마사지 예약이 없습니다.</h3><p>관리자가 예약을 확정하면 이곳에서 일정을 확인할 수 있습니다.</p></div></article>`;
-    const client = clientById(booking.clientId);
-    if (!client) return `<article class="card service-overview-card empty massage"><div class="service-overview-icon">!</div><div>${serviceBadgeMarkup("MASSAGE")}<h3>예약 고객 연결 확인이 필요합니다.</h3><p>관리자에게 예약 데이터 연결을 확인해 달라고 요청해 주세요.</p></div></article>`;
-    const canSeeBrief = caregiverCanViewClientBrief(booking);
-    return `<article class="card service-overview-card massage"><div class="service-overview-top"><div>${serviceBadgeMarkup("MASSAGE")}<h3>${current ? "현재 마사지 일정" : "다음 마사지 예약"}</h3></div><span class="status-chip ${current ? "" : "gold"}">${assignmentCountdown(booking)}</span></div><strong class="service-overview-family">${canSeeBrief ? escapeHtml(client.motherName) : "고객 정보 공개 대기"}</strong><p>${formatDate(booking.startAt)} · ${booking.dailyStart}–${booking.dailyEnd} · ${booking.durationMinutes || 60}분${Number(booking.sessionCount || 1) > 1 ? ` × ${booking.sessionCount}회` : ""}</p><div class="service-overview-actions">${canSeeBrief ? `<button class="secondary-button" data-caregiver-assignment-detail="${booking.id}">예약·방문 정보</button>` : `<button class="secondary-button" type="button" disabled>${caregiverClientBriefAccessText(booking)}</button>`}</div></article>`;
-  }
-
-  function caregiverCaregivingHub() {
-    const user = authUser();
-    const activeAssignments = state.assignments.filter((assignment) => assignment.caregiverUserId === user.id && isAssignmentCurrent(assignment));
-    const upcomingAssignments = state.assignments.filter((assignment) => assignment.caregiverUserId === user.id && assignment.status !== "CANCELLED" && new Date(assignment.startAt) > new Date());
-    const retrospectiveAssignments = retrospectiveAssignmentsFor(user.id);
-    const enabledCareServices = [
-      user.canProvidePostpartum !== false ? "POSTPARTUM" : null,
-      user.canProvideBabysitting !== false ? "BABYSITTING" : null,
-    ].filter(Boolean);
-    const serviceStats = enabledCareServices.map((serviceType) => {
-      const meta = serviceMetaFor(serviceType);
-      return statCard(meta.shortLabel, activeAssignments.filter((item) => assignmentServiceType(item) === serviceType).length, `${meta.shortLabel} 진행 중`, meta.icon);
-    }).join("");
-    const serviceCards = enabledCareServices.map((serviceType) => caregiverServiceOverviewCard(user, serviceType)).join("");
-    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY CAREGIVING", "나의 서비스 일정", "관리자가 부여한 산후조리·베이비시팅 권한과 실제 배정 일정을 확인합니다.")}<div class="grid stats">${statCard("Current", activeAssignments.filter((item) => isRecordableCareServiceType(assignmentServiceType(item))).length, "현재 진행 중인 케어 배정", "◷")}${serviceStats}</div><div class="service-overview-grid" style="margin-top:18px">${serviceCards}</div><article class="card card-pad retrospective-entry-card" style="margin-top:18px"><div><p class="eyebrow">RETROSPECTIVE CARE RECORD</p><h3>지난 근무 리포트 보완</h3><p>웹 기록을 놓친 실제 돌봄 근무를 소급 입력할 수 있습니다. 서비스 날짜와 실제 근무시간은 그대로 기록되고, 입력자와 뒤늦게 입력한 시각은 감사 이력에 별도로 남습니다.</p></div><button type="button" class="primary-button" data-open-retrospective-report ${retrospectiveAssignments.length ? "" : "disabled"}>지난 근무 리포트 입력</button></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>서비스별 기록·업무 범위</strong><p>부여받은 서비스만 메뉴와 배정 후보에 표시됩니다. 산후조리에는 산모·신생아 케어 차트, 베이비시팅에는 식사·생활 이벤트를 기록하며 마사지는 별도 테라피스트 작업공간에서 관리합니다.</p></article></section>`;
-  }
-
   function retrospectiveAssignmentsFor(userId) {
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
@@ -2736,6 +2693,13 @@ import {
         && isRecordableCareServiceType(assignmentServiceType(assignment))
         && new Date(assignment.startAt) <= todayEnd)
       .sort((first, second) => new Date(second.endAt) - new Date(first.endAt));
+  }
+
+  function caregiverRetrospectiveReportEntryMarkup() {
+    const user = authUser();
+    if (state.role !== "caregiver" || !user) return "";
+    const retrospectiveAssignments = retrospectiveAssignmentsFor(user.id);
+    return `<article class="card card-pad retrospective-entry-card"><div><p class="eyebrow">RETROSPECTIVE CARE RECORD</p><h3>지난 근무 리포트 보완</h3><p>웹 기록을 놓친 실제 돌봄 근무를 소급 입력할 수 있습니다. 서비스 날짜와 실제 근무시간은 그대로 기록되고, 입력자와 뒤늦게 입력한 시각은 감사 이력에 별도로 남습니다.</p></div><button type="button" class="primary-button" data-open-retrospective-report ${retrospectiveAssignments.length ? "" : "disabled"}>지난 근무 리포트 입력</button></article>`;
   }
 
   function latestRetrospectiveServiceDate(assignment) {
@@ -3990,14 +3954,15 @@ import {
   function objectiveReportPage(role, serviceType, workspaceNav = "") {
     const assignments = objectiveReportAssignments(role, serviceType);
     const assignment = objectiveReportAssignment(role, serviceType, assignments);
+    const retrospectiveEntry = role === "caregiver" ? caregiverRetrospectiveReportEntryMarkup() : "";
     if (!assignment) {
       const client = role === "client" ? clientForUser(authUser()?.id) : null;
-      return `<section class="page">${demoBanner()}${workspaceNav}${pageHeading("CARE REPORT", "서비스 배치별 케어 리포트", "본인에게 연결된 서비스 배치의 객관적 요약과 변화 그래프를 확인합니다.")}<article class="card card-pad"><div class="empty-state"><strong>리포트를 만들 수 있는 서비스 배치가 없습니다.</strong><span>서비스 기간이 시작되면 이곳에서 배치를 선택할 수 있습니다.</span></div></article>${client ? clientPublishedReportsMarkup(client.id, serviceType) : ""}</section>`;
+      return `<section class="page">${demoBanner()}${workspaceNav}${pageHeading("CARE REPORT", "서비스 배치별 케어 리포트", "본인에게 연결된 서비스 배치의 객관적 요약과 변화 그래프를 확인합니다.")}${retrospectiveEntry}<article class="card card-pad"><div class="empty-state"><strong>리포트를 만들 수 있는 서비스 배치가 없습니다.</strong><span>서비스 기간이 시작되면 이곳에서 배치를 선택할 수 있습니다.</span></div></article>${client ? clientPublishedReportsMarkup(client.id, serviceType) : ""}</section>`;
     }
     const client = clientById(assignment.clientId);
     if (!client || !objectiveReportAssignments(role, serviceType).some((item) => item.id === assignment.id)) return `<section class="page">${demoBanner()}${workspaceNav}<div class="access-denied"><strong>접근 권한이 없습니다.</strong><span>본인 또는 권한이 확인된 배정의 기록만 볼 수 있습니다.</span></div></section>`;
     const model = buildObjectiveReportModel({ assignment, events: state.events, sessions: state.careSessions || [] });
-    return `<section class="page report-page">${demoBanner()}${workspaceNav}${pageHeading("CARE REPORT", "서비스 배치별 케어 기록", "선택한 서비스 배치의 요약 지표와 객관적인 변화 그래프를 확인합니다.")}${objectiveTodaySummaryMarkup(assignment, client, model)}${objectiveReportBuilderMarkup(role, assignmentServiceType(assignment), assignment, assignments, model)}<span id="batch-report" class="report-scroll-anchor" aria-hidden="true"></span>${objectiveReportMarkup(assignment, client, model)}${role === "client" ? clientPublishedReportsMarkup(client.id, serviceType) : ""}</section>`;
+    return `<section class="page report-page">${demoBanner()}${workspaceNav}${pageHeading("CARE REPORT", "서비스 배치별 케어 기록", "선택한 서비스 배치의 요약 지표와 객관적인 변화 그래프를 확인합니다.")}${retrospectiveEntry}${objectiveTodaySummaryMarkup(assignment, client, model)}${objectiveReportBuilderMarkup(role, assignmentServiceType(assignment), assignment, assignments, model)}<span id="batch-report" class="report-scroll-anchor" aria-hidden="true"></span>${objectiveReportMarkup(assignment, client, model)}${role === "client" ? clientPublishedReportsMarkup(client.id, serviceType) : ""}</section>`;
   }
 
   function careSessionReportPreviewMarkup(client, assignment, session) {
@@ -4773,7 +4738,7 @@ import {
     }
     const operationalPages = {
       admin: { overview: adminOverview, schedule: adminSchedule, massage: adminMassageCalendar, requests: adminRequests, finance: adminFinance, history: adminServiceHistory, people: adminPeople, reports: adminReports },
-      caregiver: { caregiving: caregiverCaregivingHub, postpartum: () => caregiverServiceWorkspace("POSTPARTUM"), babysitting: () => caregiverServiceWorkspace("BABYSITTING"), reports: () => objectiveReportPage("caregiver", null), profile: caregiverProfile },
+      caregiver: { postpartum: () => caregiverServiceWorkspace("POSTPARTUM"), babysitting: () => caregiverServiceWorkspace("BABYSITTING"), reports: () => objectiveReportPage("caregiver", null), profile: caregiverProfile },
       therapist: { availability: therapistAvailabilityPage, calendar: therapistMassageCalendar },
       client: { services: clientServicesHub, postpartum: () => clientServiceWorkspace("POSTPARTUM"), babysitting: () => clientServiceWorkspace("BABYSITTING"), reports: () => objectiveReportPage("client", null) },
       retail: {},
@@ -4892,13 +4857,6 @@ import {
     document.querySelectorAll("[data-enter-client-service]").forEach((button) => button.addEventListener("click", () => {
       state.selectedClientAssignmentId = button.dataset.assignmentId || null;
       state.views.client = button.dataset.enterClientService === "BABYSITTING" ? "babysitting" : "postpartum";
-      saveState();
-      render();
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }));
-
-    document.querySelectorAll("[data-enter-caregiver-service]").forEach((button) => button.addEventListener("click", () => {
-      state.views.caregiver = button.dataset.enterCaregiverService === "BABYSITTING" ? "babysitting" : "postpartum";
       saveState();
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
