@@ -73,7 +73,8 @@ assert.equal(postpartum.totals.scheduledServiceDays, 5);
 assert.equal(postpartum.totals.providedSessionDays, 2);
 assert.equal(postpartum.totals.recordOnlyDays, 1);
 assert.equal(postpartum.totals.unrecordedScheduledDays, 3);
-assert.equal(postpartum.totals.careMinutes, 480);
+assert.equal("careMinutes" in postpartum.totals, false);
+assert.equal("careMinutes" in postpartum.daily[0], false);
 assert.equal(postpartum.events.length, 6);
 assert.equal(postpartum.totals.feedingMl, 80);
 assert.equal(postpartum.totals.feedingMeasuredCount, 1);
@@ -85,6 +86,7 @@ assert.equal(postpartum.totals.weightDelta, 0.1);
 assert.match(postpartum.facts.join(" "), /직접 모유수유 1건의 합계 15분/);
 assert.match(postpartum.facts.join(" "), /서비스일 6일 중 2일/);
 assert.match(postpartum.facts.join(" "), /예정 서비스일은 3일이며, 해당 날짜는 관리사 기록 0건/);
+assert.doesNotMatch(postpartum.facts.join(" "), /근무시간|시작·종료 시간/);
 assert.doesNotMatch(postpartum.facts.join(" "), /정상|위험|호전|악화|건강/);
 assert.equal(objectiveEventValue(postpartumEvents[2]), "36.8℃ (98.2℉)");
 assert.equal(objectiveEventValue(postpartumEvents[1]), "직접 모유수유 · 15분");
@@ -267,6 +269,7 @@ assert.ok(
   "admin reports must show customer and batch controls before the dashboard",
 );
 assert.match(appSource, /오늘의 요약 리포트/, "today summary report heading must be visible");
+assert.doesNotMatch(appSource, /완료된 근무시간|완료 근무시간/, "care reports must not display removed work-duration metrics");
 assert.match(stylesSource, /\.today-summary-metrics/, "today summary must have responsive metric styling");
 assert.match(stylesSource, /\.batch-timeline-day/, "batch timeline must have readable day-group styling");
 

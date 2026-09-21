@@ -297,14 +297,6 @@ export function objectiveDistributionLabel(distribution) {
   return entries.length ? entries.map(([label, count]) => `${label} ${count}건`).join(" · ") : "기록 없음";
 }
 
-function sessionMinutesForDate(sessions, assignmentId, dateKey) {
-  const durations = sessions
-    .filter((session) => session.assignmentId === assignmentId && sessionServiceDateKey(session) === dateKey && session.status === "COMPLETED" && session.startedAt && session.endedAt)
-    .map((session) => Math.round((new Date(session.endedAt) - new Date(session.startedAt)) / 60000))
-    .filter((minutes) => Number.isFinite(minutes) && minutes >= 0);
-  return durations.length ? durations.reduce((sum, minutes) => sum + minutes, 0) : null;
-}
-
 function invalidMetricCount(events) {
   return events.reduce((count, event) => {
     const data = event.data || {};
@@ -345,7 +337,6 @@ function aggregateDay(dateKey, events, sessions, assignmentId, serviceType, sche
     completedSessionCount: daySessions.filter((session) => session.status === "COMPLETED").length,
     events: dayEvents,
     eventCount: dayEvents.length,
-    careMinutes: sessionMinutesForDate(sessions, assignmentId, dateKey),
     feedingCount: feeding.length,
     feedingMeasuredCount: measuredFeeding.length,
     breastfeedingDurationCount: measuredBreastfeeding.length,
@@ -382,7 +373,6 @@ function metricTotals(daily, events, serviceType) {
   const feedingCount = daily.reduce((sum, day) => sum + day.feedingCount, 0);
   const feedingMlValues = daily.map((day) => day.feedingMl).filter((value) => value !== null);
   const breastfeedingMinuteValues = daily.map((day) => day.breastfeedingMinutes).filter((value) => value !== null);
-  const careMinuteValues = daily.map((day) => day.careMinutes).filter((value) => value !== null);
   const temperatureValues = events.filter((event) => event.type === "temperature").map((event) => numericValue(event.data?.value)).filter((value) => value !== null);
   const weights = events.filter((event) => event.type === "weight").map((event) => ({ at: event.at, value: numericValue(event.data?.value) })).filter((item) => item.value !== null).sort((first, second) => new Date(first.at) - new Date(second.at));
   const meals = events.filter((event) => event.type === "meal");
@@ -397,8 +387,6 @@ function metricTotals(daily, events, serviceType) {
     unrecordedScheduledDays: daily.filter((day) => day.isScheduledServiceDay && day.sessionCount === 0 && day.eventCount === 0).length,
     eventCount: events.length,
     recordedDays: daily.filter((day) => day.eventCount > 0).length,
-    sessionDays: careMinuteValues.length,
-    careMinutes: careMinuteValues.length ? careMinuteValues.reduce((sum, value) => sum + value, 0) : null,
     feedingCount,
     feedingMeasuredCount: measuredFeeding,
     breastfeedingDurationCount: measuredBreastfeeding,
@@ -436,8 +424,6 @@ function buildPostpartumFacts(totals) {
     `선택한 서비스 배치의 서비스일 ${totals.serviceDays}일 중 ${totals.recordedDays}일에 관리사가 총 ${totals.eventCount}건의 케어 기록을 남겼습니다.`,
   ];
   if (totals.unrecordedScheduledDays) facts.push(`기록이 없는 예정 서비스일은 ${totals.unrecordedScheduledDays}일이며, 해당 날짜는 관리사 기록 0건으로 표시했습니다.`);
-  if (totals.careMinutes !== null) facts.push(`완료된 근무 ${totals.sessionDays}일의 시작·종료 시간을 더하면 총 ${totals.careMinutes}분입니다.`);
-  else facts.push("선택한 서비스 배치에는 시작 시간과 종료 시간이 모두 입력된 완료 근무가 없어 총 근무시간을 계산하지 않았습니다.");
   if (totals.feedingCount) {
     const measurements = [];
     if (totals.breastfeedingDurationCount) measurements.push(`직접 모유수유 ${totals.breastfeedingDurationCount}건의 합계 ${totals.breastfeedingMinutes ?? 0}분`);
@@ -461,8 +447,6 @@ function buildBabysittingFacts(totals) {
     `선택한 서비스 배치의 서비스일 ${totals.serviceDays}일 중 ${totals.recordedDays}일에 관리사가 총 ${totals.eventCount}건의 시팅 기록을 남겼습니다.`,
   ];
   if (totals.unrecordedScheduledDays) facts.push(`기록이 없는 예정 서비스일은 ${totals.unrecordedScheduledDays}일이며, 해당 날짜는 관리사 기록 0건으로 표시했습니다.`);
-  if (totals.careMinutes !== null) facts.push(`완료된 근무 ${totals.sessionDays}일의 시작·종료 시간을 더하면 총 ${totals.careMinutes}분입니다.`);
-  else facts.push("선택한 서비스 배치에는 시작 시간과 종료 시간이 모두 입력된 완료 근무가 없어 총 근무시간을 계산하지 않았습니다.");
   facts.push(totals.mealCount
     ? `식사·간식 기록은 ${totals.mealCount}건이며, 관리사가 입력한 섭취량은 ${objectiveDistributionLabel(totals.appetiteDistribution)}입니다.`
     : "선택한 서비스 배치에 식사·간식 기록이 없습니다.");

@@ -3777,7 +3777,6 @@ import {
     const common = [
       ["리포트 표시일", `${model.dateKeys.length}일`, `예정 서비스일 ${totals.scheduledServiceDays || 0}일 · 추가·소급 ${exceptionDays}일`],
       ["관리사의 기록 횟수", `${totals.eventCount}건`, "선택한 서비스 배치의 전체 기록"],
-      ["완료된 근무시간", reportDurationValue(totals.careMinutes), totals.sessionDays ? `완료된 근무 ${totals.sessionDays}일 기준 · 케어 확인 ${totals.providedSessionDays || 0}일` : `완료 시간 없음 · 케어 확인 ${totals.providedSessionDays || 0}일`],
     ];
     const serviceKpis = model.serviceType === "BABYSITTING"
       ? [["식사·간식 기록", `${totals.mealCount}건`, "관리사가 입력한 횟수"], ["놀이·생활 기록", `${totals.activityCount}건`, "놀이·산책·안전 확인 등"]]
@@ -3814,7 +3813,7 @@ import {
 
   function objectiveTodaySummaryMarkup(assignment, client, model, viewerRole = state.role) {
     const todayKey = localDateKey(new Date());
-    const emptyDay = { dateKey: todayKey, eventCount: 0, feedingMl: null, breastfeedingMinutes: null, sleepMinutes: null, temperatureAverage: null, diaperCount: 0, mealCount: 0, activityCount: 0, safetyCount: 0, careMinutes: null };
+    const emptyDay = { dateKey: todayKey, eventCount: 0, feedingMl: null, breastfeedingMinutes: null, sleepMinutes: null, temperatureAverage: null, diaperCount: 0, mealCount: 0, activityCount: 0, safetyCount: 0 };
     const today = model.daily.find((day) => day.dateKey === todayKey) || emptyDay;
     const previous = model.daily.filter((day) => day.dateKey < todayKey && day.eventCount > 0).at(-1) || null;
     const recentDays = [...model.daily.filter((day) => day.dateKey < todayKey && day.eventCount > 0).slice(-2), today];
@@ -3829,7 +3828,6 @@ import {
           { label: "놀이·생활", tone: "blue", accessor: (day) => Number(day.activityCount || 0), formatter: countFormatter },
           ...(viewerRole === "client" ? [] : [
             { label: "안전 확인", tone: "peach", accessor: (day) => Number(day.safetyCount || 0), formatter: countFormatter },
-            { label: "완료 근무시간", tone: "cream", accessor: (day) => Number.isFinite(day.careMinutes) ? day.careMinutes : null, formatter: minuteFormatter, emptyLabel: "오늘 완료 근무 기록 없음" },
           ]),
         ]
       : [
@@ -3950,7 +3948,7 @@ import {
     const generatedAtTimeZone = deviceTimeZone();
     const generatedAt = generatedAtDate.toLocaleString("ko-KR", { timeZone: generatedAtTimeZone });
     const reportTimeBasis = objectiveReportTimeBasisLabel(model);
-    return `<article class="objective-report" aria-labelledby="objective-report-title"><header class="objective-report-banner"><div class="report-print-only">${brandLogoMarkup(true)}</div><p class="eyebrow">PROMOMS CARE REPORT</p><h1 id="objective-report-title">${escapeHtml(serviceMetaFor(model.serviceType).label)} 서비스 배치 리포트</h1><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyName)} · ${escapeHtml(objectiveDateLabel(reportFrom))}–${escapeHtml(objectiveDateLabel(reportTo))}</p><small>배치 ${escapeHtml(String(assignment.id).slice(0, 8).toUpperCase())} · 리포트 번호 ${escapeHtml(reportId)} · 기록 시간 ${escapeHtml(reportTimeBasis)} · 생성 ${escapeHtml(generatedAt)} (${escapeHtml(serviceTimeZoneLabel(generatedAtTimeZone))})</small></header>${objectiveReportCaregiverHistoryMarkup(assignment)}<div class="objective-report-banner"><strong>선택한 서비스 배치와 기록</strong><p>표시된 서비스일 ${model.dateKeys.length}일 · 기록이 있는 날 ${model.totals.recordedDays}일 · 관리사 기록 ${model.totals.eventCount}건 · 완료된 근무시간 ${model.totals.careMinutes === null ? "기록 없음" : reportDurationValue(model.totals.careMinutes)}</p><small>배치 안의 서비스 요일과 실제 케어·기록 날짜만 표시하며 비서비스일은 제외합니다. 날짜와 시간은 각 기록을 입력한 기기의 현지시간 기준입니다. ‘기록 없음’은 숫자 0과 다릅니다. 메모가 포함된 ${model.dataQuality.freeTextExcludedFromMetrics}건의 메모 속 숫자는 합계·평균에 사용하지 않았습니다. 숫자로 읽을 수 없는 입력 ${model.dataQuality.invalidMetricCount}건.</small></div>${objectiveReportKpisMarkup(model)}<section class="objective-report-section"><h2>서비스 배치 기록 요약</h2><div class="objective-report-facts">${model.facts.map((fact) => `<p class="objective-report-fact">${escapeHtml(fact)}</p>`).join("")}</div></section><section class="objective-report-section"><h2>서비스일별 변화</h2><p class="objective-report-legend">선택한 배치의 서비스일만 각 기록 기기의 현지날짜 기준으로 표시합니다. 정상·위험·호전·악화 여부를 판단하지 않습니다.</p>${objectiveReportChartsMarkup(model)}</section><p class="objective-report-disclaimer"><strong>중요:</strong> 이 문서는 관리사가 입력한 내용을 합계·평균으로 정리한 리포트입니다. 의료 진단, 성장 판정, 건강 상태 평가 또는 원인 추정을 제공하지 않습니다. 판단이 필요한 경우 해당 분야의 자격을 갖춘 전문가에게 문의하세요.</p><footer class="objective-report-footer"><p>ProMoms · 엄마 곁의 전문가</p><p>${escapeHtml(reportId)} · 계산 기준 1.1 · ${escapeHtml(reportFrom)}–${escapeHtml(reportTo)}</p></footer></article>`;
+    return `<article class="objective-report" aria-labelledby="objective-report-title"><header class="objective-report-banner"><div class="report-print-only">${brandLogoMarkup(true)}</div><p class="eyebrow">PROMOMS CARE REPORT</p><h1 id="objective-report-title">${escapeHtml(serviceMetaFor(model.serviceType).label)} 서비스 배치 리포트</h1><p>${escapeHtml(client.motherName)} · ${escapeHtml(babyName)} · ${escapeHtml(objectiveDateLabel(reportFrom))}–${escapeHtml(objectiveDateLabel(reportTo))}</p><small>배치 ${escapeHtml(String(assignment.id).slice(0, 8).toUpperCase())} · 리포트 번호 ${escapeHtml(reportId)} · 기록 시간 ${escapeHtml(reportTimeBasis)} · 생성 ${escapeHtml(generatedAt)} (${escapeHtml(serviceTimeZoneLabel(generatedAtTimeZone))})</small></header>${objectiveReportCaregiverHistoryMarkup(assignment)}<div class="objective-report-banner"><strong>선택한 서비스 배치와 기록</strong><p>표시된 서비스일 ${model.dateKeys.length}일 · 기록이 있는 날 ${model.totals.recordedDays}일 · 관리사 기록 ${model.totals.eventCount}건</p><small>배치 안의 서비스 요일과 실제 케어·기록 날짜만 표시하며 비서비스일은 제외합니다. 날짜와 시간은 각 기록을 입력한 기기의 현지시간 기준입니다. ‘기록 없음’은 숫자 0과 다릅니다. 메모가 포함된 ${model.dataQuality.freeTextExcludedFromMetrics}건의 메모 속 숫자는 합계·평균에 사용하지 않았습니다. 숫자로 읽을 수 없는 입력 ${model.dataQuality.invalidMetricCount}건.</small></div>${objectiveReportKpisMarkup(model)}<section class="objective-report-section"><h2>서비스 배치 기록 요약</h2><div class="objective-report-facts">${model.facts.map((fact) => `<p class="objective-report-fact">${escapeHtml(fact)}</p>`).join("")}</div></section><section class="objective-report-section"><h2>서비스일별 변화</h2><p class="objective-report-legend">선택한 배치의 서비스일만 각 기록 기기의 현지날짜 기준으로 표시합니다. 정상·위험·호전·악화 여부를 판단하지 않습니다.</p>${objectiveReportChartsMarkup(model)}</section><p class="objective-report-disclaimer"><strong>중요:</strong> 이 문서는 관리사가 입력한 내용을 합계·평균으로 정리한 리포트입니다. 의료 진단, 성장 판정, 건강 상태 평가 또는 원인 추정을 제공하지 않습니다. 판단이 필요한 경우 해당 분야의 자격을 갖춘 전문가에게 문의하세요.</p><footer class="objective-report-footer"><p>ProMoms · 엄마 곁의 전문가</p><p>${escapeHtml(reportId)} · 계산 기준 1.1 · ${escapeHtml(reportFrom)}–${escapeHtml(reportTo)}</p></footer></article>`;
   }
 
   function objectiveReportPage(role, serviceType, workspaceNav = "") {
