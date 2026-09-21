@@ -3,12 +3,13 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const [app, cloud, migration, settlementMigration, automaticSessionMigration] = await Promise.all([
+const [app, cloud, migration, settlementMigration, automaticSessionMigration, dailyRequestMigration] = await Promise.all([
   readFile(path.join(root, "app.js"), "utf8"),
   readFile(path.join(root, "cloud-data.js"), "utf8"),
   readFile(path.join(root, "supabase/migrations/037_finance_and_care_record_corrections.sql"), "utf8"),
   readFile(path.join(root, "supabase/migrations/038_shift_reports_and_discounted_settlement.sql"), "utf8"),
   readFile(path.join(root, "supabase/migrations/049_automatic_care_event_sessions.sql"), "utf8"),
+  readFile(path.join(root, "supabase/migrations/050_client_daily_service_requests.sql"), "utf8"),
 ]);
 
 const checks = [
@@ -29,6 +30,9 @@ const checks = [
   ["manual safety, clock-in, and clock-out controls are removed", !app.includes("data-shift-check") && !app.includes("data-start-care") && !app.includes("data-end-care")],
   ["care events create and complete their daily container atomically", cloud.includes('supabase.rpc("record_care_event"') && automaticSessionMigration.includes("create or replace function public.record_care_event") && automaticSessionMigration.includes("set status = 'COMPLETED'")],
   ["retired checklist and manual session RPCs are removed", !cloud.includes('supabase.rpc("save_care_shift_checklist"') && automaticSessionMigration.includes("drop function if exists public.save_care_shift_checklist") && automaticSessionMigration.includes("drop function if exists public.set_care_session_status")],
+  ["clients can save one editable request for the current service date", app.includes("data-client-daily-request-form") && cloud.includes('supabase.rpc("save_client_daily_request"') && dailyRequestMigration.includes("unique (assignment_id, request_date)")],
+  ["daily requests enforce assignment and client access", dailyRequestMigration.includes("public.is_client_member(target_contract.client_id)") && dailyRequestMigration.includes("public.can_read_care_assignment(assignment_id)") && dailyRequestMigration.includes("SAVE_CLIENT_DAILY_REQUEST")],
+  ["caregivers see assignment and daily requests in a compact top summary", app.includes("caregiverRequestBriefMarkup(assignment)") && app.includes("오늘의 고객 요청사항") && app.includes("고객 요청 및 주의사항")],
   ["balance payment hash resolves pgcrypto from extensions", settlementMigration.includes("extensions.digest") && settlementMigration.includes("record_service_balance_payment")],
   ["owner discount is enforced and audited server-side", settlementMigration.includes("Only an owner can approve a service discount") && settlementMigration.includes("APPLY_OWNER_SERVICE_DISCOUNT")],
   ["discount settlement is used by the client", cloud.includes('supabase.rpc("settle_service_balance_payment"') && app.includes("오너 할인 적용")],

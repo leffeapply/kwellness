@@ -19,6 +19,9 @@ const checks = [
   [styles.includes("grid-auto-columns: clamp(300px, 33vw, 390px)"), "데스크톱 관리사 카드 폭이 반응형이 아닙니다."],
   [styles.includes("grid-auto-columns: minmax(278px, 86vw)"), "모바일 관리사 카드 폭이 반응형이 아닙니다."],
   [styles.includes(".people-section-tabs"), "관리자 소메뉴 스타일이 없습니다."],
+  [app.includes('serviceType === "BABYSITTING" ? "is-babysitting" : "is-postpartum"'), "서비스별 빠른 기록 2줄 배치 구분이 없습니다."],
+  [styles.includes("grid-template-columns: repeat(5, minmax(0, 1fr))"), "산후조리 빠른 기록이 5개씩 2줄로 배치되지 않습니다."],
+  [styles.includes(".instant-record-scroll.is-babysitting") && styles.includes("grid-template-columns: repeat(4, minmax(0, 1fr))"), "베이비시팅 빠른 기록이 4개씩 2줄로 배치되지 않습니다."],
 ];
 
 const failures = checks.filter(([condition]) => !condition).map(([, message]) => message);

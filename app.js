@@ -49,6 +49,7 @@ import {
   reviewServiceRequestCloud,
   saveServiceReviewCloud,
   saveCareEventCloud,
+  saveClientDailyRequestCloud,
   scheduleServiceRequestCloud,
   configureMemberServiceAccessCloud,
   setMemberStatusCloud,
@@ -351,6 +352,7 @@ import {
       reviews: [],
       publicCaregivers: [],
       events: [],
+      dailyRequests: [],
       session: { id: null, assignmentId: null, clientId: null, babyId: null, serviceDate: null, serviceTimeZone: null, active: false, startedAt: null, endedAt: null, clientName: "", babyName: "", babyInitial: "", caregiverName: "", schedule: "", address: "" },
       retail: { selectedCategory: "ALL", posCategory: "ALL", cart: [], carts: {}, products: [], inventoryMovements: [], orders: [] },
     };
@@ -464,6 +466,7 @@ import {
         { id: "evt-8", assignmentId: "assignment-ava", clientId: "client-sophia", babyId: "baby-ava", type: "sitter_note", at: atTime(14, 35), author: "Jane Lee", data: { category: "놀이", text: "그림책 두 권을 읽고 블록 놀이를 했습니다." } },
         ...historicalCareEvents(),
       ],
+      dailyRequests: [],
       schedules: [
         { time: "9:00 AM", client: "Ava Park", caregiver: "Jane Lee · 베이비시팅", status: "진행 중", tone: "mint" },
         { time: "10:00 AM", client: "Emma Kim", caregiver: "Mina Kim · 산후조리", status: "진행 중", tone: "mint" },
@@ -562,6 +565,7 @@ import {
             serviceRequests: mergeById(seed.serviceRequests, saved.serviceRequests),
             serviceAdjustments: mergeById(seed.serviceAdjustments, saved.serviceAdjustments || []),
             events: mergeById(seed.events, saved.events),
+            dailyRequests: mergeById(seed.dailyRequests, saved.dailyRequests || []),
             reviews: mergeById(seed.reviews, saved.reviews || []),
             publicCaregivers: Array.isArray(saved.publicCaregivers) && saved.publicCaregivers.length ? saved.publicCaregivers : seed.publicCaregivers,
             views: { ...seed.views, ...(saved.views || {}) },
@@ -2775,7 +2779,38 @@ import {
     const actions = serviceType === "BABYSITTING" ? BABYSITTING_QUICK_ACTIONS : POSTPARTUM_QUICK_ACTIONS;
     const events = visibleCareEvents(assignment);
     const dateLabel = TODAY_FORMATTER.format(new Date());
-    return `<article class="card instant-record-dock" aria-label="${serviceType === "BABYSITTING" ? "베이비시팅" : "산후조리"} 바로 기록"><div class="instant-record-heading"><div><p class="eyebrow">QUICK RECORD</p><h3>${escapeHtml(dateLabel)} 바로 기록</h3><p>별도의 근무 시작 절차 없이 아이콘을 눌러 바로 기록할 수 있습니다.</p></div><span class="status-chip">오늘 ${events.length}건</span></div><div class="instant-record-scroll" role="group" aria-label="기록 종류">${actions.map((action) => `<button type="button" class="instant-record-action tone-${action.tone}" data-log-type="${action.type}"${action.preset ? ` data-log-preset="${escapeHtml(action.preset)}"` : ""} aria-label="${escapeHtml(action.label)} 기록 열기"><span class="instant-record-icon" aria-hidden="true">${action.icon}</span><strong>${escapeHtml(action.label)}</strong><small>${quickActionMetric(action, events)}</small></button>`).join("")}</div></article>`;
+    const recordGridClass = serviceType === "BABYSITTING" ? "is-babysitting" : "is-postpartum";
+    return `<article class="card instant-record-dock" aria-label="${serviceType === "BABYSITTING" ? "베이비시팅" : "산후조리"} 바로 기록"><div class="instant-record-heading"><div><p class="eyebrow">QUICK RECORD</p><h3>${escapeHtml(dateLabel)} 바로 기록</h3><p>별도의 근무 시작 절차 없이 아이콘을 눌러 바로 기록할 수 있습니다.</p></div><span class="status-chip">오늘 ${events.length}건</span></div><div class="instant-record-scroll ${recordGridClass}" role="group" aria-label="기록 종류">${actions.map((action) => `<button type="button" class="instant-record-action tone-${action.tone}" data-log-type="${action.type}"${action.preset ? ` data-log-preset="${escapeHtml(action.preset)}"` : ""} aria-label="${escapeHtml(action.label)} 기록 열기"><span class="instant-record-icon" aria-hidden="true">${action.icon}</span><strong>${escapeHtml(action.label)}</strong><small>${quickActionMetric(action, events)}</small></button>`).join("")}</div></article>`;
+  }
+
+  function dailyRequestForAssignment(assignment, requestDate = localDateKey(new Date())) {
+    if (!assignment) return null;
+    return (state.dailyRequests || [])
+      .filter((request) => request.assignmentId === assignment.id && request.requestDate === requestDate)
+      .sort((first, second) => new Date(second.updatedAt || second.createdAt || 0) - new Date(first.updatedAt || first.createdAt || 0))[0] || null;
+  }
+
+  function assignmentRequestSummary(assignment) {
+    const notes = [];
+    const requestNote = String(assignment?.requestNote || "").trim();
+    const allergies = String(assignment?.allergies || "").trim();
+    if (requestNote) notes.push(requestNote);
+    if (allergies && !/^(없음|none|no)$/i.test(allergies)) notes.push(`알러지: ${allergies}`);
+    return notes.join(" · ") || "별도 요청 및 주의사항 없음";
+  }
+
+  function caregiverRequestBriefMarkup(assignment) {
+    const todayRequest = dailyRequestForAssignment(assignment);
+    const assignmentSummary = assignmentRequestSummary(assignment);
+    const todaySummary = todayRequest?.requestText || "오늘 등록된 요청사항이 없습니다.";
+    return `<article class="card caregiver-request-brief" aria-label="고객 요청 요약"><div class="caregiver-request-brief-item fixed"><span>배정 시</span><div><strong>고객 요청 및 주의사항</strong><p title="${escapeHtml(assignmentSummary)}">${escapeHtml(assignmentSummary)}</p></div></div><div class="caregiver-request-brief-item today"><span>오늘</span><div><strong>오늘의 고객 요청사항</strong><p title="${escapeHtml(todaySummary)}">${escapeHtml(todaySummary)}</p></div></div></article>`;
+  }
+
+  function clientDailyRequestMarkup(assignment) {
+    const requestDate = localDateKey(new Date());
+    const todayRequest = dailyRequestForAssignment(assignment, requestDate);
+    const canSave = assignmentAcceptsCareEntriesToday(assignment) && isRecordableCareServiceType(assignmentServiceType(assignment));
+    return `<article class="card client-daily-request-card"><form class="client-daily-request-form" data-client-daily-request-form data-assignment-id="${assignment.id}"><div class="client-daily-request-intro"><span class="daily-request-icon">✎</span><div><strong>오늘의 요청사항</strong><small>${canSave ? "오늘 담당 관리사에게 전달됩니다." : "서비스 기간에 입력할 수 있습니다."}</small></div></div><textarea name="requestText" rows="2" maxlength="500" placeholder="예: 오후 수유 후 트림을 조금 더 지켜봐 주세요." ${canSave ? "required" : "disabled"}>${escapeHtml(todayRequest?.requestText || "")}</textarea><button type="submit" class="primary-button" ${canSave ? "" : "disabled"}>${todayRequest ? "오늘 요청 수정" : "오늘 요청 저장"}</button></form></article>`;
   }
 
   function caregiverBabysittingToday(user, assignment, nextAssignment, workspaceNav = "") {
@@ -2786,6 +2821,7 @@ import {
     return `<section class="page babysitting-workspace">
       ${demoBanner()}${workspaceNav}
       ${pageHeading("BABYSITTING WORKSPACE", `안녕하세요, ${escapeHtml(user.fullName)}님.`, `${escapeHtml(client.motherName)} 보호자의 ${escapeHtml(babyName)} 아이에게 배정된 베이비시팅 화면입니다. 계약 기간에는 요청 시간과 관계없이 기록할 수 있습니다.`)}
+      ${caregiverRequestBriefMarkup(assignment)}
       ${instantRecordDockMarkup(assignment, "BABYSITTING")}
       <article class="card babysitting-hero"><div><div class="hero-care-top"><div>${serviceBadgeMarkup("BABYSITTING")}<p class="eyebrow">TODAY'S SITTING</p><h3>${escapeHtml(babyName)}</h3><p>고객 요청 참고시간 ${assignment.dailyStart}–${assignment.dailyEnd} · ${escapeHtml(assignment.address)}</p></div><div class="live-pill"><span class="live-dot"></span>RECORDING AVAILABLE</div></div><div class="assignment-brief"><span>보호자 ${escapeHtml(client.motherName)}</span><span>알러지 ${escapeHtml(assignment.allergies)}</span><span>추가인원 ${assignment.extraHouseholdMembers}명</span><span>${assignment.weeks}주 일정</span></div><div class="care-actions"><button class="primary-button" data-notice="오늘 ${sitterEvents.length}개의 시팅 기록이 저장되어 있습니다.">오늘 기록 ${sitterEvents.length}건</button><button class="secondary-button" data-caregiver-assignment-detail="${assignment.id}">아이 상세정보</button></div></div></article>
       <div class="assignment-peek-grid" style="margin-top:18px">${caregiverAssignmentPeekMarkup(assignment, "현재 시팅")}${caregiverAssignmentPeekMarkup(nextAssignment, "다음 일정")}</div>
@@ -2810,6 +2846,7 @@ import {
         ${demoBanner()}
         ${workspaceNav}
         ${pageHeading("CAREGIVER WORKSPACE", `안녕하세요, ${escapeHtml(user.fullName)}님.`, `배정된 ${escapeHtml(client.motherName)} 산모와 ${escapeHtml(babyName)} 아기의 정보만 접근할 수 있습니다. 계약 기간에는 요청 시간과 관계없이 기록할 수 있습니다.`)}
+        ${caregiverRequestBriefMarkup(assignment)}
         ${instantRecordDockMarkup(assignment, "POSTPARTUM")}
         <article class="card hero-care">
           <div class="hero-care-top">
@@ -2823,8 +2860,6 @@ import {
           </div>
         </article>
         <div class="assignment-peek-grid" style="margin-top:18px">${caregiverAssignmentPeekMarkup(assignment, "현재 일정")}${caregiverAssignmentPeekMarkup(nextAssignment, "다음 일정")}</div>
-
-        <article class="card card-pad request-card" style="margin-top:18px"><div class="section-header"><div><h3>고객 요청 및 주의사항</h3><p>관리자가 일정 배정 시 저장한 정보</p></div><span class="status-chip coral">확인 필수</span></div><p>${escapeHtml(assignment.requestNote || "별도 요청사항 없음")}</p></article>
 
         <article class="card card-pad" style="margin-top:18px">
           <div class="section-header"><div><h3>최근 기록</h3><p>오늘 ${escapeHtml(babyName)}에게 기록된 케어 이벤트</p></div><button class="text-button" data-service-tab="timeline" data-service-type="POSTPARTUM">전체 보기 →</button></div>
@@ -3132,7 +3167,7 @@ import {
     const events = visibleCareEvents(assignment).filter((event) => ["meal", "sitter_note"].includes(event.type));
     const meals = events.filter((event) => event.type === "meal");
     const notes = events.filter((event) => event.type === "sitter_note");
-    return `<section class="page babysitting-client-page">${demoBanner()}${workspaceNav}<article class="card client-hero babysitting-client-hero"><div class="client-hero-copy">${serviceBadgeMarkup("BABYSITTING")}<p class="eyebrow">${escapeHtml(babyName).toUpperCase()}'S SITTING · ${todayLabel()}</p><h3>${escapeHtml(babyName)}의 오늘 시팅 기록이 업데이트되었습니다. ☆</h3><p>담당 관리사가 공유한 식사와 놀이·산책·생활 이벤트를 간결하게 확인하세요.</p></div><div class="client-hero-art"><div class="baby-monogram">${escapeHtml(babyName[0] || "B")}</div></div></article><div class="grid three sitter-summary-grid" style="margin-top:18px">${summaryCard("🍽️", "식사·간식", `${meals.length}회`, meals.at(-1) ? eventDescription(meals.at(-1)) : "기록 전")}${summaryCard("☆", "생활 이벤트", `${notes.length}건`, notes.at(-1) ? eventDescription(notes.at(-1)) : "기록 전")}${summaryCard("♙", "담당 관리사", caregiver?.fullName || "배정 완료", `${assignment.dailyStart}–${assignment.dailyEnd}`)}</div>${clientServiceReviewMarkup(client, "BABYSITTING", assignment)}<article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>오늘의 시팅 기록</h3><p>식사와 주요 활동이 시간순으로 표시됩니다.</p></div><button class="text-button" data-service-tab="timeline" data-service-type="BABYSITTING">전체 보기 →</button></div>${timelineMarkup(undefined, assignment)}</article><div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, "BABYSITTING")}</div></section>`;
+    return `<section class="page babysitting-client-page">${demoBanner()}${workspaceNav}${clientDailyRequestMarkup(assignment)}<article class="card client-hero babysitting-client-hero"><div class="client-hero-copy">${serviceBadgeMarkup("BABYSITTING")}<p class="eyebrow">${escapeHtml(babyName).toUpperCase()}'S SITTING · ${todayLabel()}</p><h3>${escapeHtml(babyName)}의 오늘 시팅 기록이 업데이트되었습니다. ☆</h3><p>담당 관리사가 공유한 식사와 놀이·산책·생활 이벤트를 간결하게 확인하세요.</p></div><div class="client-hero-art"><div class="baby-monogram">${escapeHtml(babyName[0] || "B")}</div></div></article><div class="grid three sitter-summary-grid" style="margin-top:18px">${summaryCard("🍽️", "식사·간식", `${meals.length}회`, meals.at(-1) ? eventDescription(meals.at(-1)) : "기록 전")}${summaryCard("☆", "생활 이벤트", `${notes.length}건`, notes.at(-1) ? eventDescription(notes.at(-1)) : "기록 전")}${summaryCard("♙", "담당 관리사", caregiver?.fullName || "배정 완료", `${assignment.dailyStart}–${assignment.dailyEnd}`)}</div>${clientServiceReviewMarkup(client, "BABYSITTING", assignment)}<article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>오늘의 시팅 기록</h3><p>식사와 주요 활동이 시간순으로 표시됩니다.</p></div><button class="text-button" data-service-tab="timeline" data-service-type="BABYSITTING">전체 보기 →</button></div>${timelineMarkup(undefined, assignment)}</article><div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, "BABYSITTING")}</div></section>`;
   }
 
   function clientSummary(serviceType = "POSTPARTUM", workspaceNav = "") {
@@ -3146,6 +3181,7 @@ import {
       <section class="page">
         ${demoBanner()}
         ${workspaceNav}
+        ${clientDailyRequestMarkup(assignment)}
         <article class="card client-hero">
           <div class="client-hero-copy">
             <p class="eyebrow">${escapeHtml(babyName).toUpperCase()}'S DAY · ${todayLabel()}</p>
@@ -4885,6 +4921,65 @@ import {
 
     document.querySelectorAll("[data-log-type]").forEach((button) => {
       button.addEventListener("click", () => openLogModal(button.dataset.logType, button.dataset.logPreset || null));
+    });
+    document.querySelectorAll("[data-client-daily-request-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const assignment = state.assignments.find((item) => item.id === form.dataset.assignmentId);
+        const client = clientForUser(authUser()?.id);
+        const requestText = String(new FormData(form).get("requestText") || "").trim();
+        if (!assignment || !client || assignment.clientId !== client.id) return showToast("오늘 요청을 저장할 서비스 배정을 확인할 수 없습니다.", "error");
+        if (!assignmentAcceptsCareEntriesToday(assignment)) return showToast("오늘이 포함된 서비스 기간에만 요청사항을 저장할 수 있습니다.", "error");
+        if (!requestText) return showToast("관리사에게 전달할 오늘의 요청사항을 입력해 주세요.", "error");
+        if (requestText.length > 500) return showToast("오늘의 요청사항은 500자 이내로 입력해 주세요.", "error");
+        const submitButton = form.querySelector('button[type="submit"]');
+        if (submitButton) {
+          submitButton.disabled = true;
+          submitButton.textContent = "저장 중…";
+        }
+        if (usingCloudData()) {
+          try {
+            await saveClientDailyRequestCloud({
+              assignmentId: assignment.id,
+              requestDate: localDateKey(new Date()),
+              requestText,
+              timeZone: deviceTimeZone(),
+            });
+            await refreshCloudState();
+            showToast("오늘의 요청사항을 담당 관리사에게 전달했습니다.");
+          } catch (error) {
+            if (submitButton) {
+              submitButton.disabled = false;
+              submitButton.textContent = dailyRequestForAssignment(assignment) ? "오늘 요청 수정" : "오늘 요청 저장";
+            }
+            showToast(friendlyErrorMessage(error, "오늘의 요청사항을 저장하지 못했습니다."), "error");
+          }
+          return;
+        }
+        const requestDate = localDateKey(new Date());
+        const now = new Date().toISOString();
+        const existing = dailyRequestForAssignment(assignment, requestDate);
+        if (existing) {
+          existing.requestText = requestText;
+          existing.updatedAt = now;
+          existing.updatedBy = authUser().id;
+        } else {
+          state.dailyRequests.push({
+            id: `daily-request-${Date.now()}`,
+            assignmentId: assignment.id,
+            clientId: client.id,
+            requestDate,
+            requestText,
+            createdBy: authUser().id,
+            updatedBy: authUser().id,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+        saveState();
+        render();
+        showToast("오늘의 요청사항을 담당 관리사에게 전달했습니다.");
+      });
     });
     document.querySelectorAll("[data-edit-care-event]").forEach((button) => {
       button.addEventListener("click", () => openCareEventEditModal(button.dataset.editCareEvent));

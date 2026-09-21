@@ -1832,20 +1832,14 @@ button:disabled {
 
 .instant-record-scroll {
   display: grid;
-  grid-auto-columns: 108px;
-  grid-auto-flow: column;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  padding: 2px 2px 10px;
-  scrollbar-color: #b7cfc5 transparent;
-  scrollbar-width: thin;
-  scroll-snap-type: inline proximity;
-  -webkit-overflow-scrolling: touch;
+  padding: 2px;
 }
 
-.instant-record-scroll::-webkit-scrollbar { height: 5px; }
-.instant-record-scroll::-webkit-scrollbar-thumb { border-radius: 10px; background: #b7cfc5; }
+.instant-record-scroll.is-babysitting {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 
 .instant-record-action {
   display: grid;
@@ -1860,7 +1854,6 @@ button:disabled {
   background: white;
   box-shadow: 0 5px 16px rgba(43, 87, 78, 0.06);
   text-align: center;
-  scroll-snap-align: start;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
@@ -1896,6 +1889,115 @@ button:disabled {
 .instant-record-action.tone-sand .instant-record-icon { color: #9c8069; background: #f7f0e9; }
 .instant-record-action.tone-mint .instant-record-icon { color: #397d70; background: #eaf6f1; }
 .instant-record-action.tone-coral .instant-record-icon { color: #bd6e58; background: #fff0ea; }
+
+.caregiver-request-brief {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  padding: 0;
+  border-color: #d7e5df;
+  background: #d7e5df;
+  box-shadow: 0 8px 22px rgba(32, 78, 68, 0.06);
+}
+
+.caregiver-request-brief-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px 12px;
+  background: #fffdfa;
+}
+
+.caregiver-request-brief-item.today { background: #f0f8f5; }
+
+.caregiver-request-brief-item > span {
+  padding: 5px 7px;
+  border-radius: 999px;
+  color: var(--green);
+  background: var(--mint-light);
+  font-size: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.caregiver-request-brief-item.today > span {
+  color: #9d5b48;
+  background: var(--coral-light);
+}
+
+.caregiver-request-brief-item strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 11px;
+}
+
+.caregiver-request-brief-item p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 10px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.client-daily-request-card {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-color: #d7e5df;
+  background: linear-gradient(145deg, #fffdfa 0%, #f2f8f5 100%);
+}
+
+.client-daily-request-form {
+  display: grid;
+  grid-template-columns: auto minmax(240px, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+}
+
+.client-daily-request-intro {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.client-daily-request-intro .daily-request-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 11px;
+  color: var(--green);
+  background: var(--mint-light);
+  font-size: 17px;
+}
+
+.client-daily-request-intro strong,
+.client-daily-request-intro small { display: block; }
+.client-daily-request-intro strong { font-size: 12px; }
+.client-daily-request-intro small { margin-top: 2px; color: var(--ink-soft); font-size: 9px; white-space: nowrap; }
+
+.client-daily-request-form textarea {
+  min-height: 44px;
+  max-height: 76px;
+  margin: 0;
+  padding: 10px 12px;
+  resize: vertical;
+  font-size: 11px;
+}
+
+.client-daily-request-form .primary-button {
+  min-height: 44px;
+  padding: 0 15px;
+  white-space: nowrap;
+}
 
 .instant-record-hint {
   margin: 4px 2px 0;
@@ -4188,10 +4290,21 @@ body:has(#modal-root:not(:empty)) {
   .instant-record-heading { align-items: center; margin-bottom: 11px; }
   .instant-record-heading h3 { font-size: 18px; }
   .instant-record-heading p:not(.eyebrow) { display: none; }
-  .instant-record-scroll { grid-auto-columns: 91px; gap: 8px; margin-right: -12px; padding-right: 12px; }
-  .instant-record-action { min-height: 111px; border-radius: 18px; }
-  .instant-record-icon { width: 47px; height: 47px; border-radius: 16px; font-size: 22px; }
-  .instant-record-action strong { min-height: 27px; font-size: 10px; }
+  .instant-record-scroll { gap: 7px; padding: 1px; }
+  .instant-record-action { min-width: 0; min-height: 103px; gap: 5px; padding: 9px 3px; border-radius: 17px; }
+  .instant-record-icon { width: 43px; height: 43px; border-radius: 15px; font-size: 20px; }
+  .instant-record-action strong { min-height: 27px; font-size: 9px; overflow-wrap: anywhere; }
+  .instant-record-action small { font-size: 8px; line-height: 1.3; overflow-wrap: anywhere; }
+  .caregiver-request-brief { grid-template-columns: 1fr; margin-bottom: 10px; }
+  .caregiver-request-brief-item { min-height: 52px; padding: 8px 10px; }
+  .caregiver-request-brief-item strong { font-size: 10px; }
+  .caregiver-request-brief-item p { font-size: 9px; }
+  .client-daily-request-card { margin-bottom: 11px; padding: 10px; }
+  .client-daily-request-form { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .client-daily-request-intro { grid-column: 1 / -1; }
+  .client-daily-request-intro small { white-space: normal; }
+  .client-daily-request-form textarea { min-height: 42px; padding: 9px 10px; }
+  .client-daily-request-form .primary-button { min-height: 42px; padding: 0 11px; font-size: 10px; }
   .feeding-method-grid { grid-template-columns: 1fr; }
   .feeding-measure-panel { padding: 13px; }
   .hero-care { padding: 23px 20px; }

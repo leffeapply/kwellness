@@ -94,6 +94,7 @@ const TABLE_ORDER_COLUMNS = Object.freeze({
   massage_therapist_availability: ["available_date", "start_time"],
   massage_booking_sessions: ["starts_at", "session_number"],
   massage_booking_changes: ["created_at"],
+  client_daily_requests: ["request_date", "assignment_id"],
 });
 
 async function table(name, columns = "*") {
@@ -341,6 +342,7 @@ async function loadCloudStateOnce(session) {
     assignments,
     careSessions,
     careEvents,
+    dailyRequests,
     serviceAdjustments,
     reviews,
     reviewPublications,
@@ -371,6 +373,7 @@ async function loadCloudStateOnce(session) {
     table("care_assignments"),
     table("care_sessions"),
     table("care_events"),
+    table("client_daily_requests"),
     table("service_adjustment_requests"),
     table("caregiver_reviews"),
     table("caregiver_review_publications"),
@@ -804,6 +807,17 @@ async function loadCloudStateOnce(session) {
       data: event.payload || {},
     };
   }).filter(Boolean);
+  const appDailyRequests = dailyRequests.map((request) => ({
+    id: request.id,
+    assignmentId: request.assignment_id,
+    clientId: request.client_id,
+    requestDate: request.request_date,
+    requestText: request.request_text,
+    createdBy: request.created_by,
+    updatedBy: request.updated_by,
+    createdAt: request.created_at,
+    updatedAt: request.updated_at,
+  }));
 
   const currentUser = appUsers.find((item) => item.id === session.user.id);
   if (!currentUser) throw new Error("회원 프로필을 불러오지 못했습니다. 잠시 후 다시 로그인해 주세요.");
@@ -872,6 +886,7 @@ async function loadCloudStateOnce(session) {
       reviewNote: item.review_note || "",
     })),
     events: appEvents,
+    dailyRequests: appDailyRequests,
     reviews: reviews.map((item) => {
       const publication = reviewPublicationById.get(item.id);
       return {
@@ -1187,6 +1202,16 @@ export async function saveCareEventCloud({ assignmentId, timeZone, type, at, dat
     p_notes: notes,
     p_time_zone: timeZone,
   }), "케어 기록 저장");
+}
+
+export async function saveClientDailyRequestCloud({ assignmentId, requestDate, requestText, timeZone }) {
+  await authenticatedUserId();
+  return throwIfError(await supabase.rpc("save_client_daily_request", {
+    p_assignment_id: assignmentId,
+    p_request_date: requestDate,
+    p_request_text: String(requestText || "").trim(),
+    p_time_zone: timeZone,
+  }), "오늘의 고객 요청 저장");
 }
 
 export async function updateCareEventCloud({ eventId, at, data, notes = null }) {
