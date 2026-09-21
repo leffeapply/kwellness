@@ -5,6 +5,7 @@ import process from "node:process";
 const root = process.cwd();
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+const cloudData = fs.readFileSync(path.join(root, "cloud-data.js"), "utf8");
 
 const checks = [
   [app.includes('activeSection: "members"'), "관리자 회원 관리 기본 소메뉴가 없습니다."],
@@ -25,7 +26,8 @@ const checks = [
   [!app.includes('{ id: "caregiving", label: "케어기빙 현황"'), "관리사 화면에 제거한 케어기빙 현황 메뉴가 다시 노출됩니다."],
   [!app.includes("function caregiverCaregivingHub()"), "제거한 관리사 케어기빙 대시보드가 코드에 남아 있습니다."],
   [app.includes('caregiver: { postpartum: () => caregiverServiceWorkspace("POSTPARTUM")'), "관리사 기본 작업공간 경로가 산후조리 화면으로 연결되지 않습니다."],
-  [app.includes("caregiverRetrospectiveReportEntryMarkup()"), "지난 근무 리포트 보완 기능이 케어 리포트 화면에 유지되지 않았습니다."],
+  [!app.includes("caregiverRetrospectiveReportEntryMarkup()") && !app.includes("openRetrospectiveCareReportModal"), "삭제한 지난 근무 리포트 보완 UI가 다시 노출됩니다."],
+  [!cloudData.includes("recordRetrospectiveCareReportCloud") && !cloudData.includes("record_retrospective_care_report"), "삭제한 지난 근무 리포트 저장 경로가 클라우드 코드에 남아 있습니다."],
 ];
 
 const failures = checks.filter(([condition]) => !condition).map(([, message]) => message);

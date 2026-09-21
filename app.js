@@ -40,7 +40,6 @@ import {
   publishCareReportCloud,
   reassignCaregiverCloud,
   recordApprovedRequestDepositEvidenceCloud,
-  recordRetrospectiveCareReportCloud,
   recordServiceBalancePaymentCloud,
   recordServiceRefundCloud,
   recordMyCurrentConsentsCloud,
@@ -776,10 +775,7 @@ import {
     if (message.includes("only during the confirmed contract period") || message.includes("only during the contract period")) return "확정된 서비스 계약기간 안에서만 관리 기록을 저장할 수 있습니다.";
     if (message.includes("published care report events cannot be added")) return "이미 발행된 리포트의 서비스 일자에는 새 기록을 추가할 수 없습니다.";
     if (message.includes("assigned service days")) return "선택한 날짜는 해당 배정의 서비스 요일이 아닙니다.";
-    if (message.includes("retrospective report cannot be entered for a future date") || message.includes("retrospective report cannot end in the future")) return "지난 근무 리포트에는 완료된 오늘 또는 과거 근무만 입력할 수 있습니다.";
     if (message.includes("published care report is immutable")) return "이미 고객에게 발행된 보관 리포트는 변경할 수 없습니다. 관리자에게 정정 절차를 요청해 주세요.";
-    if (message.includes("active care session before adding a retrospective")) return "현재 진행 중인 근무를 먼저 종료한 뒤 지난 근무 리포트를 입력해 주세요.";
-    if (message.includes("only the active assigned caregiver can report")) return "본인에게 실제 배정된 서비스만 소급 기록할 수 있습니다.";
     if (message.includes("matching captured reservation deposit is required")) return "일정 배치 전에 해당 서비스의 예약금 수납 확인을 완료해 주세요.";
     if (message.includes("overlapping service-day schedule")) return "선택한 관리사에게 같은 요일·시간의 중복 일정이 있습니다.";
     if (message.includes("required consents must be recorded")) return "관리사 권한을 추가하려면 해당 계정에서 최신 필수 약관 동의를 먼저 저장해야 합니다.";
@@ -2684,33 +2680,6 @@ import {
     return `<div class="service-workspace-nav ${serviceMetaFor(serviceType).tone}"><div>${serviceBadgeMarkup(serviceType)}<strong>${role === "client" ? "나의 서비스 상세" : "나의 케어기빙 상세"}</strong></div><div role="tablist" aria-label="${serviceMetaFor(serviceType).label} 상세 메뉴">${tabs.map(([id, label]) => `<button type="button" role="tab" aria-selected="${activeTab === id}" class="${activeTab === id ? "active" : ""}" data-service-tab="${id}" data-service-type="${serviceType}">${label}</button>`).join("")}</div></div>`;
   }
 
-  function retrospectiveAssignmentsFor(userId) {
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
-    return state.assignments
-      .filter((assignment) => assignment.caregiverUserId === userId
-        && assignment.status !== "CANCELLED"
-        && isRecordableCareServiceType(assignmentServiceType(assignment))
-        && new Date(assignment.startAt) <= todayEnd)
-      .sort((first, second) => new Date(second.endAt) - new Date(first.endAt));
-  }
-
-  function caregiverRetrospectiveReportEntryMarkup() {
-    const user = authUser();
-    if (state.role !== "caregiver" || !user) return "";
-    const retrospectiveAssignments = retrospectiveAssignmentsFor(user.id);
-    return `<article class="card card-pad retrospective-entry-card"><div><p class="eyebrow">RETROSPECTIVE CARE RECORD</p><h3>지난 근무 리포트 보완</h3><p>웹 기록을 놓친 실제 돌봄 근무를 소급 입력할 수 있습니다. 서비스 날짜와 실제 근무시간은 그대로 기록되고, 입력자와 뒤늦게 입력한 시각은 감사 이력에 별도로 남습니다.</p></div><button type="button" class="primary-button" data-open-retrospective-report ${retrospectiveAssignments.length ? "" : "disabled"}>지난 근무 리포트 입력</button></article>`;
-  }
-
-  function latestRetrospectiveServiceDate(assignment) {
-    const assignmentStart = startOfLocalDay(assignment.startAt);
-    const assignmentEnd = startOfLocalDay(assignment.endAt);
-    const today = startOfLocalDay(new Date());
-    const cursor = new Date(Math.min(assignmentEnd.getTime(), today.getTime()));
-    while (cursor >= assignmentStart && !assignmentOccursOnDate(assignment, cursor)) cursor.setDate(cursor.getDate() - 1);
-    return cursor >= assignmentStart ? localDateKey(cursor) : localDateKey(assignmentStart);
-  }
-
   function caregiverAssignmentPeekMarkup(assignment, label) {
     if (!assignment) return `<div class="assignment-peek-card empty"><span class="peek-label">${label}</span><strong>배정된 일정이 없습니다.</strong><small>관리자가 일정을 확정하면 표시됩니다.</small></div>`;
     if (!caregiverCanViewClientBrief(assignment)) return `<div class="assignment-peek-card empty"><span class="peek-label">${label}</span>${serviceBadgeMarkup(assignment.serviceType)}<strong>${formatDate(assignment.startAt)} 시작 예정</strong><small>${caregiverClientBriefAccessText(assignment)}</small></div>`;
@@ -3954,15 +3923,14 @@ import {
   function objectiveReportPage(role, serviceType, workspaceNav = "") {
     const assignments = objectiveReportAssignments(role, serviceType);
     const assignment = objectiveReportAssignment(role, serviceType, assignments);
-    const retrospectiveEntry = role === "caregiver" ? caregiverRetrospectiveReportEntryMarkup() : "";
     if (!assignment) {
       const client = role === "client" ? clientForUser(authUser()?.id) : null;
-      return `<section class="page">${demoBanner()}${workspaceNav}${pageHeading("CARE REPORT", "서비스 배치별 케어 리포트", "본인에게 연결된 서비스 배치의 객관적 요약과 변화 그래프를 확인합니다.")}${retrospectiveEntry}<article class="card card-pad"><div class="empty-state"><strong>리포트를 만들 수 있는 서비스 배치가 없습니다.</strong><span>서비스 기간이 시작되면 이곳에서 배치를 선택할 수 있습니다.</span></div></article>${client ? clientPublishedReportsMarkup(client.id, serviceType) : ""}</section>`;
+      return `<section class="page">${demoBanner()}${workspaceNav}${pageHeading("CARE REPORT", "서비스 배치별 케어 리포트", "본인에게 연결된 서비스 배치의 객관적 요약과 변화 그래프를 확인합니다.")}<article class="card card-pad"><div class="empty-state"><strong>리포트를 만들 수 있는 서비스 배치가 없습니다.</strong><span>서비스 기간이 시작되면 이곳에서 배치를 선택할 수 있습니다.</span></div></article>${client ? clientPublishedReportsMarkup(client.id, serviceType) : ""}</section>`;
     }
     const client = clientById(assignment.clientId);
     if (!client || !objectiveReportAssignments(role, serviceType).some((item) => item.id === assignment.id)) return `<section class="page">${demoBanner()}${workspaceNav}<div class="access-denied"><strong>접근 권한이 없습니다.</strong><span>본인 또는 권한이 확인된 배정의 기록만 볼 수 있습니다.</span></div></section>`;
     const model = buildObjectiveReportModel({ assignment, events: state.events, sessions: state.careSessions || [] });
-    return `<section class="page report-page">${demoBanner()}${workspaceNav}${pageHeading("CARE REPORT", "서비스 배치별 케어 기록", "선택한 서비스 배치의 요약 지표와 객관적인 변화 그래프를 확인합니다.")}${retrospectiveEntry}${objectiveTodaySummaryMarkup(assignment, client, model, role)}${objectiveReportBuilderMarkup(role, assignmentServiceType(assignment), assignment, assignments, model)}<span id="batch-report" class="report-scroll-anchor" aria-hidden="true"></span>${objectiveReportMarkup(assignment, client, model)}${role === "client" ? clientPublishedReportsMarkup(client.id, serviceType) : ""}</section>`;
+    return `<section class="page report-page">${demoBanner()}${workspaceNav}${pageHeading("CARE REPORT", "서비스 배치별 케어 기록", "선택한 서비스 배치의 요약 지표와 객관적인 변화 그래프를 확인합니다.")}${objectiveTodaySummaryMarkup(assignment, client, model, role)}${objectiveReportBuilderMarkup(role, assignmentServiceType(assignment), assignment, assignments, model)}<span id="batch-report" class="report-scroll-anchor" aria-hidden="true"></span>${objectiveReportMarkup(assignment, client, model)}${role === "client" ? clientPublishedReportsMarkup(client.id, serviceType) : ""}</section>`;
   }
 
   function careSessionReportPreviewMarkup(client, assignment, session) {
@@ -4989,7 +4957,6 @@ import {
     }));
 
     document.querySelectorAll("[data-caregiver-assignment-detail]").forEach((button) => button.addEventListener("click", () => openCaregiverAssignmentDetailModal(button.dataset.caregiverAssignmentDetail)));
-    document.querySelectorAll("[data-open-retrospective-report]").forEach((button) => button.addEventListener("click", () => openRetrospectiveCareReportModal(button.dataset.assignmentId || null)));
     document.querySelectorAll("[data-open-review]").forEach((button) => button.addEventListener("click", () => openServiceReviewModal(button.dataset.openReview)));
     document.querySelectorAll("[data-add-review-photos]").forEach((button) => button.addEventListener("click", () => openServiceReviewPhotoModal(button.dataset.addReviewPhotos, Number(button.dataset.photoSlots || 1))));
 
@@ -7703,78 +7670,6 @@ import {
     input.max = value;
     input.value = value;
     return true;
-  }
-
-  function openRetrospectiveCareReportModal(initialAssignmentId = null) {
-    const user = authUser();
-    const assignments = retrospectiveAssignmentsFor(user?.id);
-    if (!assignments.length) return showToast("소급 기록을 입력할 수 있는 본인 배정이 없습니다.", "info");
-    const initialAssignment = assignments.find((item) => item.id === initialAssignmentId) || assignments[0];
-    const today = localDateKey(new Date());
-    const optionMarkup = assignments.map((assignment) => {
-      const client = clientById(assignment.clientId);
-      return `<option value="${assignment.id}" ${assignment.id === initialAssignment.id ? "selected" : ""}>${escapeHtml(serviceMetaFor(assignment.serviceType).label)} · ${escapeHtml(client?.motherName || "고객")} / ${escapeHtml(babyNameFor(assignment, client) || "아이")} · ${formatDate(assignment.startAt)}–${formatDate(assignment.endAt)}</option>`;
-    }).join("");
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-modal-backdrop><section class="modal retrospective-report-modal" role="dialog" aria-modal="true" aria-labelledby="retrospective-report-title"><header class="modal-header"><div><p class="eyebrow">RETROSPECTIVE CARE RECORD</p><h3 id="retrospective-report-title">지난 근무 리포트 보완</h3><p>실제로 제공한 서비스만 해당 근무일 기준으로 입력해 주세요.</p></div><button class="close-button" data-close-modal aria-label="닫기">×</button></header><form class="modal-form" data-retrospective-report-form><div class="field"><label for="retrospective-assignment">서비스 배정</label><select id="retrospective-assignment" name="assignmentId" required>${optionMarkup}</select></div><div class="form-grid three"><div class="field"><label for="retrospective-date">실제 서비스 날짜</label><input id="retrospective-date" name="serviceDate" type="date" max="${today}" required/></div><div class="field"><label for="retrospective-start">실제 시작시간</label><input id="retrospective-start" name="startedTime" type="time" required/></div><div class="field"><label for="retrospective-end">실제 종료시간</label><input id="retrospective-end" name="endedTime" type="time" required/></div></div><div class="field"><label for="retrospective-summary">근무 리포트·보완 내용</label><textarea id="retrospective-summary" name="summary" minlength="5" maxlength="3000" placeholder="실제로 제공한 케어, 식사·활동, 관찰사항과 보호자 인계내용을 사실 중심으로 입력하세요." required></textarea><small>관리자는 이 완료 방문을 검토한 뒤 고객용 보관 리포트로 발행할 수 있습니다.</small></div><div class="status-banner warning"><strong>소급 입력 기록</strong><span>서비스 날짜와 실제 근무시간 외에 입력자·입력시각이 감사 로그에 남습니다. 이미 고객에게 발행된 불변 리포트는 변경할 수 없습니다.</span></div><label class="consent-line"><input type="checkbox" name="workConfirmed" required/><span>위 날짜에 실제로 서비스를 제공했으며 입력 내용이 사실과 일치함을 확인합니다.</span></label><div class="form-actions"><button type="button" class="secondary-button" data-close-modal>닫기</button><button type="submit" class="primary-button">지난 근무 리포트 저장</button></div></form></section></div>`;
-    bindModalFrame();
-    const form = modalRoot.querySelector("[data-retrospective-report-form]");
-    const assignmentSelect = form.elements.assignmentId;
-    const serviceDateInput = form.elements.serviceDate;
-    const startedTimeInput = form.elements.startedTime;
-    const endedTimeInput = form.elements.endedTime;
-    const applyAssignmentDefaults = () => {
-      const assignment = assignments.find((item) => item.id === assignmentSelect.value) || assignments[0];
-      serviceDateInput.min = localDateKey(assignment.startAt);
-      serviceDateInput.max = localDateKey(new Date(Math.min(startOfLocalDay(assignment.endAt).getTime(), startOfLocalDay(new Date()).getTime())));
-      serviceDateInput.value = latestRetrospectiveServiceDate(assignment);
-      startedTimeInput.value = assignment.dailyStart || "09:00";
-      endedTimeInput.value = assignment.dailyEnd || "17:00";
-      refreshEnhancedDateInput(serviceDateInput);
-    };
-    assignmentSelect.addEventListener("change", applyAssignmentDefaults);
-    applyAssignmentDefaults();
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const values = Object.fromEntries(new FormData(form).entries());
-      const assignment = assignments.find((item) => item.id === values.assignmentId);
-      if (!assignment) return showToast("선택한 서비스 배정을 찾을 수 없습니다.", "error");
-      const serviceDate = parseLocalDateValue(values.serviceDate);
-      if (serviceDate < startOfLocalDay(assignment.startAt) || serviceDate > startOfLocalDay(assignment.endAt) || serviceDate > startOfLocalDay(new Date())) return showToast("실제 서비스 날짜는 해당 배정 기간 안의 오늘 또는 지난 날짜여야 합니다.", "error");
-      if (!assignmentOccursOnDate(assignment, serviceDate)) return showToast("선택한 날짜는 이 배정의 서비스 요일이 아닙니다.", "error");
-      if (String(values.endedTime) <= String(values.startedTime)) return showToast("실제 종료시간은 시작시간보다 늦어야 합니다.", "error");
-      if (String(values.summary || "").trim().length < 5) return showToast("5자 이상의 실제 근무 내용을 입력해 주세요.", "error");
-      if (values.workConfirmed !== "on") return showToast("실제 근무 사실 확인에 동의해 주세요.", "error");
-      const submitButton = form.querySelector('button[type="submit"]');
-      submitButton.disabled = true;
-      submitButton.textContent = "저장 중…";
-      try {
-        if (usingCloudData()) {
-          await recordRetrospectiveCareReportCloud({
-            assignmentId: assignment.id,
-            serviceDate: values.serviceDate,
-            startedTime: values.startedTime,
-            endedTime: values.endedTime,
-            summary: values.summary,
-          });
-          closeModal();
-          await refreshCloudState();
-        } else {
-          const sessionId = `session-retro-${Date.now()}`;
-          const startAt = new Date(`${values.serviceDate}T${values.startedTime}:00`).toISOString();
-          const endAt = new Date(`${values.serviceDate}T${values.endedTime}:00`).toISOString();
-          state.careSessions.push({ id: sessionId, assignmentId: assignment.id, serviceDate: values.serviceDate, status: "COMPLETED", startedAt: startAt, endedAt: endAt });
-          state.events.push({ id: `evt-retro-${Date.now()}`, careSessionId: sessionId, assignmentId: assignment.id, clientId: assignment.clientId, babyId: assignment.babyId, type: assignmentServiceType(assignment) === "BABYSITTING" ? "sitter_note" : "note", at: endAt, author: user.fullName, data: assignmentServiceType(assignment) === "BABYSITTING" ? { category: "소급 리포트", text: String(values.summary).trim(), retrospective: true } : { text: String(values.summary).trim(), retrospective: true } });
-          saveState();
-          closeModal();
-          render();
-        }
-        showToast(`${formatDate(`${values.serviceDate}T12:00:00`)} 지난 근무 리포트를 저장했습니다.`);
-      } catch (error) {
-        showToast(friendlyErrorMessage(error, "지난 근무 리포트를 저장하지 못했습니다."), "error");
-        submitButton.disabled = false;
-        submitButton.textContent = "지난 근무 리포트 저장";
-      }
-    });
   }
 
   function openCareEventEditModal(eventId) {

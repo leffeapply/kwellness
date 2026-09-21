@@ -1158,17 +1158,6 @@ export async function recordServiceRefundCloud({ requestId, amount, paymentMetho
   };
 }
 
-export async function recordRetrospectiveCareReportCloud({ assignmentId, serviceDate, startedTime, endedTime, summary }) {
-  await authenticatedUserId();
-  return throwIfError(await supabase.rpc("record_retrospective_care_report", {
-    p_assignment_id: assignmentId,
-    p_service_date: serviceDate,
-    p_started_time: startedTime,
-    p_ended_time: endedTime,
-    p_summary: String(summary || "").trim(),
-  }), "지난 근무 리포트 저장");
-}
-
 export async function scheduleServiceRequestCloud(requestId, caregiverId) {
   return throwIfError(await supabase.rpc("schedule_promoms_service_request", {
     p_request_id: requestId,
