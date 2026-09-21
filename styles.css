@@ -4785,19 +4785,6 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
 .lifecycle-rules { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 15px; }
 .lifecycle-rules span { padding: 9px 12px; border-radius: 22px; color: var(--green); background: white; font-size: 12px; font-weight: 800; }
 .lifecycle-rules i { color: #a47a67; font-size: 12px; font-style: normal; }
-.shift-checklist-card { border-left: 4px solid var(--green-2); }
-.shift-check-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 18px; }
-.shift-check-list label { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 10px; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: #fafbf8; cursor: pointer; }
-.shift-check-list input { width: 17px; height: 17px; accent-color: var(--green); }
-.shift-check-list label > span { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; color: #6f817c; background: #e7ece8; font-size: 12px; }
-.shift-check-list input:checked + span { color: white; background: var(--green); }
-.shift-check-list label.is-checked { border-color: #9ebfb1; background: var(--mint-light); cursor: default; }
-.shift-check-list input:disabled { opacity: 1; cursor: default; }
-.shift-check-list label > div { display: grid; gap: 3px; }
-.shift-check-list small { color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
-.shift-checklist-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; }
-.shift-checklist-actions > small { color: var(--ink-soft); font-size: 11px; line-height: 1.5; }
-.shift-checklist-actions .primary-button { flex: 0 0 auto; min-width: 210px; }
 .profile-summary + .status-banner { display: grid; gap: 4px; margin: 0; }
 .profile-summary + .status-banner strong { font-size: 13px; }
 .profile-summary + .status-banner span { font-size: 12px; }
@@ -4854,9 +4841,6 @@ input[readonly], input:disabled { cursor: not-allowed; background: #f1f1ed; colo
   .gate-process-card > div { padding: 7px 0; }
   .care-journey-steps { grid-template-columns: 1fr; }
   .care-journey-steps > i { display: none; }
-  .shift-check-list { grid-template-columns: 1fr; }
-  .shift-checklist-actions { align-items: stretch; flex-direction: column; }
-  .shift-checklist-actions .primary-button { width: 100%; min-width: 0; }
   .premium-addon-card { grid-template-columns: auto 1fr; }
   .premium-addon-card > button,
   .premium-addon-card > .public-service-card-actions { grid-column: 1 / -1; }

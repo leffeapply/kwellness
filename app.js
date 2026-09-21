@@ -50,8 +50,6 @@ import {
   saveServiceReviewCloud,
   saveCareEventCloud,
   scheduleServiceRequestCloud,
-  saveCareShiftChecklistCloud,
-  setCareSessionStatusCloud,
   configureMemberServiceAccessCloud,
   setMemberStatusCloud,
   setCaregiverReviewPublicationCloud,
@@ -334,7 +332,6 @@ import {
         client: { assignmentId: null, customerQuery: "" },
       },
       adminSelectedReportSessionId: null,
-      shiftChecklists: {},
       serviceCatalog: { MASSAGE: { ...PREMIUM_ADD_ONS.MASSAGE } },
       views: { admin: "overview", caregiver: "caregiving", therapist: "availability", client: "services", retail: "pos" },
       auth: { currentUserId: null, screen: "public", termsVersion: CURRENT_CONSENT_VERSION },
@@ -396,7 +393,6 @@ import {
         client: { assignmentId: null, customerQuery: "" },
       },
       adminSelectedReportSessionId: null,
-      shiftChecklists: {},
       serviceCatalog: { MASSAGE: { ...PREMIUM_ADD_ONS.MASSAGE } },
       views: { admin: "overview", caregiver: "caregiving", therapist: "availability", client: "services", retail: "pos" },
       auth: { currentUserId: null, screen: "public", termsVersion: CURRENT_CONSENT_VERSION },
@@ -582,7 +578,6 @@ import {
               caregiver: { ...seed.objectiveReportByRole.caregiver, ...(saved.objectiveReportByRole?.caregiver || {}) },
               client: { ...seed.objectiveReportByRole.client, ...(saved.objectiveReportByRole?.client || {}) },
             },
-            shiftChecklists: { ...seed.shiftChecklists, ...(saved.shiftChecklists || {}) },
             serviceCatalog: { ...seed.serviceCatalog, ...(saved.serviceCatalog || {}) },
             auth: { ...seed.auth, ...(saved.auth || {}), screen: saved.version >= 8 ? (saved.auth?.screen || "public") : "public" },
             retail: { ...seed.retail, ...(saved.retail || {}) },
@@ -773,10 +768,10 @@ import {
     if (message.includes("in-progress care session")) return "진행 중인 케어 세션을 먼저 종료하거나 취소한 뒤 서비스를 삭제해 주세요.";
     if (message.includes("detailed service removal reason")) return "서비스 삭제 사유를 5자 이상 구체적으로 입력해 주세요.";
     if (message.includes("unsupported device time zone")) return "휴대폰의 현재 시간대를 확인하지 못했습니다. 기기의 날짜·시간 자동 설정을 켠 뒤 다시 시도해 주세요.";
-    if (message.includes("device-local current date")) return "기기 날짜가 변경되었습니다. 화면을 새로고침한 뒤 오늘 근무를 다시 시작해 주세요.";
-    if (message.includes("only during the confirmed contract period") || message.includes("only during the contract period")) return "확정된 서비스 계약기간 안에서만 케어를 시작하고 기록할 수 있습니다.";
-    if (message.includes("complete all four safety checks")) return "근무 전 안전 확인 4개를 모두 완료한 뒤 케어를 시작해 주세요.";
-    if (message.includes("completion date does not match")) return "현재 열린 케어의 현지 날짜가 일치하지 않습니다. 화면을 새로고침한 뒤 종료해 주세요.";
+    if (message.includes("current device-local date")) return "관리 기록은 휴대폰의 현재 날짜 안에서 저장해 주세요.";
+    if (message.includes("within the existing service date")) return "기존 기록과 같은 현지 날짜 안에서 기록 시각을 선택해 주세요.";
+    if (message.includes("only during the confirmed contract period") || message.includes("only during the contract period")) return "확정된 서비스 계약기간 안에서만 관리 기록을 저장할 수 있습니다.";
+    if (message.includes("published care report events cannot be added")) return "이미 발행된 리포트의 서비스 일자에는 새 기록을 추가할 수 없습니다.";
     if (message.includes("assigned service days")) return "선택한 날짜는 해당 배정의 서비스 요일이 아닙니다.";
     if (message.includes("retrospective report cannot be entered for a future date") || message.includes("retrospective report cannot end in the future")) return "지난 근무 리포트에는 완료된 오늘 또는 과거 근무만 입력할 수 있습니다.";
     if (message.includes("published care report is immutable")) return "이미 고객에게 발행된 보관 리포트는 변경할 수 없습니다. 관리자에게 정정 절차를 요청해 주세요.";
@@ -1159,14 +1154,6 @@ import {
       || todaysAssignments.find((assignment) => assignment.todayCareSessionStatus !== "COMPLETED" && !(state.session.assignmentId === assignment.id && state.session.endedAt))
       || todaysAssignments.at(-1)
       || null;
-  }
-
-  function assignmentCompletedToday(assignment) {
-    return assignment?.todayCareSessionStatus === "COMPLETED"
-      || (!usingCloudData()
-        && state.session.assignmentId === assignment?.id
-        && state.session.serviceDate === localDateKey(new Date())
-        && Boolean(state.session.endedAt));
   }
 
   function nextAssignmentFor(userId, serviceType = null) {
@@ -1622,14 +1609,10 @@ import {
   function visibleCareEvents(assignment) {
     if (!assignment?.id || !isRecordableCareServiceType(assignmentServiceType(assignment))) return [];
     const allowed = accessibleClientIds();
-    const sessionMatchesAssignment = state.session.assignmentId === assignment?.id;
-    const sessionId = sessionMatchesAssignment ? state.session.id : null;
-    const sessionDateKey = sessionMatchesAssignment && state.session.serviceDate
-      ? state.session.serviceDate
-      : localDateKey(new Date());
+    const currentDateKey = localDateKey(new Date());
     return state.events.filter((event) => allowed.includes(event.clientId)
       && careEventMatchesAssignment(event, assignment, state.careSessions || [])
-      && (sessionId ? event.careSessionId === sessionId : objectiveEventDateKey(event) === sessionDateKey)
+      && objectiveEventDateKey(event) === currentDateKey
     );
   }
 
@@ -1638,20 +1621,6 @@ import {
     const allowed = accessibleClientIds();
     return state.events.filter((event) => allowed.includes(event.clientId)
       && careEventMatchesAssignment(event, assignment, state.careSessions || []));
-  }
-
-  function activeSessionIsStale(assignment = null) {
-    return Boolean(
-      state.session.active
-      && state.session.serviceDate
-      && state.session.serviceDate !== localDateKey(new Date())
-      && (!assignment || state.session.assignmentId === assignment.id),
-    );
-  }
-
-  function staleSessionBannerMarkup() {
-    if (!activeSessionIsStale()) return "";
-    return `<div class="status-banner warning stale-session-banner"><strong>${formatDate(`${state.session.serviceDate}T12:00:00`)} 근무가 아직 종료되지 않았습니다.</strong><span>기록은 날짜 무결성을 위해 잠겼습니다. 기존 기록을 확인한 뒤 먼저 ‘케어 종료’를 눌러 주세요.</span></div>`;
   }
 
   function currentView() {
@@ -2783,20 +2752,6 @@ import {
     return `<button type="button" class="assignment-peek-card ${serviceMetaFor(assignment.serviceType).tone}" data-caregiver-assignment-detail="${assignment.id}"><span class="peek-top"><span class="peek-label">${label}</span><span class="status-chip ${new Date(assignment.startAt) > new Date() ? "gold" : ""}">${assignmentCountdown(assignment)}</span></span>${serviceBadgeMarkup(assignment.serviceType)}<strong>${escapeHtml(client.motherName)} · ${escapeHtml(babyName)}</strong><small>${formatDate(assignmentStartDateKey(assignment))}–${formatDate(assignmentEndDateKey(assignment))} · 고객 요청 참고시간 ${assignment.dailyStart}–${assignment.dailyEnd}</small><span class="peek-link">고객 정보 확인 →</span></button>`;
   }
 
-  function caregiverSafetyChecklistMarkup(assignment) {
-    const saved = state.shiftChecklists[assignment.id] || {};
-    const babysitting = assignmentServiceType(assignment) === "BABYSITTING";
-    const items = [
-      ["arrival", "도착·출입 확인", "주소, 출입 방법과 보호자 인계자를 확인했습니다."],
-      ["safety", "알러지·비상연락 확인", "알러지와 비상연락처, 긴급 대응 원칙을 확인했습니다."],
-      ["request", "오늘의 요청 확인", babysitting ? "식사·놀이·인계 지침을 확인했습니다." : "산모 회복 요청과 신생아 케어 지침을 확인했습니다."],
-      ["scope", "업무 범위 확인", babysitting ? "의료행위 없이 승인된 베이비시팅 범위만 수행합니다." : "의료행위·무면허 마사지 없이 승인된 산후조리 범위만 수행합니다."],
-    ];
-    const completed = items.filter(([id]) => saved[id]).length;
-    const allSaved = completed === items.length;
-    return `<article class="card card-pad shift-checklist-card" style="margin-top:18px" data-shift-checklist="${assignment.id}"><div class="section-header"><div><p class="eyebrow">PRE-SHIFT CHECK</p><h3>근무 전 안전 체크</h3><p>네 항목을 모두 확인한 뒤 한 번만 저장합니다. 확인한 항목은 실수로 다시 눌러도 해제되지 않습니다.</p></div><span class="status-chip ${allSaved ? "" : "gold"}" data-shift-check-progress>${completed}/${items.length} 완료</span></div><div class="shift-check-list">${items.map(([id, title, detail]) => `<label class="${saved[id] ? "is-checked" : ""}"><input type="checkbox" data-shift-check="${assignment.id}" data-check-id="${id}" ${saved[id] ? "checked disabled" : ""}/><span>✓</span><div><strong>${title}</strong><small>${detail}</small></div></label>`).join("")}</div><div class="shift-checklist-actions"><small>현재 기기의 현지 날짜(${escapeHtml(formatDate(localDateKey(new Date())))}) 기준으로 저장됩니다.</small><button type="button" class="primary-button" data-save-shift-checks="${assignment.id}" ${allSaved ? "disabled" : "disabled"}>${allSaved ? "오늘 안전 체크 저장 완료" : "4개 항목 확인 후 저장"}</button></div></article>`;
-  }
-
   function quickActionEvents(action, events) {
     return events.filter((event) => event.type === action.type
       && (!action.preset
@@ -2816,48 +2771,31 @@ import {
     return `${matching.length}회`;
   }
 
-  function instantRecordDockMarkup(assignment, serviceType, canLog, lockedReason) {
+  function instantRecordDockMarkup(assignment, serviceType) {
     const actions = serviceType === "BABYSITTING" ? BABYSITTING_QUICK_ACTIONS : POSTPARTUM_QUICK_ACTIONS;
     const events = visibleCareEvents(assignment);
     const dateLabel = TODAY_FORMATTER.format(new Date());
-    return `<article class="card instant-record-dock" aria-label="${serviceType === "BABYSITTING" ? "베이비시팅" : "산후조리"} 바로 기록"><div class="instant-record-heading"><div><p class="eyebrow">QUICK RECORD</p><h3>${escapeHtml(dateLabel)} 바로 기록</h3><p>아이콘을 누르면 해당 기록 화면이 바로 열립니다.</p></div><span class="status-chip ${canLog ? "" : "gold"}">${canLog ? `오늘 ${events.length}건` : lockedReason}</span></div><div class="instant-record-scroll" role="group" aria-label="기록 종류">${actions.map((action) => `<button type="button" class="instant-record-action tone-${action.tone}" data-log-type="${action.type}"${action.preset ? ` data-log-preset="${escapeHtml(action.preset)}"` : ""} ${canLog ? "" : "disabled"} aria-label="${escapeHtml(action.label)} 기록 열기"><span class="instant-record-icon" aria-hidden="true">${action.icon}</span><strong>${escapeHtml(action.label)}</strong><small>${quickActionMetric(action, events)}</small></button>`).join("")}</div>${canLog ? "" : `<p class="instant-record-hint">${escapeHtml(lockedReason)} · 근무를 시작하면 아이콘이 활성화됩니다.</p>`}</article>`;
+    return `<article class="card instant-record-dock" aria-label="${serviceType === "BABYSITTING" ? "베이비시팅" : "산후조리"} 바로 기록"><div class="instant-record-heading"><div><p class="eyebrow">QUICK RECORD</p><h3>${escapeHtml(dateLabel)} 바로 기록</h3><p>별도의 근무 시작 절차 없이 아이콘을 눌러 바로 기록할 수 있습니다.</p></div><span class="status-chip">오늘 ${events.length}건</span></div><div class="instant-record-scroll" role="group" aria-label="기록 종류">${actions.map((action) => `<button type="button" class="instant-record-action tone-${action.tone}" data-log-type="${action.type}"${action.preset ? ` data-log-preset="${escapeHtml(action.preset)}"` : ""} aria-label="${escapeHtml(action.label)} 기록 열기"><span class="instant-record-icon" aria-hidden="true">${action.icon}</span><strong>${escapeHtml(action.label)}</strong><small>${quickActionMetric(action, events)}</small></button>`).join("")}</div></article>`;
   }
 
   function caregiverBabysittingToday(user, assignment, nextAssignment, workspaceNav = "") {
     const client = clientById(assignment.clientId);
-    if (!client) return `<section class="page">${demoBanner()}${workspaceNav}${pageHeading("BABYSITTING WORKSPACE", "배정 정보를 확인할 수 없습니다.", "관리자가 고객·아이 데이터 연결 상태를 확인해야 합니다.")}<article class="card"><div class="empty-state"><strong>고객 정보가 연결되지 않았습니다.</strong><span>정보가 복구될 때까지 시팅 시작과 기록 저장은 차단됩니다.</span></div></article></section>`;
-    const active = state.session.active && state.session.assignmentId === assignment.id;
-    const staleSession = active && activeSessionIsStale(assignment);
-    const canLog = active && !staleSession;
-    const completedToday = assignmentCompletedToday(assignment);
+    if (!client) return `<section class="page">${demoBanner()}${workspaceNav}${pageHeading("BABYSITTING WORKSPACE", "배정 정보를 확인할 수 없습니다.", "관리자가 고객·아이 데이터 연결 상태를 확인해야 합니다.")}<article class="card"><div class="empty-state"><strong>고객 정보가 연결되지 않았습니다.</strong><span>정보가 복구될 때까지 기록 저장은 차단됩니다.</span></div></article></section>`;
     const sitterEvents = visibleCareEvents(assignment).filter((event) => ["meal", "sitter_note"].includes(event.type));
     const babyName = babyNameFor(assignment, client) || "아이";
-    const lockedReason = staleSession ? "이전 근무 종료 필요" : completedToday ? "오늘 시팅 완료" : "시팅 시작 필요";
     return `<section class="page babysitting-workspace">
       ${demoBanner()}${workspaceNav}
       ${pageHeading("BABYSITTING WORKSPACE", `안녕하세요, ${escapeHtml(user.fullName)}님.`, `${escapeHtml(client.motherName)} 보호자의 ${escapeHtml(babyName)} 아이에게 배정된 베이비시팅 화면입니다. 계약 기간에는 요청 시간과 관계없이 기록할 수 있습니다.`)}
-      ${instantRecordDockMarkup(assignment, "BABYSITTING", canLog, lockedReason)}
-      <article class="card babysitting-hero"><div><div class="hero-care-top"><div>${serviceBadgeMarkup("BABYSITTING")}<p class="eyebrow">TODAY'S SITTING</p><h3>${escapeHtml(babyName)}</h3><p>고객 요청 참고시간 ${assignment.dailyStart}–${assignment.dailyEnd} · ${escapeHtml(assignment.address)}</p></div><div class="live-pill"><span class="live-dot"></span>${staleSession ? "CLOSE PREVIOUS SESSION" : active ? "SITTING IN PROGRESS" : completedToday ? "TODAY COMPLETED" : "SESSION READY"}</div></div><div class="assignment-brief"><span>보호자 ${escapeHtml(client.motherName)}</span><span>알러지 ${escapeHtml(assignment.allergies)}</span><span>추가인원 ${assignment.extraHouseholdMembers}명</span><span>${assignment.weeks}주 일정</span></div><div class="care-actions">${active ? `<button class="primary-button" data-notice="${sitterEvents.length}개의 해당 근무일 시팅 기록이 저장되어 있습니다.">시팅 진행 중 · ${timeLabel(state.session.startedAt)}</button><button class="secondary-button" data-end-care>시팅 종료</button>` : completedToday ? '<button class="secondary-button" disabled>오늘 시팅 완료</button>' : `<button class="primary-button" data-start-care data-assignment-id="${assignment.id}">시팅 시작하기</button>`}<button class="secondary-button" data-caregiver-assignment-detail="${assignment.id}">아이 상세정보</button></div></div></article>
-      ${staleSessionBannerMarkup()}
+      ${instantRecordDockMarkup(assignment, "BABYSITTING")}
+      <article class="card babysitting-hero"><div><div class="hero-care-top"><div>${serviceBadgeMarkup("BABYSITTING")}<p class="eyebrow">TODAY'S SITTING</p><h3>${escapeHtml(babyName)}</h3><p>고객 요청 참고시간 ${assignment.dailyStart}–${assignment.dailyEnd} · ${escapeHtml(assignment.address)}</p></div><div class="live-pill"><span class="live-dot"></span>RECORDING AVAILABLE</div></div><div class="assignment-brief"><span>보호자 ${escapeHtml(client.motherName)}</span><span>알러지 ${escapeHtml(assignment.allergies)}</span><span>추가인원 ${assignment.extraHouseholdMembers}명</span><span>${assignment.weeks}주 일정</span></div><div class="care-actions"><button class="primary-button" data-notice="오늘 ${sitterEvents.length}개의 시팅 기록이 저장되어 있습니다.">오늘 기록 ${sitterEvents.length}건</button><button class="secondary-button" data-caregiver-assignment-detail="${assignment.id}">아이 상세정보</button></div></div></article>
       <div class="assignment-peek-grid" style="margin-top:18px">${caregiverAssignmentPeekMarkup(assignment, "현재 시팅")}${caregiverAssignmentPeekMarkup(nextAssignment, "다음 일정")}</div>
-      ${staleSession ? "" : caregiverSafetyChecklistMarkup(assignment)}
       <article class="card card-pad babysitting-instructions-card" style="margin-top:18px"><div class="section-header"><div><h3>식사·안전 지침</h3><p>보호자가 신청 시 전달한 내용</p></div><span class="status-chip coral">확인 필수</span></div><dl class="sitting-instructions"><div><dt>알러지</dt><dd>${escapeHtml(assignment.allergies || "없음")}</dd></div><div><dt>식사·간식</dt><dd>${escapeHtml(assignment.mealInstructions || "별도 지침 없음")}</dd></div><div><dt>생활 루틴</dt><dd>${escapeHtml(assignment.routineNotes || "별도 지침 없음")}</dd></div><div><dt>인계·출입</dt><dd>${escapeHtml(assignment.pickupNotes || "별도 지침 없음")}</dd></div></dl></article>
-      <article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>${staleSession ? "미종료 근무일" : "오늘의"} 식사·이벤트</h3><p>${sitterEvents.length}개의 베이비시팅 기록</p></div><button class="text-button" data-service-tab="timeline" data-service-type="BABYSITTING">전체 보기 →</button></div>${timelineMarkup(6, assignment)}</article>
+      <article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>오늘의 식사·이벤트</h3><p>${sitterEvents.length}개의 베이비시팅 기록</p></div><button class="text-button" data-service-tab="timeline" data-service-type="BABYSITTING">전체 보기 →</button></div>${timelineMarkup(6, assignment)}</article>
     </section>`;
   }
 
   function caregiverToday(serviceType = "POSTPARTUM", workspaceNav = "") {
     const user = authUser();
-    const openAssignment = state.session.active
-      ? state.assignments.find((item) => item.id === state.session.assignmentId && item.caregiverUserId === user.id)
-      : null;
-    if (openAssignment && assignmentServiceType(openAssignment) !== serviceType) {
-      const openType = assignmentServiceType(openAssignment);
-      const openClient = clientById(openAssignment.clientId);
-      const openBabyName = babyNameFor(openAssignment, openClient) || "아이";
-      const stale = activeSessionIsStale(openAssignment);
-      return `<section class="page">${demoBanner()}${workspaceNav}${pageHeading("OPEN CARE SESSION", "다른 서비스의 근무가 진행 중입니다.", "한 관리사는 동시에 두 근무를 열 수 없습니다. 현재 세션을 먼저 확인해 주세요.")} ${staleSessionBannerMarkup()}<article class="card card-pad blocking-session-card"><div class="section-header"><div>${serviceBadgeMarkup(openType)}<h3>${escapeHtml(openClient?.motherName || "고객")} · ${escapeHtml(openBabyName)}</h3><p>${stale ? "이전 날짜에 시작한 세션입니다. 새 기록은 잠겼으며 종료만 가능합니다." : `${timeLabel(state.session.startedAt)}에 시작한 근무가 아직 진행 중입니다.`}</p></div><span class="status-chip coral">${stale ? "미종료 근무" : "진행 중"}</span></div><div class="form-actions"><button type="button" class="secondary-button" data-enter-caregiver-service="${openType}">${serviceMetaFor(openType).label} 작업공간으로 이동</button><button type="button" class="primary-button" data-end-care>현재 근무 종료</button></div></article></section>`;
-    }
     const assignment = currentAssignmentFor(user.id, serviceType);
     const nextAssignment = nextAssignmentFor(user.id, serviceType);
     if (!assignment) {
@@ -2865,43 +2803,31 @@ import {
     }
     if (assignmentServiceType(assignment) === "BABYSITTING") return caregiverBabysittingToday(user, assignment, nextAssignment, workspaceNav);
     const client = clientById(assignment.clientId);
-    if (!client) return `<section class="page">${demoBanner()}${workspaceNav}${pageHeading("CAREGIVER WORKSPACE", "배정 정보를 확인할 수 없습니다.", "관리자가 고객·아이 데이터 연결 상태를 확인해야 합니다.")}<article class="card"><div class="empty-state"><strong>고객 정보가 연결되지 않았습니다.</strong><span>정보가 복구될 때까지 케어 시작과 기록 저장은 차단됩니다.</span></div></article></section>`;
-    const active = state.session.active && state.session.assignmentId === assignment.id;
-    const staleSession = active && activeSessionIsStale(assignment);
-    const canLog = active && !staleSession;
-    const completedToday = assignmentCompletedToday(assignment);
+    if (!client) return `<section class="page">${demoBanner()}${workspaceNav}${pageHeading("CAREGIVER WORKSPACE", "배정 정보를 확인할 수 없습니다.", "관리자가 고객·아이 데이터 연결 상태를 확인해야 합니다.")}<article class="card"><div class="empty-state"><strong>고객 정보가 연결되지 않았습니다.</strong><span>정보가 복구될 때까지 기록 저장은 차단됩니다.</span></div></article></section>`;
     const babyName = babyNameFor(assignment, client) || "아이";
     return `
       <section class="page">
         ${demoBanner()}
         ${workspaceNav}
         ${pageHeading("CAREGIVER WORKSPACE", `안녕하세요, ${escapeHtml(user.fullName)}님.`, `배정된 ${escapeHtml(client.motherName)} 산모와 ${escapeHtml(babyName)} 아기의 정보만 접근할 수 있습니다. 계약 기간에는 요청 시간과 관계없이 기록할 수 있습니다.`)}
-        ${instantRecordDockMarkup(assignment, "POSTPARTUM", canLog, staleSession ? "이전 근무 종료 필요" : completedToday ? "오늘 케어 완료" : "케어 시작 필요")}
+        ${instantRecordDockMarkup(assignment, "POSTPARTUM")}
         <article class="card hero-care">
           <div class="hero-care-top">
             <div><p class="eyebrow">TODAY'S ASSIGNMENT</p><h3>${escapeHtml(babyName)}</h3><p>고객 요청 참고시간 ${assignment.dailyStart} – ${assignment.dailyEnd} · ${escapeHtml(assignment.address)}</p></div>
-            <div class="live-pill"><span class="live-dot"></span>${staleSession ? "CLOSE PREVIOUS SESSION" : active ? "CARE IN PROGRESS" : completedToday ? "TODAY COMPLETED" : "SESSION READY"}</div>
+            <div class="live-pill"><span class="live-dot"></span>RECORDING AVAILABLE</div>
           </div>
           <div class="assignment-brief"><span>산모 ${escapeHtml(client.motherName)}</span><span>알러지 ${escapeHtml(assignment.allergies)}</span><span>가정 내 추가인원 ${assignment.extraHouseholdMembers}명</span><span>${assignment.weeks}주 계약</span></div>
           <div class="care-actions">
-            ${
-              active
-                ? `<button class="primary-button" data-notice="현재 고객에게 ${visibleCareEvents(assignment).length}개의 케어 기록이 저장되어 있습니다.">케어 진행 중 · ${timeLabel(state.session.startedAt)}</button><button class="secondary-button" data-end-care>케어 종료</button>`
-                : completedToday
-                  ? '<button class="secondary-button" disabled>오늘 케어 완료</button>'
-                  : `<button class="primary-button" data-start-care data-assignment-id="${assignment.id}">케어 시작하기</button><span style="font-size:11px;color:rgba(255,255,255,.6)">배정 기간 종료 후에는 이 고객의 입력 권한이 자동 종료됩니다.</span>`
-            }
+            <button class="primary-button" data-notice="오늘 ${visibleCareEvents(assignment).length}개의 케어 기록이 저장되어 있습니다.">오늘 기록 ${visibleCareEvents(assignment).length}건</button><span style="font-size:11px;color:rgba(255,255,255,.6)">배정 기간 종료 후에는 이 고객의 입력 권한이 자동 종료됩니다.</span>
             <button class="secondary-button" data-caregiver-assignment-detail="${assignment.id}">고객 상세정보</button>
           </div>
         </article>
-        ${staleSessionBannerMarkup()}
-
-        <div class="assignment-peek-grid" style="margin-top:18px">${caregiverAssignmentPeekMarkup(assignment, "현재 일정")}${caregiverAssignmentPeekMarkup(nextAssignment, "다음 일정")}</div>${staleSession ? "" : caregiverSafetyChecklistMarkup(assignment)}
+        <div class="assignment-peek-grid" style="margin-top:18px">${caregiverAssignmentPeekMarkup(assignment, "현재 일정")}${caregiverAssignmentPeekMarkup(nextAssignment, "다음 일정")}</div>
 
         <article class="card card-pad request-card" style="margin-top:18px"><div class="section-header"><div><h3>고객 요청 및 주의사항</h3><p>관리자가 일정 배정 시 저장한 정보</p></div><span class="status-chip coral">확인 필수</span></div><p>${escapeHtml(assignment.requestNote || "별도 요청사항 없음")}</p></article>
 
         <article class="card card-pad" style="margin-top:18px">
-          <div class="section-header"><div><h3>최근 기록</h3><p>${staleSession ? "미종료 근무일" : "오늘"} ${escapeHtml(babyName)}에게 기록된 케어 이벤트</p></div><button class="text-button" data-service-tab="timeline" data-service-type="POSTPARTUM">전체 보기 →</button></div>
+          <div class="section-header"><div><h3>최근 기록</h3><p>오늘 ${escapeHtml(babyName)}에게 기록된 케어 이벤트</p></div><button class="text-button" data-service-tab="timeline" data-service-type="POSTPARTUM">전체 보기 →</button></div>
           ${timelineMarkup(4, assignment)}
         </article>
       </section>`;
@@ -4950,65 +4876,6 @@ import {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }));
 
-    document.querySelectorAll("[data-shift-check]").forEach((checkbox) => checkbox.addEventListener("change", () => {
-      const assignmentId = checkbox.dataset.shiftCheck;
-      const checkId = checkbox.dataset.checkId;
-      if (!checkbox.checked) {
-        checkbox.checked = true;
-        return;
-      }
-      state.shiftChecklists[assignmentId] = state.shiftChecklists[assignmentId] || {};
-      state.shiftChecklists[assignmentId][checkId] = true;
-      checkbox.disabled = true;
-      checkbox.closest("label")?.classList.add("is-checked");
-      const card = checkbox.closest("[data-shift-checklist]");
-      const checkboxes = [...(card?.querySelectorAll("[data-shift-check]") || [])];
-      const completed = checkboxes.filter((item) => item.checked).length;
-      const progress = card?.querySelector("[data-shift-check-progress]");
-      const saveButton = card?.querySelector("[data-save-shift-checks]");
-      if (progress) {
-        progress.textContent = `${completed}/${checkboxes.length} 완료`;
-        progress.classList.toggle("gold", completed !== checkboxes.length);
-      }
-      if (saveButton) {
-        saveButton.disabled = completed !== checkboxes.length;
-        saveButton.textContent = completed === checkboxes.length ? "안전 체크 한 번에 저장" : "4개 항목 확인 후 저장";
-      }
-    }));
-
-    document.querySelectorAll("[data-save-shift-checks]").forEach((button) => button.addEventListener("click", async () => {
-      const assignmentId = button.dataset.saveShiftChecks;
-      const requiredCheckIds = ["arrival", "safety", "request", "scope"];
-      const checks = state.shiftChecklists[assignmentId] || {};
-      if (!requiredCheckIds.every((checkId) => checks[checkId] === true)) {
-        return showToast("네 가지 안전 항목을 모두 확인해 주세요.", "error");
-      }
-      button.disabled = true;
-      button.textContent = "안전 체크 저장 중…";
-      try {
-        if (usingCloudData()) {
-          await saveCareShiftChecklistCloud(assignmentId, {
-            arrival: true,
-            safety: true,
-            request: true,
-            scope: true,
-          }, {
-            serviceDate: localDateKey(new Date()),
-            timeZone: deviceTimeZone(),
-          });
-          await refreshCloudState();
-        } else {
-          saveState();
-          render();
-        }
-        showToast("오늘의 근무 전 안전 체크 4개 항목을 한 번에 저장했습니다.");
-      } catch (error) {
-        button.disabled = false;
-        button.textContent = "안전 체크 다시 저장";
-        showToast(friendlyErrorMessage(error, "근무 전 안전 체크를 저장하지 못했습니다."), "error");
-      }
-    }));
-
     document.querySelectorAll("[data-public-home]").forEach((button) => button.addEventListener("click", () => { state.auth.screen = "public"; saveState(); render(); window.scrollTo({ top: 0, behavior: "smooth" }); }));
     document.querySelectorAll("[data-service-apply]").forEach((button) => button.addEventListener("click", () => openServiceApplicationModal(button.dataset.serviceApply || null, "NEW", null, button.dataset.postpartumMode || "COMMUTE")));
     document.querySelectorAll("[data-public-service-detail]").forEach((button) => button.addEventListener("click", () => openPublicServiceDetail(button.dataset.publicServiceDetail)));
@@ -5072,83 +4939,6 @@ import {
     document.querySelectorAll("[data-open-retrospective-report]").forEach((button) => button.addEventListener("click", () => openRetrospectiveCareReportModal(button.dataset.assignmentId || null)));
     document.querySelectorAll("[data-open-review]").forEach((button) => button.addEventListener("click", () => openServiceReviewModal(button.dataset.openReview)));
     document.querySelectorAll("[data-add-review-photos]").forEach((button) => button.addEventListener("click", () => openServiceReviewPhotoModal(button.dataset.addReviewPhotos, Number(button.dataset.photoSlots || 1))));
-
-    document.querySelectorAll("[data-start-care]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const assignment = state.assignments.find((item) => item.id === button.dataset.assignmentId);
-        if (!assignment) return showToast("시작할 배정 정보를 찾을 수 없습니다.", "error");
-        const workspaceServiceType = selectedServiceTypeForRole("caregiver");
-        if (!isRecordableCareServiceType(assignmentServiceType(assignment)) || assignmentServiceType(assignment) !== workspaceServiceType) {
-          return showToast("현재 서비스 화면과 배정 유형이 일치하지 않습니다. 해당 서비스 메뉴에서 다시 시작해 주세요.", "error");
-        }
-        if (usingCloudData()) {
-          button.disabled = true;
-          try {
-            await setCareSessionStatusCloud(assignment.id, "IN_PROGRESS", {
-              serviceDate: localDateKey(new Date()),
-              timeZone: deviceTimeZone(),
-            });
-            await refreshCloudState();
-            showToast("케어 세션을 시작했습니다. 지금부터 기록이 실제 데이터베이스에 저장됩니다.");
-          } catch (error) {
-            showToast(friendlyErrorMessage(error, "케어 세션을 시작하지 못했습니다."), "error");
-            button.disabled = false;
-          }
-          return;
-        }
-        const client = clientById(assignment.clientId);
-        if (!client) return showToast("배정된 고객 정보를 확인할 수 없어 케어를 시작하지 않았습니다.", "error");
-        state.session.active = true;
-        state.session.assignmentId = assignment.id;
-        state.session.clientId = assignment.clientId;
-        state.session.babyId = assignment.babyId;
-        state.session.serviceDate = localDateKey(new Date());
-        state.session.serviceTimeZone = deviceTimeZone();
-        state.session.clientName = client.motherName;
-        state.session.babyName = babyNameFor(assignment, client) || client.babyName;
-        state.session.caregiverName = authUser().fullName;
-        state.session.address = assignment.address;
-        state.session.schedule = `${assignment.dailyStart} – ${assignment.dailyEnd}`;
-        state.session.startedAt = new Date().toISOString();
-        state.session.endedAt = null;
-        saveState();
-        render();
-        showToast("케어 세션을 시작했습니다.");
-      });
-    });
-
-    document.querySelectorAll("[data-end-care]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const assignment = state.assignments.find((item) => item.id === state.session.assignmentId);
-        if (!assignment) return showToast("종료할 배정 정보를 찾을 수 없습니다. 화면을 새로고침해 주세요.", "error");
-        if (usingCloudData()) {
-          button.disabled = true;
-          const completedEventCount = visibleCareEvents(assignment).length;
-          const completedServiceLabel = activeSessionIsStale(assignment) && state.session.serviceDate
-            ? formatDate(`${state.session.serviceDate}T12:00:00`)
-            : "오늘";
-          try {
-            await setCareSessionStatusCloud(assignment.id, "COMPLETED", {
-              serviceDate: state.session.serviceDate || localDateKey(new Date()),
-              timeZone: state.session.serviceTimeZone || deviceTimeZone(),
-            });
-            await refreshCloudState();
-            showToast(`케어 세션을 종료했습니다. ${completedServiceLabel} ${completedEventCount}개의 기록이 저장되었습니다.`);
-          } catch (error) {
-            showToast(friendlyErrorMessage(error, "케어 세션을 종료하지 못했습니다."), "error");
-            button.disabled = false;
-          }
-          return;
-        }
-        state.session.active = false;
-        state.session.endedAt = new Date().toISOString();
-        if (assignment) assignment.lastCompletedCareAt = state.session.endedAt;
-        const completedEventCount = visibleCareEvents(assignment).length;
-        saveState();
-        render();
-        showToast(`케어 세션을 종료했습니다. 오늘 ${completedEventCount}개의 기록이 저장되었습니다.`);
-      });
-    });
 
     document.querySelectorAll("[data-notice]").forEach((button) => {
       button.addEventListener("click", () => showToast(button.dataset.notice, "info"));
@@ -7947,16 +7737,12 @@ import {
     const assignment = editing
       ? state.assignments.find((item) => item.id === existingEvent.assignmentId)
       : activeAssignmentContext();
-    if (!assignment || (!editing && (!state.session.active || state.session.assignmentId !== assignment.id))) {
-      showToast(editing ? "이 기록에 연결된 서비스 배정을 찾을 수 없습니다." : "케어 세션을 먼저 시작해 주세요.", "error");
+    if (!assignment) {
+      showToast(editing ? "이 기록에 연결된 서비스 배정을 찾을 수 없습니다." : "현재 기록 가능한 서비스 배정을 찾을 수 없습니다.", "error");
       return;
     }
     if (editing && !canEditCareEvent(existingEvent)) {
       showToast("이 관리 기록을 수정할 권한이 없습니다.", "error");
-      return;
-    }
-    if (!editing && activeSessionIsStale(assignment)) {
-      showToast("이전 근무일의 미종료 세션에는 새 기록을 추가할 수 없습니다. 먼저 케어를 종료해 주세요.", "error");
       return;
     }
     if (!careEventTypeAllowedForService(assignmentServiceType(assignment), type)) return showToast("현재 배정 서비스에서 사용할 수 없는 기록 항목입니다.", "error");
@@ -7965,15 +7751,15 @@ import {
     const meta = EVENT_META[type] || EVENT_META.note;
     const babyName = babyNameFor(assignment, client) || "아이";
     const deviceNow = new Date();
-    const sessionDate = editing ? objectiveEventDateKey(existingEvent) : state.session.serviceDate || localDateKey(deviceNow);
+    const sessionDate = editing ? objectiveEventDateKey(existingEvent) : localDateKey(deviceNow);
     const currentLocalDateTime = editing
       ? `${sessionDate}T${careEventLocalTime(existingEvent)}`
       : localDateTimeInputValue(deviceNow);
     const maximumLocalDateTime = sessionDate === localDateKey(deviceNow)
       ? localDateTimeInputValue(deviceNow)
       : `${sessionDate}T23:59`;
-    const sessionTimeZone = editing ? objectiveEventTimeZone(existingEvent) : state.session.serviceTimeZone || deviceTimeZone();
-    const careSessionId = editing ? existingEvent.careSessionId : state.session.id;
+    const sessionTimeZone = editing ? objectiveEventTimeZone(existingEvent) : deviceTimeZone();
+    const careSessionId = editing ? existingEvent.careSessionId : "";
     modalRoot.innerHTML = `
       <div class="modal-backdrop" data-modal-backdrop>
         <section class="modal" role="dialog" aria-modal="true" aria-labelledby="log-modal-title">
@@ -8153,15 +7939,13 @@ import {
     if ("text" in data) data.text = String(data.text || "").trim();
 
     if (usingCloudData()) {
-      if (!existingEvent && (!form.dataset.careSessionId || !state.session.active)) return showToast("케어를 시작한 뒤 기록할 수 있습니다.");
-      if (!existingEvent && activeSessionIsStale()) return showToast("이전 근무일의 미종료 세션에는 기록을 추가할 수 없습니다. 먼저 케어를 종료해 주세요.", "error");
       const submitButton = form.querySelector('button[type="submit"]');
       submitButton.disabled = true;
       submitButton.textContent = existingEvent ? "변경 저장 중…" : "저장 중…";
       try {
         const payload = { at: eventAt, data, notes: data.note || data.notes || data.text || null };
         if (existingEvent) await updateCareEventCloud({ eventId: existingEvent.id, ...payload });
-        else await saveCareEventCloud({ careSessionId: form.dataset.careSessionId, type, ...payload });
+        else await saveCareEventCloud({ assignmentId: form.dataset.assignmentId, timeZone: sessionTimeZone, type, ...payload });
         closeModal();
         await refreshCloudState();
         showToast(`${EVENT_META[type].label} 기록을 ${existingEvent ? "수정" : "저장"}했습니다.`);
@@ -8177,12 +7961,31 @@ import {
       Object.assign(existingEvent, { at: eventAt, serviceTimeZone: sessionTimeZone, data });
     } else {
       const formAssignment = state.assignments.find((item) => item.id === form.dataset.assignmentId);
+      if (!formAssignment) return showToast("기록할 서비스 배정을 찾을 수 없습니다.", "error");
+      state.careSessions ||= [];
+      let localCareSession = (state.careSessions || []).find((item) => item.assignmentId === formAssignment.id && item.serviceDate === recordedLocalDate);
+      if (!localCareSession) {
+        localCareSession = {
+          id: `session-auto-${Date.now()}`,
+          assignmentId: formAssignment.id,
+          serviceDate: recordedLocalDate,
+          serviceTimeZone: sessionTimeZone,
+          status: "COMPLETED",
+          startedAt: eventAt,
+          endedAt: eventAt,
+        };
+        state.careSessions.push(localCareSession);
+      } else {
+        localCareSession.status = "COMPLETED";
+        if (!localCareSession.startedAt || new Date(eventAt) < new Date(localCareSession.startedAt)) localCareSession.startedAt = eventAt;
+        if (!localCareSession.endedAt || new Date(eventAt) > new Date(localCareSession.endedAt)) localCareSession.endedAt = eventAt;
+      }
       state.events.push({
         id: `evt-${Date.now()}`,
-        careSessionId: form.dataset.careSessionId,
+        careSessionId: localCareSession.id,
         assignmentId: form.dataset.assignmentId,
-        clientId: formAssignment?.clientId || state.session.clientId,
-        babyId: formAssignment?.babyId || state.session.babyId,
+        clientId: formAssignment.clientId,
+        babyId: formAssignment.babyId,
         type,
         at: eventAt,
         author: authUser().fullName,

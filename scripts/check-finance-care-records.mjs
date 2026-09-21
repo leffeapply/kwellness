@@ -3,11 +3,12 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const [app, cloud, migration, settlementMigration] = await Promise.all([
+const [app, cloud, migration, settlementMigration, automaticSessionMigration] = await Promise.all([
   readFile(path.join(root, "app.js"), "utf8"),
   readFile(path.join(root, "cloud-data.js"), "utf8"),
   readFile(path.join(root, "supabase/migrations/037_finance_and_care_record_corrections.sql"), "utf8"),
   readFile(path.join(root, "supabase/migrations/038_shift_reports_and_discounted_settlement.sql"), "utf8"),
+  readFile(path.join(root, "supabase/migrations/049_automatic_care_event_sessions.sql"), "utf8"),
 ]);
 
 const checks = [
@@ -25,8 +26,9 @@ const checks = [
   ["care record edits call a protected RPC", cloud.includes('supabase.rpc("update_care_event"') && migration.includes("create or replace function public.update_care_event")],
   ["care record corrections retain an audit trail", migration.includes("CORRECT_CARE_EVENT") && migration.includes("before_payload") && migration.includes("after_payload")],
   ["completed-visit records may be corrected", migration.includes("if tg_op in ('INSERT', 'DELETE') and session_row.status <> 'IN_PROGRESS'")],
-  ["pre-shift safety checks save atomically", cloud.includes('supabase.rpc("save_care_shift_checklist"') && settlementMigration.includes("save_care_shift_checklist") && app.includes("안전 체크 한 번에 저장")],
-  ["checked safety items cannot be unchecked accidentally", app.includes('checkbox.disabled = true') && app.includes('checkbox.closest("label")?.classList.add("is-checked")')],
+  ["manual safety, clock-in, and clock-out controls are removed", !app.includes("data-shift-check") && !app.includes("data-start-care") && !app.includes("data-end-care")],
+  ["care events create and complete their daily container atomically", cloud.includes('supabase.rpc("record_care_event"') && automaticSessionMigration.includes("create or replace function public.record_care_event") && automaticSessionMigration.includes("set status = 'COMPLETED'")],
+  ["retired checklist and manual session RPCs are removed", !cloud.includes('supabase.rpc("save_care_shift_checklist"') && automaticSessionMigration.includes("drop function if exists public.save_care_shift_checklist") && automaticSessionMigration.includes("drop function if exists public.set_care_session_status")],
   ["balance payment hash resolves pgcrypto from extensions", settlementMigration.includes("extensions.digest") && settlementMigration.includes("record_service_balance_payment")],
   ["owner discount is enforced and audited server-side", settlementMigration.includes("Only an owner can approve a service discount") && settlementMigration.includes("APPLY_OWNER_SERVICE_DISCOUNT")],
   ["discount settlement is used by the client", cloud.includes('supabase.rpc("settle_service_balance_payment"') && app.includes("오너 할인 적용")],

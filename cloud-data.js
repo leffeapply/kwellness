@@ -350,7 +350,6 @@ async function loadCloudStateOnce(session) {
     deposits,
     balanceTransactions,
     serviceRefunds,
-    shiftChecks,
     assignmentBriefs,
   ] = await Promise.all([
     table("profiles"),
@@ -381,7 +380,6 @@ async function loadCloudStateOnce(session) {
     table("deposit_transactions"),
     table("service_balance_transactions"),
     table("service_refund_transactions"),
-    table("care_shift_checks"),
     throwIfError(await supabase.rpc("my_assignment_briefs"), "배정 안전정보 조회"),
   ]);
 
@@ -836,13 +834,6 @@ async function loadCloudStateOnce(session) {
     || null;
   const currentCareSession = recoveredCareSession || (currentAssignment ? todaySessionForAssignment(currentAssignment.id) : null);
   const currentClient = currentAssignment ? appClients.find((item) => item.id === currentAssignment.clientId) : null;
-  const shiftChecklists = {};
-  shiftChecks
-    .filter((item) => item.service_date === todayKey)
-    .forEach((item) => {
-      shiftChecklists[item.assignment_id] ||= {};
-      shiftChecklists[item.assignment_id][item.check_key] = Boolean(item.checked);
-    });
   return {
     currentUser,
     users: appUsers,
@@ -880,7 +871,6 @@ async function loadCloudStateOnce(session) {
       reviewedAt: item.reviewed_at,
       reviewNote: item.review_note || "",
     })),
-    shiftChecklists,
     events: appEvents,
     reviews: reviews.map((item) => {
       const publication = reviewPublicationById.get(item.id);
@@ -1188,46 +1178,15 @@ export async function reassignCaregiverCloud({ assignmentId, caregiverId, reason
   }), "관리사 재배정");
 }
 
-export async function setCareSessionStatusCloud(assignmentId, status, { serviceDate = null, timeZone = null } = {}) {
-  return throwIfError(await supabase.rpc("set_care_session_status", {
+export async function saveCareEventCloud({ assignmentId, timeZone, type, at, data, notes = null }) {
+  return throwIfError(await supabase.rpc("record_care_event", {
     p_assignment_id: assignmentId,
-    p_status: status,
-    p_service_date: serviceDate,
+    p_event_type: APP_TO_EVENT[type] || "NOTE",
+    p_event_time: at,
+    p_payload: data,
+    p_notes: notes,
     p_time_zone: timeZone,
-  }), "케어 세션 상태 저장");
-}
-
-export async function setCareShiftCheckCloud(assignmentId, checkKey, checked, { serviceDate = null, timeZone = null } = {}) {
-  return throwIfError(await supabase.rpc("set_care_shift_check", {
-    p_assignment_id: assignmentId,
-    p_check_key: checkKey,
-    p_checked: Boolean(checked),
-    p_service_date: serviceDate,
-    p_time_zone: timeZone,
-  }), "근무 전 확인사항 저장");
-}
-
-export async function saveCareShiftChecklistCloud(assignmentId, checks, { serviceDate = null, timeZone = null } = {}) {
-  return throwIfError(await supabase.rpc("save_care_shift_checklist", {
-    p_assignment_id: assignmentId,
-    p_checks: checks,
-    p_service_date: serviceDate,
-    p_time_zone: timeZone,
-  }), "근무 전 안전 체크 저장");
-}
-
-export async function saveCareEventCloud({ careSessionId, type, at, data, notes = null }) {
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError) throw authError;
-  return throwIfError(await supabase.from("care_events").insert({
-    care_session_id: careSessionId,
-    event_type: APP_TO_EVENT[type] || "NOTE",
-    event_time: at,
-    payload: data,
-    notes,
-    unusual_observation: false,
-    created_by: authData.user.id,
-  }).select("id").single(), "케어 기록 저장");
+  }), "케어 기록 저장");
 }
 
 export async function updateCareEventCloud({ eventId, at, data, notes = null }) {

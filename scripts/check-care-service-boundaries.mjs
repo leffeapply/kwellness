@@ -37,8 +37,11 @@ assert.deepEqual(postpartumReport.events.map((event) => event.id), ["feeding-cor
 assert.deepEqual(babysittingReport.events.map((event) => event.id), ["meal-correct"]);
 
 const appSource = await readFile(new URL("../app.js", import.meta.url), "utf8");
+const automaticSessionMigration = await readFile(new URL("../supabase/migrations/049_automatic_care_event_sessions.sql", import.meta.url), "utf8");
 assert.doesNotMatch(appSource, /assignmentOverride \|\| activeAssignmentContext/);
 assert.match(appSource, /careEventMatchesAssignment\(event, assignment, state\.careSessions \|\| \[\]\)/);
-assert.match(appSource, /assignmentServiceType\(assignment\) !== workspaceServiceType/);
+assert.match(appSource, /saveCareEventCloud\(\{ assignmentId: form\.dataset\.assignmentId/);
+assert.match(automaticSessionMigration, /target_assignment\.service_type::text = 'BABYSITTING'/);
+assert.match(automaticSessionMigration, /target_assignment\.service_type::text = 'POSTPARTUM'/);
 
 console.log("Care service boundary checks passed.");
