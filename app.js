@@ -1031,11 +1031,6 @@ import {
     return selected || assignmentForClient(clientId, serviceType);
   }
 
-  function clientCurrentService(clientId) {
-    const current = canonicalCurrentAssignment(clientId);
-    return current ? assignmentServiceType(current) : null;
-  }
-
   function defaultServiceApplicationType(client) {
     if (!client) return "POSTPARTUM";
     const hasCurrentOrUpcomingPostpartum = state.assignments.some((assignment) => assignment.clientId === client.id && assignment.status !== "CANCELLED" && assignmentServiceType(assignment) === "POSTPARTUM" && new Date(assignment.endAt) >= new Date());
@@ -2841,9 +2836,9 @@ import {
     return [...visibleCareEvents(assignment)].sort((a, b) => new Date(b.at) - new Date(a.at));
   }
 
-  function timelineMarkup(limit, assignment = null) {
+  function timelineMarkup(limit, assignment = null, { emptyPrompt = true } = {}) {
     const events = typeof limit === "number" ? sortedEvents(assignment).slice(0, limit) : sortedEvents(assignment);
-    if (!events.length) return `<div class="empty-state"><span class="empty-icon">♡</span><strong>아직 기록이 없어요</strong><span>첫 케어 이벤트를 간단히 남겨보세요.</span></div>`;
+    if (!events.length) return `<div class="empty-state"><span class="empty-icon">♡</span><strong>아직 기록이 없어요</strong>${emptyPrompt ? "<span>첫 케어 이벤트를 간단히 남겨보세요.</span>" : ""}</div>`;
     return `<div class="timeline">${events
       .map((event) => {
         const meta = EVENT_META[event.type] || EVENT_META.note;
@@ -3075,9 +3070,6 @@ import {
   function clientServicesHub() {
     const client = clientForUser(authUser().id);
     if (!client) return `<section class="page">${demoBanner()}<div class="empty-state"><strong>고객 정보를 찾을 수 없습니다.</strong></div></section>`;
-    const currentService = clientCurrentService(client.id);
-    const activeCount = state.assignments.filter((assignment) => assignment.clientId === client.id && isAssignmentCurrent(assignment)).length;
-    const pendingCount = state.serviceRequests.filter((request) => request.clientId === client.id && (request.status === "PENDING" || (request.status === "APPROVED" && !request.approvedAssignmentId && isRecordableCareServiceType(assignmentServiceType(request))))).length;
     const postpartumAssignments = currentAndUpcomingAssignmentsForClient(client.id, "POSTPARTUM");
     const babysittingAssignments = currentAndUpcomingAssignmentsForClient(client.id, "BABYSITTING");
     const massageAssignments = currentAndUpcomingAssignmentsForClient(client.id, "MASSAGE");
@@ -3091,7 +3083,7 @@ import {
     const massageTier = clientQualifiesForMassageMemberRate(client.id) ? "POSTPARTUM_CLIENT" : "GENERAL";
     const massageStatusCards = [...massageAssignments.map((assignment) => clientServiceOverviewCard(client, "MASSAGE", assignment)), ...massageRequests.map((request) => clientServiceOverviewCard(client, "MASSAGE", null, request))];
     const profileSetup = clientProfileComplete(client) ? "" : `<article class="card client-profile-onboarding"><div><p class="eyebrow">PROFILE SETUP</p><h3>서비스 신청 전에 가족 프로필을 완성해 주세요.</h3><p>아기 이름·출생일 또는 예정일과 기본 서비스 주소를 한 번 저장하면 신청서에 자동으로 불러옵니다.</p></div><button class="primary-button" type="button" data-edit-profile>고객·아기 프로필 작성</button></article>`;
-    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY SERVICES", `${escapeHtml(client.motherName)}님의 서비스`, "돌봄과 마사지 신청·배정 상태를 한눈에 확인하세요.")}${profileSetup}<div class="grid stats">${statCard("Active service", activeCount, "현재 진행 중인 전체 배정", "✓")}${statCard("Current service", activeCount > 1 ? `${activeCount}건 이용 중` : currentService ? serviceMetaFor(currentService).label : "대기", "현재 케어", currentService === "BABYSITTING" ? "☆" : "♡")}${statCard("Pending requests", pendingCount ? `${pendingCount}건` : "없음", "승인·일정 배정 대기", "◷")}</div><div class="service-overview-grid" style="margin-top:18px">${postpartumCards.length ? postpartumCards.join("") : clientServiceOverviewCard(client, "POSTPARTUM")}${babysittingCards.length ? babysittingCards.join("") : clientServiceOverviewCard(client, "BABYSITTING")}</div>${massageStatusCards.length ? `<div class="service-overview-grid" style="margin-top:18px">${massageStatusCards.join("")}</div>` : ""}${clientMassageAppointmentsMarkup(client)}${clientCompletedReviewCenterMarkup(client)}<div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, null, true)}</div><article class="card premium-addon-card" style="margin-top:18px"><div class="premium-addon-icon">${massage.icon}</div><div><p class="eyebrow">PRENATAL · POSTPARTUM MASSAGE</p><h3>${massage.label}</h3><p>${massage.description}</p><div class="premium-addon-tags"><span>${massageTier === "POSTPARTUM_CLIENT" ? "산후조리 고객 우대가 자동 적용" : "일반 고객 요금"}</span><span>60분·90분</span><span>24시간 전까지 변경·취소</span></div></div><div class="public-service-card-actions"><button type="button" class="secondary-button" data-public-service-detail="MASSAGE">자세히</button><button type="button" class="primary-button" data-massage-book>마사지 예약</button></div></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>돌봄과 마사지는 일정 충돌을 자동으로 확인합니다.</strong><p>마사지 테라피스트가 해당 고객의 담당 관리사인 경우에만 그 고객의 케어 시간 안에 마사지를 배정할 수 있습니다. 다른 고객 일정이나 다른 마사지 예약과 겹치면 선택할 수 없습니다.</p></article></section>`;
+    return `<section class="page service-hub-page">${demoBanner()}${pageHeading("MY SERVICES", `${escapeHtml(client.motherName)}님의 서비스`, "돌봄과 마사지 신청·배정 상태를 한눈에 확인하세요.")}${profileSetup}<div class="service-overview-grid" style="margin-top:18px">${postpartumCards.length ? postpartumCards.join("") : clientServiceOverviewCard(client, "POSTPARTUM")}${babysittingCards.length ? babysittingCards.join("") : clientServiceOverviewCard(client, "BABYSITTING")}</div>${massageStatusCards.length ? `<div class="service-overview-grid" style="margin-top:18px">${massageStatusCards.join("")}</div>` : ""}${clientMassageAppointmentsMarkup(client)}${clientCompletedReviewCenterMarkup(client)}<article class="card premium-addon-card" style="margin-top:18px"><div class="premium-addon-icon">${massage.icon}</div><div><p class="eyebrow">PRENATAL · POSTPARTUM MASSAGE</p><h3>${massage.label}</h3><p>${massage.description}</p><div class="premium-addon-tags"><span>${massageTier === "POSTPARTUM_CLIENT" ? "산후조리 고객 우대가 자동 적용" : "일반 고객 요금"}</span><span>60분·90분</span><span>24시간 전까지 변경·취소</span></div></div><div class="public-service-card-actions"><button type="button" class="secondary-button" data-public-service-detail="MASSAGE">자세히</button><button type="button" class="primary-button" data-massage-book>마사지 예약</button></div></article><article class="card card-pad service-boundary-note" style="margin-top:18px"><strong>돌봄과 마사지는 일정 충돌을 자동으로 확인합니다.</strong><p>마사지 테라피스트가 해당 고객의 담당 관리사인 경우에만 그 고객의 케어 시간 안에 마사지를 배정할 수 있습니다. 다른 고객 일정이나 다른 마사지 예약과 겹치면 선택할 수 없습니다.</p></article></section>`;
   }
 
   function clientBabysittingSummary(client, assignment, workspaceNav = "") {
@@ -3100,7 +3092,7 @@ import {
     const events = visibleCareEvents(assignment).filter((event) => ["meal", "sitter_note"].includes(event.type));
     const meals = events.filter((event) => event.type === "meal");
     const notes = events.filter((event) => event.type === "sitter_note");
-    return `<section class="page babysitting-client-page">${demoBanner()}${workspaceNav}${clientDailyRequestMarkup(assignment)}<article class="card client-hero babysitting-client-hero"><div class="client-hero-copy">${serviceBadgeMarkup("BABYSITTING")}<p class="eyebrow">${escapeHtml(babyName).toUpperCase()}'S SITTING · ${todayLabel()}</p><h3>${escapeHtml(babyName)}의 오늘 시팅 기록이 업데이트되었습니다. ☆</h3><p>담당 관리사가 공유한 식사와 놀이·산책·생활 이벤트를 간결하게 확인하세요.</p></div><div class="client-hero-art"><div class="baby-monogram">${escapeHtml(babyName[0] || "B")}</div></div></article><div class="grid three sitter-summary-grid" style="margin-top:18px">${summaryCard("🍽️", "식사·간식", `${meals.length}회`, meals.at(-1) ? eventDescription(meals.at(-1)) : "기록 전")}${summaryCard("☆", "생활 이벤트", `${notes.length}건`, notes.at(-1) ? eventDescription(notes.at(-1)) : "기록 전")}${summaryCard("♙", "담당 관리사", caregiver?.fullName || "배정 완료", `${assignment.dailyStart}–${assignment.dailyEnd}`)}</div>${clientServiceReviewMarkup(client, "BABYSITTING", assignment)}<article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>오늘의 시팅 기록</h3><p>식사와 주요 활동이 시간순으로 표시됩니다.</p></div><button class="text-button" data-service-tab="timeline" data-service-type="BABYSITTING">전체 보기 →</button></div>${timelineMarkup(undefined, assignment)}</article><div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, "BABYSITTING")}</div></section>`;
+    return `<section class="page babysitting-client-page">${demoBanner()}${workspaceNav}${clientDailyRequestMarkup(assignment)}<article class="card client-hero babysitting-client-hero"><div class="client-hero-copy">${serviceBadgeMarkup("BABYSITTING")}<p class="eyebrow">${escapeHtml(babyName).toUpperCase()}'S SITTING · ${todayLabel()}</p><h3>${escapeHtml(babyName)}의 오늘 시팅 기록이 업데이트되었습니다. ☆</h3><p>담당 관리사가 공유한 식사와 놀이·산책·생활 이벤트를 간결하게 확인하세요.</p></div><div class="client-hero-art"><div class="baby-monogram">${escapeHtml(babyName[0] || "B")}</div></div></article><div class="grid three sitter-summary-grid" style="margin-top:18px">${summaryCard("🍽️", "식사·간식", `${meals.length}회`, meals.at(-1) ? eventDescription(meals.at(-1)) : "기록 전")}${summaryCard("☆", "생활 이벤트", `${notes.length}건`, notes.at(-1) ? eventDescription(notes.at(-1)) : "기록 전")}${summaryCard("♙", "담당 관리사", caregiver?.fullName || "배정 완료", `${assignment.dailyStart}–${assignment.dailyEnd}`)}</div>${clientServiceReviewMarkup(client, "BABYSITTING", assignment)}<article class="card card-pad" style="margin-top:18px"><div class="section-header"><div><h3>오늘의 시팅 기록</h3><p>식사와 주요 활동이 시간순으로 표시됩니다.</p></div><button class="text-button" data-service-tab="timeline" data-service-type="BABYSITTING">전체 보기 →</button></div>${timelineMarkup(undefined, assignment, { emptyPrompt: false })}</article><div style="margin-top:18px">${clientPublishedReportsMarkup(client.id, "BABYSITTING")}</div></section>`;
   }
 
   function clientSummary(serviceType = "POSTPARTUM", workspaceNav = "") {

@@ -6,6 +6,14 @@ const root = process.cwd();
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const cloudData = fs.readFileSync(path.join(root, "cloud-data.js"), "utf8");
+const clientServicesHubSource = app.slice(
+  app.indexOf("function clientServicesHub()"),
+  app.indexOf("function clientBabysittingSummary("),
+);
+const clientBabysittingSummarySource = app.slice(
+  app.indexOf("function clientBabysittingSummary("),
+  app.indexOf("function clientSummary("),
+);
 
 const checks = [
   [app.includes('activeSection: "members"'), "관리자 회원 관리 기본 소메뉴가 없습니다."],
@@ -28,6 +36,9 @@ const checks = [
   [app.includes('caregiver: { postpartum: () => caregiverServiceWorkspace("POSTPARTUM")'), "관리사 기본 작업공간 경로가 산후조리 화면으로 연결되지 않습니다."],
   [!app.includes("caregiverRetrospectiveReportEntryMarkup()") && !app.includes("openRetrospectiveCareReportModal"), "삭제한 지난 근무 리포트 보완 UI가 다시 노출됩니다."],
   [!cloudData.includes("recordRetrospectiveCareReportCloud") && !cloudData.includes("record_retrospective_care_report"), "삭제한 지난 근무 리포트 저장 경로가 클라우드 코드에 남아 있습니다."],
+  [!clientServicesHubSource.includes('<div class="grid stats">'), "고객 나의 서비스 화면에 제거한 상단 통계 대시보드가 남아 있습니다."],
+  [!clientServicesHubSource.includes("clientPublishedReportsMarkup"), "고객 나의 서비스 화면에 제거한 보관 리포트가 남아 있습니다."],
+  [clientBabysittingSummarySource.includes("timelineMarkup(undefined, assignment, { emptyPrompt: false })"), "고객 오늘의 시팅 기록 빈 화면에 기록 유도 문구가 노출됩니다."],
 ];
 
 const failures = checks.filter(([condition]) => !condition).map(([, message]) => message);
